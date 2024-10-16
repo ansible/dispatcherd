@@ -1,0 +1,16 @@
+---
+services:
+  msg_postgres:
+    image: "postgres:15"
+    container_name: dispatch_postgres
+    environment:
+      POSTGRES_DB: dispatch_db
+      POSTGRES_USER: dispatch
+      POSTGRES_PASSWORD: dispatching
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dispatch", "-d", "dispatch_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "55777:5432"

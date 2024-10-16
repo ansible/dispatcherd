@@ -1,0 +1,48 @@
+[project.urls]
+Repository = "https://github.com/ansible/dispatcher"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dispatcher"
+version = "0.1.0"
+description = "An asyncio-based dispatcher for tasks in a worker pool."
+readme = "README.md"
+authors = [
+    { name = "Alan Rominger", email = "arominge@redhat.com.com" }
+]
+license = { text = "MIT" }
+keywords = ["asyncio", "multiprocessing", "dispatcher", "pg_notify", "python"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+dispatcher-standalone = "dispatcher.cli:standalone"
+
+[tool.setuptools.packages.find]
+include = ["dispatcher*"]
+
+# You need psycopg, but this will not help you to install it
+
+# Linters coppied from django-ansible-base, exceptions removed
+
+[tool.setuptools_scm]
+version_scheme = "calver-by-date"
+
+[tool.black]
+line-length = 160
+fast = true
+skip-string-normalization = true
+
+[tool.isort]
+profile = "black"
+line_length = 160
