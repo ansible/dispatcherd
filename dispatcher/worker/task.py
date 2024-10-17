@@ -250,7 +250,8 @@ def work_loop(worker_id: int, settings: dict, finished_queue: multiprocessing.Qu
         result = worker.perform_work(message)
 
         # Indicate that the task is finished by putting a message in the finished_queue
-        finished_queue.put(worker.get_finished_message(result, message, time_started))
+        to_send = worker.get_finished_message(result, message, time_started)
+        finished_queue.put(to_send)
 
     finished_queue.put(worker.get_shutdown_message())
     logger.debug(f'Worker {worker_id} informed the pool manager that we have exited')

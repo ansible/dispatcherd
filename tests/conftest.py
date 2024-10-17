@@ -1,5 +1,6 @@
 import contextlib
 import logging
+from copy import deepcopy
 
 from typing import Callable, AsyncIterator
 
@@ -36,7 +37,10 @@ BASIC_CONFIG = {
             "default_publish_channel": "test_channel"
         }
     },
-    "pool": {
+    "service": {
+        "main_kwargs": {
+            "node_id": "test-server"
+        },
         "pool_kwargs": {
             "min_workers": 1,
             "max_workers": 6
@@ -86,14 +90,19 @@ def conn_config():
 @pytest.fixture
 def pg_dispatcher() -> DispatcherMain:
     # We can not reuse the connection between tests
-    config = BASIC_CONFIG.copy()
+    config = deepcopy(BASIC_CONFIG)
     config['brokers']['pg_notify'].pop('async_connection_factory')
     return DispatcherMain(config)
 
 
 @pytest.fixture
-def test_settings():
-    return DispatcherSettings(BASIC_CONFIG)
+def test_config():
+    return deepcopy(BASIC_CONFIG)
+
+
+@pytest.fixture
+def test_settings(test_config):
+    return DispatcherSettings(test_config)
 
 @pytest_asyncio.fixture(
     loop_scope="function",
