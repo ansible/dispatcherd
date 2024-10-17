@@ -2,6 +2,7 @@ import asyncio
 import logging
 import multiprocessing
 import os
+from types import SimpleNamespace
 
 from dispatcher.utils import DuplicateBehavior, MessageAction
 from dispatcher.worker.task import work_loop
@@ -90,6 +91,12 @@ class WorkerPool:
         self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
         self.management_lock = asyncio.Lock()
         self.fd_lock = fd_lock or asyncio.Lock()
+
+        self.events = self._create_events()
+
+    def _create_events(self):
+        "Benchmark tests have to re-create this because they use same object in different event loops"
+        return SimpleNamespace(queue_cleared=asyncio.Event())
 
     async def start_working(self, dispatcher):
         self.read_results_task = asyncio.create_task(self.read_results_forever())
@@ -280,6 +287,16 @@ class WorkerPool:
         async with self.management_lock:
             worker.mark_finished_task()
             self.finished_count += 1
+
+        if self.queued_messages:
+            if not self.shutting_down:
+                requeue_message = self.queued_messages.pop()
+                await self.dispatch_task(requeue_message)
+                logger.debug('submitted work due to finishing other work')
+        else:
+            if not any(worker.current_task for worker in self.workers.values()):
+                self.events.queue_cleared.set()
+                logger.debug('work queue has been cleared')
 
     async def read_results_forever(self):
         """Perpetual task that continuously waits for task completions."""

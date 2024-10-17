@@ -49,3 +49,6 @@ line_length = 160
 
 [project.optional-dependencies]
 pg_notify = ["psycopg[binary]"]
+
+[tool.pytest.ini_options]
+log_cli_level = "DEBUG"

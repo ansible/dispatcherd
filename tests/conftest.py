@@ -2,7 +2,6 @@ import pytest
 
 from dispatcher.main import DispatcherMain
 
-
 # List of channels to listen on
 CHANNELS = ['test_channel', 'test_channel2', 'test_channel2']
 
