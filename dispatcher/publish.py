@@ -6,8 +6,6 @@ from uuid import uuid4
 
 from django_guid import get_guid
 
-from . import pg_bus_conn
-
 logger = logging.getLogger('awx.main.dispatch')
 
 
@@ -101,8 +99,9 @@ class task:
                 if callable(queue):
                     queue = queue()
                 # TODO: before sending, consult an app-specific callback if configured
-                with pg_bus_conn() as conn:
-                    conn.notify(queue, json.dumps(obj))
+                from dispatcher.brokers.pg_notify import publish_message
+                # NOTE: the kw will communicate things in the database connection data
+                publish_message(queue, json.dumps(obj), **kw)
                 return (obj, queue)
 
         # If the object we're wrapping *is* a class (e.g., RunJob), return
