@@ -44,6 +44,10 @@ async def main():
     publish_message(channel, json.dumps({'task': 'lambda: 123421', 'uuid': 'foobar2', 'delay': 4}), config={'conninfo': CONNECTION_STRING})
     publish_message(channel, json.dumps({'task': 'lambda: 987987234', 'uuid': 'foobar2', 'delay': 30}), config={'conninfo': CONNECTION_STRING})
 
+    for i in range(10):
+        alive = ctl.control_with_reply('alive')
+        print(alive)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

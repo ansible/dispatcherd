@@ -45,7 +45,7 @@ async def aprocess_notify(connection, channels):
             logger.debug('Starting listening for pg_notify notifications')
             async for notify in connection.notifies():
                 logger.debug(f"Received notification: {notify.channel} - {notify.payload}")
-                yield notify.channel, notify.payload
+                yield notify.channel, notify.payload, cur
 
 
 def get_django_connection():
