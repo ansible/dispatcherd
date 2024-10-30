@@ -28,6 +28,10 @@ class PoolWorker:
         self.message_queue.put("stop")
         self.process.join()
 
+    def cancel(self):
+        # SIGTERM
+        self.process.terminate()
+
     def mark_finished_task(self):
         self.current_task = None
         self.finished_count += 1
