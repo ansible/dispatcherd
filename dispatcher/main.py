@@ -10,22 +10,25 @@ from dispatcher.producers.scheduled import ScheduledProducer
 logger = logging.getLogger(__name__)
 
 
+def task_filter_match(pool_task, msg_data):
+    filterables = ('task', 'args', 'kwargs', 'uuid')
+    for key in filterables:
+        if key in msg_data:
+            if pool_task.get(key, None) != msg_data[key]:
+                return False
+    return True
+
+
 class ControlTasks:
-    def running(self, dispatcher, task=None, args=None):
+    def running(self, dispatcher, **data):
         ret = []
         for worker in dispatcher.pool.workers.values():
             if worker.current_task:
-                if task and worker.current_task['task'] != task:
-                    continue
-                if args and worker.current_task['args'] != args:
-                    continue
-                ret.append((worker.worker_id, worker.current_task))
+                if task_filter_match(worker.current_task, data):
+                    ret.append((worker.worker_id, worker.current_task))
         for message in dispatcher.pool.queued_messages:
-            if task and message['task'] != task:
-                continue
-            if args and message['args'] != args:
-                continue
-            ret.append((None, message))
+            if task_filter_match(message, data):
+                ret.append((None, message))
         return ret
 
 
@@ -86,9 +89,7 @@ class DispatcherMain:
             logger.info(f'Processing control message in main {message}')
             ctl_tasks = ControlTasks()
             method = getattr(ctl_tasks, message['control'])
-            args = message.get('args', [])
-            kwargs = message.get('kwargs', {})
-            returned = method(self, *args, **kwargs)
+            returned = method(self, **message)
             return_info = {'result': json.dumps(returned)}
             logger.info(f'Prepared reply data {return_info["result"]}')
             if 'reply_to' in message:

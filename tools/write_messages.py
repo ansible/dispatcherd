@@ -30,8 +30,14 @@ async def main():
         publish_message('test_channel', f'lambda: {i}', config={'conninfo': CONNECTION_STRING})
     print('')
     print('writing a control message')
+
+    # submit a task we will "find" two different ways
+    publish_message(channel, json.dumps({'task': 'lambda: 4', 'uuid': 'foobar'}), config={'conninfo': CONNECTION_STRING})
+
     ctl = Control('test_channel', config={'conninfo': CONNECTION_STRING})
-    running_data = ctl.control_with_reply('running', data={'kwargs': {'task': 'lambda: 4'}})
+    # running_data = ctl.control_with_reply('running', data={'task': 'lambda: 4'})
+    # print(json.dumps(running_data, indent=2))
+    running_data = ctl.control_with_reply('running', data={'uuid': 'foobar'})
     print(json.dumps(running_data, indent=2))
 
 
