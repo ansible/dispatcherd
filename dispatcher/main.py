@@ -1,12 +1,35 @@
 import asyncio
 import logging
 import signal
+import json
 
 from dispatcher.pool import WorkerPool
 from dispatcher.producers.brokered import BrokeredProducer
 from dispatcher.producers.scheduled import ScheduledProducer
 
 logger = logging.getLogger(__name__)
+
+
+def task_filter_match(pool_task, msg_data):
+    filterables = ('task', 'args', 'kwargs', 'uuid')
+    for key in filterables:
+        if key in msg_data:
+            if pool_task.get(key, None) != msg_data[key]:
+                return False
+    return True
+
+
+class ControlTasks:
+    def running(self, dispatcher, **data):
+        ret = []
+        for worker in dispatcher.pool.workers.values():
+            if worker.current_task:
+                if task_filter_match(worker.current_task, data):
+                    ret.append((worker.worker_id, worker.current_task))
+        for message in dispatcher.pool.queued_messages:
+            if task_filter_match(message, data):
+                ret.append((None, message))
+        return ret
 
 
 class DispatcherMain:
@@ -40,13 +63,40 @@ class DispatcherMain:
 
         logging.debug(f"Shutting down, starting with producers.")
         for producer in self.producers:
-            await producer.shutdown()
+            try:
+                await producer.shutdown()
+            except Exception:
+                logger.exception('Producer task had error')
 
         logger.debug('Gracefully shutting down worker pool')
-        await self.pool.shutdown()
+        try:
+            await self.pool.shutdown()
+        except Exception:
+            logger.exception('Pool manager encountered error')
 
         logger.debug('Setting event to exit main loop')
         self.exit_event.set()
+
+    async def process_message(self, payload):
+        # TODO: handle this more elegantly, or tell clients not to do this
+        if isinstance(payload, str):
+            try:
+                message = json.loads(payload)
+            except Exception:
+                message = {'task': payload}
+
+        if 'control' in message:
+            logger.info(f'Processing control message in main {message}')
+            ctl_tasks = ControlTasks()
+            method = getattr(ctl_tasks, message['control'])
+            returned = method(self, **message)
+            return_info = {'result': json.dumps(returned)}
+            logger.info(f'Prepared reply data {return_info["result"]}')
+            if 'reply_to' in message:
+                return_info['reply_to'] = message['reply_to']
+            return return_info
+        else:
+            await self.pool.dispatch_task(message)
 
     async def start_working(self):
         logger.debug('Filling the worker pool')
@@ -54,7 +104,7 @@ class DispatcherMain:
 
         logger.debug('Starting task production')
         for producer in self.producers:
-            await producer.start_producing(self.pool)
+            await producer.start_producing(self)
 
     async def main(self):
         logger.info('Connecting dispatcher signal handling')
