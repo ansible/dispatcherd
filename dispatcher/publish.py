@@ -4,8 +4,6 @@ import logging
 import time
 from uuid import uuid4
 
-from django_guid import get_guid
-
 logger = logging.getLogger('awx.main.dispatch')
 
 
@@ -80,9 +78,7 @@ class task:
                 args = args or []
                 kwargs = kwargs or {}
                 obj = {'uuid': task_id, 'args': args, 'kwargs': kwargs, 'task': cls.name, 'time_pub': time.time()}
-                guid = get_guid()
-                if guid:
-                    obj['guid'] = guid
+                # TODO: callback to add other things, guid in case of AWX
                 if bind_kwargs:
                     obj['bind_kwargs'] = bind_kwargs
                 obj.update(**kw)
