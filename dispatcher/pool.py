@@ -89,13 +89,6 @@ class WorkerPool:
         logger.info('The finished watcher has returned. Pool is shut down')
 
     async def dispatch_task(self, message):
-        # TODO: handle this more elegantly, maybe through the DispatcherMain, or tell clients not to do this
-        if isinstance(message, str):
-            try:
-                message = json.loads(message)
-            except Exception:
-                message = {'task': message}
-
         for candidate_worker in self.workers.values():
             if not candidate_worker.current_task:
                 worker = candidate_worker
