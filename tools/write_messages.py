@@ -37,8 +37,12 @@ async def main():
     ctl = Control('test_channel', config={'conninfo': CONNECTION_STRING})
     # running_data = ctl.control_with_reply('running', data={'task': 'lambda: 4'})
     # print(json.dumps(running_data, indent=2))
-    running_data = ctl.control_with_reply('running', data={'uuid': 'foobar'})
+    running_data = ctl.control_with_reply('cancel', data={'uuid': 'foobar'})
     print(json.dumps(running_data, indent=2))
+
+    print('writing a message with a delay')
+    publish_message(channel, json.dumps({'task': 'lambda: 123421', 'uuid': 'foobar2', 'delay': 4}), config={'conninfo': CONNECTION_STRING})
+    publish_message(channel, json.dumps({'task': 'lambda: 987987234', 'uuid': 'foobar2', 'delay': 30}), config={'conninfo': CONNECTION_STRING})
 
 
 if __name__ == "__main__":
