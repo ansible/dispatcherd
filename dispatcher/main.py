@@ -48,6 +48,9 @@ class ControlTasks:
         # TODO: include delayed tasks in results
         return _find_tasks(dispatcher, cancel=True, **data)
 
+    def alive(self, dispatcher, **data):
+        return
+
 
 class DispatcherMain:
     def __init__(self, config):
