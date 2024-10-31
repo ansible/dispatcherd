@@ -68,7 +68,22 @@ async def main():
         config={'conninfo': CONNECTION_STRING}
     )
 
-    for i in range(10):
+    print('')
+    print('showing delayed tasks in running list')
+    running_data = ctl.control_with_reply('running', data={'task': 'test_methods.sleep_function'})
+    print(json.dumps(running_data, indent=2))
+
+    print('')
+    print('cancel a delayed tasks')
+    running_data = ctl.control_with_reply('cancel', data={'task': 'test_methods.sleep_function'})
+    print(json.dumps(running_data, indent=2))
+    print('confirmation that it has been canceled')
+    running_data = ctl.control_with_reply('running', data={'task': 'test_methods.sleep_function'})
+    print(json.dumps(running_data, indent=2))
+
+    print('')
+    print('running alive check a few times')
+    for i in range(3):
         alive = ctl.control_with_reply('alive')
         print(alive)
 
