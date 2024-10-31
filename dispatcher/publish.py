@@ -68,7 +68,7 @@ class task:
                 return cls.apply_async(args, kwargs)
 
             @classmethod
-            def get_async_body(cls, args=None, kwargs=None, uuid=None, **kw):
+            def get_async_body(cls, args=None, kwargs=None, uuid=None, delay=None, **kw):
                 """
                 Get the python dict to become JSON data in the pg_notify message
                 This same message gets passed over the dispatcher IPC queue to workers
@@ -78,6 +78,10 @@ class task:
                 args = args or []
                 kwargs = kwargs or {}
                 obj = {'uuid': task_id, 'args': args, 'kwargs': kwargs, 'task': cls.name, 'time_pub': time.time()}
+
+                if delay is not None:
+                    obj['delay'] = delay
+
                 # TODO: callback to add other things, guid in case of AWX
                 if bind_kwargs:
                     obj['bind_kwargs'] = bind_kwargs
@@ -85,13 +89,13 @@ class task:
                 return obj
 
             @classmethod
-            def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
+            def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, delay=None, **kw):
                 queue = queue or getattr(cls.queue, 'im_func', cls.queue)
                 if not queue:
                     msg = f'{cls.name}: Queue value required and may not be None'
                     logger.error(msg)
                     raise ValueError(msg)
-                obj = cls.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
+                obj = cls.get_async_body(args=args, kwargs=kwargs, uuid=uuid, delay=delay, **kw)
                 if callable(queue):
                     queue = queue()
                 # TODO: before sending, consult an app-specific callback if configured

@@ -29,7 +29,7 @@ class BrokeredProducer:
 
         async for channel, payload in aprocess_notify(self.connection, self.channels):
             logger.info(f"Received message from channel '{channel}': {payload}")
-            await dispatcher.process_message(payload)
+            await dispatcher.process_message(payload, broker=self)
 
     async def shutdown(self):
         if self.production_task:
