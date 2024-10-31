@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 import json
+from types import SimpleNamespace
 
 from dispatcher.pool import WorkerPool
 from dispatcher.producers.brokered import BrokeredProducer
@@ -13,13 +14,14 @@ logger = logging.getLogger(__name__)
 def task_filter_match(pool_task, msg_data):
     filterables = ('task', 'args', 'kwargs', 'uuid')
     for key in filterables:
-        if key in msg_data:
-            if pool_task.get(key, None) != msg_data[key]:
+        expected_value = msg_data.get(key)
+        if expected_value:
+            if pool_task.get(key, None) != expected_value:
                 return False
     return True
 
 
-def _find_tasks(dispatcher, cancel=False, **data):
+async def _find_tasks(dispatcher, cancel=False, **data):
     "Utility method used for both running and cancel control methods"
     ret = []
     for worker in dispatcher.pool.workers.values():
@@ -35,20 +37,33 @@ def _find_tasks(dispatcher, cancel=False, **data):
                 logger.warning(f'Canceling task in pool queue: {message}')
                 dispatcher.pool.queued_messages.remove(message)
             ret.append((None, message))
+    for capsule in dispatcher.delayed_messages.copy():
+        if task_filter_match(capsule.message, data):
+            if cancel:
+                logger.warning(f'Canceling delayed task (uuid={capsule.uuid})')
+                capsule.task.cancel()
+                try:
+                    await capsule.task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.error(f'Error canceling delayed task (uuid={capsule.uuid})')
+                dispatcher.delayed_messages.remove(capsule)
+            ret.append(('<delayed>', capsule.message))
     return ret
 
 
 class ControlTasks:
     # TODO: hold pool management lock for these things
-    def running(self, dispatcher, **data):
+    async def running(self, dispatcher, **data):
         # TODO: include delayed tasks in results
-        return _find_tasks(dispatcher, **data)
+        return await _find_tasks(dispatcher, **data)
 
-    def cancel(self, dispatcher, **data):
+    async def cancel(self, dispatcher, **data):
         # TODO: include delayed tasks in results
-        return _find_tasks(dispatcher, cancel=True, **data)
+        return await _find_tasks(dispatcher, cancel=True, **data)
 
-    def alive(self, dispatcher, **data):
+    async def alive(self, dispatcher, **data):
         return
 
 
@@ -58,6 +73,8 @@ class DispatcherMain:
         num_workers = 3
         self.pool = WorkerPool(num_workers)
         self.delayed_messages = []
+        self.received_count = 0
+        self.ctl_tasks = ControlTasks()
 
         # Initialize all the producers, this should not start anything, just establishes objects
         self.producers = []
@@ -90,14 +107,14 @@ class DispatcherMain:
                 logger.exception('Producer task had error')
         if self.delayed_messages:
             logger.debug('Shutting down delayed messages')
-            for delayed_task in self.delayed_messages:
-                delayed_task.cancel()
+            for capsule in self.delayed_messages:
+                capsule.task.cancel()
                 try:
-                    await delayed_task
+                    await capsule.task
                 except asyncio.CancelledError:
-                    logger.debug(f'Successfully canceled delayed task {delayed_task}')
+                    logger.info(f'Canceled delayed task (uuid={capsule.uuid}) for shutdown')
                 except Exception:
-                    logger.exception(f'Error shutting down delayed task {delayed_task}')
+                    logger.exception(f'Error shutting down delayed task (uuid={capsule.uuid})')
             self.delayed_messages = []
 
         logger.debug('Gracefully shutting down worker pool')
@@ -109,18 +126,31 @@ class DispatcherMain:
         logger.debug('Setting event to exit main loop')
         self.exit_event.set()
 
-    async def delay_message(self, message, delay):
-        logger.info(f'Delaying {delay} s before running task: {message}')
-        await asyncio.sleep(delay)
-        logger.debug(f'Wakeup for delayed task: {message}')
-        await self.process_message(message, allow_delay=False)
-        task = asyncio.current_task()
-        if task in self.delayed_messages:
-            self.delayed_messages.remove(task)
-            logger.info(f'fully processed delayed task {message}')
+    async def sleep_then_process(self, capsule):
+        logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')
+        await asyncio.sleep(capsule.delay)
+        logger.debug(f'Wakeup for delayed task: {capsule.message}')
+        await self.process_message_internal(capsule.message)
+        if capsule in self.delayed_messages:
+            self.delayed_messages.remove(capsule)
+            logger.info(f'fully processed delayed task (uuid={capsule.uuid})')
 
-    async def process_message(self, payload, allow_delay=True, broker=None):
-        # TODO: handle this more elegantly, or tell clients not to do this
+    def create_delayed_task(self, message):
+        "Called as alternative to sending to worker now, send to worker later"
+        # capsule, as in, time capsule
+        capsule = SimpleNamespace(
+            uuid=message['uuid'],
+            delay=message['delay'],
+            message=message,
+            task=None
+        )
+        new_task = asyncio.create_task(self.sleep_then_process(capsule))
+        capsule.task = new_task
+        self.delayed_messages.append(capsule)
+
+    async def process_message(self, payload, broker=None):
+        # Convert payload from client into python dict
+        # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
             try:
                 message = json.loads(payload)
@@ -132,22 +162,31 @@ class DispatcherMain:
             logger.error(f'Received unprocessable type {type(payload)}')
             return
 
-        if allow_delay and 'delay' in message:
-            self.delayed_messages.append(asyncio.create_task(self.delay_message(message, message['delay'])))
-            return
+        # A client may provide a task uuid (hope they do it correctly), if not add it
+        if 'uuid' not in message:
+            message['uuid'] = f'internal-{self.received_count}'
+        self.received_count += 1
 
+        if 'delay' in message:
+            # NOTE: control messages with reply should never be delayed, document this for users
+            self.create_delayed_task(message)
+        else:
+            await self.process_message_internal(message, broker=broker)
+
+    async def process_message_internal(self, message, broker=None):
         if 'control' in message:
-            logger.info(f'Processing control message in main {message}')
-            ctl_tasks = ControlTasks()
-            method = getattr(ctl_tasks, message['control'])
-            returned = method(self, **message)
-            logger.info(f'Prepared reply data {returned}, sending via worker')
+            method = getattr(self.ctl_tasks, message['control'])
+            control_data = message.get('control_data', {})
+            returned = await method(self, **control_data)
             if 'reply_to' in message:
+                logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
                 await self.pool.dispatch_task({
                     'task': 'dispatcher.brokers.pg_notify.publish_message',
                     'args': [message['reply_to'], json.dumps(returned)],
                     'kwargs': {'config': broker.config}
                 })
+            else:
+                logger.info(f"Control action {message['control']} returned {returned}, done")
         else:
             await self.pool.dispatch_task(message)
 

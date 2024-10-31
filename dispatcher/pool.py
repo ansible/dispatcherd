@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import multiprocessing
 import os
@@ -26,6 +25,9 @@ class PoolWorker:
     async def stop(self):
         self.status = 'stopping'
         self.message_queue.put("stop")
+        if self.current_task:
+            logger.warning(f'Worker {self.worker_id} is current running task (uuid={self.current_task["uuid"]}), canceling for shutdown')
+            self.cancel()
         self.process.join()
 
     def cancel(self):
@@ -46,7 +48,6 @@ class WorkerPool:
         self.queued_messages = []  # TODO: use deque, invent new kinds of message anxiety and panic
         self.read_results_task = None
         self.shutting_down = False
-        self.received_count = 0
         self.finished_count = 0
         self.shutdown_timeout = 3
         # TODO: worker management lock
@@ -93,7 +94,7 @@ class WorkerPool:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
         logger.info('The finished watcher has returned. Pool is shut down')
 
-    async def dispatch_task_internal(self, message):
+    async def dispatch_task(self, message):
         for candidate_worker in self.workers.values():
             if not candidate_worker.current_task:
                 worker = candidate_worker
@@ -112,13 +113,6 @@ class WorkerPool:
 
         # Go ahead and do the put synchronously, because it is just putting it on the queue
         worker.message_queue.put(message)
-
-    async def dispatch_task(self, message):
-        if 'uuid' not in message:
-            message['uuid'] = f'internal-{self.received_count}'
-        self.received_count += 1
-
-        return await self.dispatch_task_internal(message)
 
     async def process_finished(self, worker, message):
         msg = f"Worker {worker.worker_id} finished task, ct={worker.finished_count}"
@@ -166,4 +160,4 @@ class WorkerPool:
 
             if self.queued_messages and (not self.shutting_down):
                 requeue_message = self.queued_messages.pop()
-                await self.dispatch_task_internal(requeue_message)
+                await self.dispatch_task(requeue_message)

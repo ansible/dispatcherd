@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from dispatcher.brokers.pg_notify import aget_connection, aprocess_notify, publish_message
+from dispatcher.brokers.pg_notify import aget_connection, aprocess_notify
 
 logger = logging.getLogger(__name__)
 

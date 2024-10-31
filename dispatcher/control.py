@@ -28,7 +28,7 @@ class Control(object):
 
     @classmethod
     def generate_reply_queue_name(cls):
-        return f"reply_to_{str(uuid.uuid4()).replace('-','_')}"
+        return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
     def get_connection(self):
         from dispatcher.brokers.pg_notify import get_connection, get_django_connection
@@ -66,7 +66,7 @@ class Control(object):
 
         send_data = {'control': command, 'reply_to': reply_queue}
         if data:
-            send_data.update(data)
+            send_data['control_data'] = data
         self.notify(connection, send_data)
 
         time.sleep(timeout)
