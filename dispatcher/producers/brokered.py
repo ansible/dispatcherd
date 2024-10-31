@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from dispatcher.brokers.pg_notify import aget_connection, aprocess_notify
+from dispatcher.brokers.pg_notify import aget_connection, aprocess_notify, publish_message
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +27,9 @@ class BrokeredProducer:
     async def produce_forever(self, dispatcher):
         await self.connect()
 
-        async for channel, payload, cursor in aprocess_notify(self.connection, self.channels):
+        async for channel, payload in aprocess_notify(self.connection, self.channels):
             logger.info(f"Received message from channel '{channel}': {payload}")
-            reply = await dispatcher.process_message(payload)
-            if reply and 'reply_to' in reply:
-                logger.info(f'Sending result {reply["result"]} control reply to channel {reply["reply_to"]}')
-                await cursor.execute('SELECT pg_notify(%s, %s);', (reply['reply_to'], reply['result']))
+            await dispatcher.process_message(payload)
 
     async def shutdown(self):
         if self.production_task:
