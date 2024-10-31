@@ -21,7 +21,7 @@ class ScheduledProducer:
         logger.info(f"Starting task runner for {task_name} with interval {per_seconds} seconds")
         while True:
             await asyncio.sleep(per_seconds)
-            logger.info(f"Sending scheduled task to worker: {task_name}")
+            logger.debug(f"Produced scheduled task: {task_name}")
             await dispatcher.process_message(task_name)
 
     async def shutdown(self):

@@ -40,16 +40,19 @@ async def main():
     print('writing 15 messages fast')
     for i in range(15):
         publish_message('test_channel', f'lambda: {i}', config={'conninfo': CONNECTION_STRING})
+
     print('')
-    print('writing a control message')
-
+    print('performing a task cancel')
     # submit a task we will "find" two different ways
-    publish_message(channel, json.dumps({'task': 'lambda: 4', 'uuid': 'foobar'}), config={'conninfo': CONNECTION_STRING})
-
+    publish_message(channel, json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar'}), config={'conninfo': CONNECTION_STRING})
     ctl = Control('test_channel', config={'conninfo': CONNECTION_STRING})
-    # running_data = ctl.control_with_reply('running', data={'task': 'lambda: 4'})
-    # print(json.dumps(running_data, indent=2))
-    running_data = ctl.control_with_reply('cancel', data={'uuid': 'foobar'})
+    canceled_jobs = ctl.control_with_reply('cancel', data={'uuid': 'foobar'})
+    print(json.dumps(canceled_jobs, indent=2))
+
+    print('')
+    print('finding a running task by its task name')
+    publish_message(channel, json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar2'}), config={'conninfo': CONNECTION_STRING})
+    running_data = ctl.control_with_reply('running', data={'task': 'lambda: __import__("time").sleep(3.1415)'})
     print(json.dumps(running_data, indent=2))
 
     print('writing a message with a delay')

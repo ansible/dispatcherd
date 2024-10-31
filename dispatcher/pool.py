@@ -104,7 +104,8 @@ class WorkerPool:
             self.queued_messages.append(message)
             return
 
-        logging.debug(f"Dispatching task to worker {worker.process.pid}: {message}")
+        uuid = message.get("uuid", "<unknown>")
+        logging.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
 
         # Put the message in the selected worker's queue, NOTE: this marks the worker as busy
         worker.current_task = message
@@ -120,8 +121,11 @@ class WorkerPool:
         return await self.dispatch_task_internal(message)
 
     async def process_finished(self, worker, message):
-        result = message["result"]
-        logger.debug(f"Task completed by worker {worker.worker_id}: {result}")
+        msg = f"Worker {worker.worker_id} finished task, ct={worker.finished_count}"
+        if message.get("result"):
+            result = message["result"]
+            msg += f", result: {result}"
+        logger.debug(msg)
 
         # Mark the worker as no longer busy
         worker.mark_finished_task()
