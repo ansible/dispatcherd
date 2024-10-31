@@ -48,6 +48,9 @@ class ControlTasks:
         # TODO: include delayed tasks in results
         return _find_tasks(dispatcher, cancel=True, **data)
 
+    def alive(self, dispatcher, **data):
+        return
+
 
 class DispatcherMain:
     def __init__(self, config):
@@ -138,11 +141,12 @@ class DispatcherMain:
             ctl_tasks = ControlTasks()
             method = getattr(ctl_tasks, message['control'])
             returned = method(self, **message)
-            return_info = {'result': json.dumps(returned)}
-            logger.info(f'Prepared reply data {return_info["result"]}')
+            logger.info(f'Prepared reply data {returned}, sending via worker')
             if 'reply_to' in message:
-                return_info['reply_to'] = message['reply_to']
-            return return_info
+                await self.pool.dispatch_task({
+                    'task': 'dispatcher.brokers.pg_notify.publish_message',
+                    'args': [message['reply_to'], json.dumps(returned)]
+                })
         else:
             await self.pool.dispatch_task(message)
 
