@@ -119,7 +119,7 @@ class DispatcherMain:
             self.delayed_messages.remove(task)
             logger.info(f'fully processed delayed task {message}')
 
-    async def process_message(self, payload, allow_delay=True):
+    async def process_message(self, payload, allow_delay=True, broker=None):
         # TODO: handle this more elegantly, or tell clients not to do this
         if isinstance(payload, str):
             try:
@@ -145,7 +145,8 @@ class DispatcherMain:
             if 'reply_to' in message:
                 await self.pool.dispatch_task({
                     'task': 'dispatcher.brokers.pg_notify.publish_message',
-                    'args': [message['reply_to'], json.dumps(returned)]
+                    'args': [message['reply_to'], json.dumps(returned)],
+                    'kwargs': {'config': broker.config}
                 })
         else:
             await self.pool.dispatch_task(message)
