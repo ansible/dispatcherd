@@ -16,11 +16,18 @@ logger = logging.getLogger(__name__)
 """This module contains code ran by the worker subprocess"""
 
 
+class DispatcherCancel(Exception):
+    pass
+
+
 class WorkerSignalHandler:
     def __init__(self):
         self.kill_now = False
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, self.task_cancel)
         signal.signal(signal.SIGINT, self.exit_gracefully)
+
+    def task_cancel(self, *args, **kwargs):
+        raise DispatcherCancel
 
     def exit_gracefully(self, *args, **kwargs):
         logger.info('Received worker process exit signal')
@@ -75,7 +82,7 @@ class TaskWorker:
             _call = _call().run
 
         # don't print kwargs, they often contain launch-time secrets
-        logger.debug(f'task {self.get_uuid(message)} starting {task}(*{args}) on worker {self.worker_id}')
+        logger.debug(f'task (uuid={self.get_uuid(message)}) starting {task}(*{args}) on worker {self.worker_id}')
 
         return _call(*args, **kwargs)
 
@@ -104,6 +111,8 @@ class TaskWorker:
         result = None
         try:
             result = self.run_callable(message)
+        except DispatcherCancel:
+            logger.warning(f'Worker task canceled (uuid={self.get_uuid(message)})')
         except Exception as exc:
             result = exc
 
@@ -140,8 +149,16 @@ class TaskWorker:
     # these were used for the consumer classes, but not the worker classes
 
     # TODO: new WorkerTaskCall class to track timings and such
-    def get_finished_message(self, result, message, time_started):
+    def get_finished_message(self, raw_result, message, time_started):
         """I finished the task in message, giving result. This is what I send back to traffic control."""
+        result = None
+        if type(raw_result) in (type(None), list, dict):
+            result = raw_result
+        elif isinstance(raw_result, Exception):
+            pass  # already logged when task errors
+        else:
+            logger.info(f'Discarding task (uuid={self.get_uuid(message)}) result of non-serializable type {type(raw_result)}')
+
         return {
             "worker": self.worker_id,
             "event": "done",
@@ -196,8 +213,6 @@ def work_loop(worker_id, queue, finished_queue):
                 logger.error(f'Worker {worker.worker_id} could not process message {message}, error: {str(e)}')
                 break
 
-        logger.info(f'message to perform_work on {message}')
-        logger.info(f'the type {type(message)}')
         time_started = time.time()
         result = worker.perform_work(message)
 
