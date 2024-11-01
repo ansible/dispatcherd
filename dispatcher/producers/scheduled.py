@@ -37,5 +37,5 @@ class ScheduledProducer:
         except Exception:
             # traceback logged in fatal callback
             if not hasattr(task, '_dispatcher_tb_logged'):
-                logger.exception(f'Pool shutdown saw an unexpected exception from results task')
+                logger.exception('Pool shutdown saw an unexpected exception from results task')
         self.scheduled_tasks = []

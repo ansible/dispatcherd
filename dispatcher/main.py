@@ -104,16 +104,18 @@ class DispatcherMain:
 
         self.exit_event.set()
 
+    def receive_signal(self, sig=None):
+        if sig:
+            logging.warning(f"Received exit signal {sig.name}...")
+        self.exit_event.set()
+
     async def connect_signals(self):
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown(sig)))
+            loop.add_signal_handler(sig, self.receive_signal)
 
-    async def shutdown(self, sig=None):
+    async def shutdown(self):
         self.shutting_down = True
-        if sig:
-            logging.info(f"Received exit signal {sig.name}...")
-
         logging.debug("Shutting down, starting with producers.")
         for producer in self.producers:
             try:
@@ -222,8 +224,6 @@ class DispatcherMain:
         logger.info('Dispatcher running forever, or until shutdown command')
         await self.exit_event.wait()
 
-        # If an error happened, we have to trigger event
-        if not self.shutting_down:
-            await self.shutdown()
+        await self.shutdown()
 
         logger.debug('Dispatcher loop fully completed')

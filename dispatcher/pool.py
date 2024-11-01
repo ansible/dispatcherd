@@ -96,7 +96,7 @@ class WorkerPool:
             except Exception:
                 # traceback logged in fatal callback
                 if not hasattr(self.read_results_task, '_dispatcher_tb_logged'):
-                    logger.exception(f'Pool shutdown saw an unexpected exception from results task')
+                    logger.exception('Pool shutdown saw an unexpected exception from results task')
         logger.info('The finished watcher has returned. Pool is shut down')
 
     async def dispatch_task(self, message):
