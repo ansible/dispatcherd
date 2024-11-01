@@ -52,9 +52,10 @@ class WorkerPool:
         self.shutdown_timeout = 3
         # TODO: worker management lock
 
-    async def start_working(self):
+    async def start_working(self, dispatcher):
         self._spawn_workers()
         self.read_results_task = asyncio.create_task(self.read_results_forever())
+        self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
 
     def _spawn_workers(self):
         for i in range(self.num_workers):
@@ -92,6 +93,10 @@ class WorkerPool:
                 await self.force_shutdown()
             except asyncio.CancelledError:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
+            except Exception:
+                # traceback logged in fatal callback
+                if not hasattr(self.read_results_task, '_dispatcher_tb_logged'):
+                    logger.exception(f'Pool shutdown saw an unexpected exception from results task')
         logger.info('The finished watcher has returned. Pool is shut down')
 
     async def dispatch_task(self, message):
@@ -129,8 +134,7 @@ class WorkerPool:
         """Perpetual task that continuously waits for task completions."""
         loop = asyncio.get_event_loop()
         while True:
-            # Wait for a result from the finished queue (blocking)
-            # worker_id, finished_message
+            # Wait for a result from the finished queue
             message = await loop.run_in_executor(None, self.finished_queue.get)
             worker_id = message["worker"]
             event = message["event"]

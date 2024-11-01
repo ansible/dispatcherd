@@ -12,7 +12,9 @@ class ScheduledProducer:
     async def start_producing(self, dispatcher):
         for task_name, options in self.task_schedule.items():
             per_seconds = options['schedule'].total_seconds()
-            self.scheduled_tasks.append(asyncio.create_task(self.run_schedule_forever(task_name, per_seconds, dispatcher)))
+            schedule_task = asyncio.create_task(self.run_schedule_forever(task_name, per_seconds, dispatcher))
+            self.scheduled_tasks.append(schedule_task)
+            schedule_task.add_done_callback(dispatcher.fatal_error_callback)
 
     def all_tasks(self):
         return self.scheduled_tasks
@@ -28,5 +30,12 @@ class ScheduledProducer:
         logger.info('Stopping scheduled tasks')
         for task in self.scheduled_tasks:
             task.cancel()
-        await asyncio.gather(*self.scheduled_tasks, return_exceptions=True)
+        try:
+            await asyncio.gather(*self.scheduled_tasks, return_exceptions=False)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            # traceback logged in fatal callback
+            if not hasattr(task, '_dispatcher_tb_logged'):
+                logger.exception(f'Pool shutdown saw an unexpected exception from results task')
         self.scheduled_tasks = []
