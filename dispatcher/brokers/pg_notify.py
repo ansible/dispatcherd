@@ -48,6 +48,14 @@ async def aprocess_notify(connection, channels):
                 yield notify.channel, notify.payload
 
 
+async def apublish_message(connection, channel, payload=None):
+    async with connection.cursor() as cur:
+        if not payload:
+            await cur.execute(f'NOTIFY {channel};')
+        else:
+            await cur.execute(f"NOTIFY {channel}, '{payload}';")
+
+
 def get_django_connection():
     try:
         from django.conf import ImproperlyConfigured

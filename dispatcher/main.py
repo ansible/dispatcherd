@@ -1,7 +1,7 @@
 import asyncio
+import json
 import logging
 import signal
-import json
 from types import SimpleNamespace
 
 from dispatcher.pool import WorkerPool
@@ -155,12 +155,7 @@ class DispatcherMain:
     def create_delayed_task(self, message):
         "Called as alternative to sending to worker now, send to worker later"
         # capsule, as in, time capsule
-        capsule = SimpleNamespace(
-            uuid=message['uuid'],
-            delay=message['delay'],
-            message=message,
-            task=None
-        )
+        capsule = SimpleNamespace(uuid=message['uuid'], delay=message['delay'], message=message, task=None)
         new_task = asyncio.create_task(self.sleep_then_process(capsule))
         capsule.task = new_task
         self.delayed_messages.append(capsule)
@@ -197,11 +192,13 @@ class DispatcherMain:
             returned = await method(self, **control_data)
             if 'reply_to' in message:
                 logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
-                await self.pool.dispatch_task({
-                    'task': 'dispatcher.brokers.pg_notify.publish_message',
-                    'args': [message['reply_to'], json.dumps(returned)],
-                    'kwargs': {'config': broker.config}
-                })
+                await self.pool.dispatch_task(
+                    {
+                        'task': 'dispatcher.brokers.pg_notify.publish_message',
+                        'args': [message['reply_to'], json.dumps(returned)],
+                        'kwargs': {'config': broker.config},
+                    }
+                )
             else:
                 logger.info(f"Control action {message['control']} returned {returned}, done")
         else:

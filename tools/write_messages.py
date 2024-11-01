@@ -1,9 +1,8 @@
 # send_notifications.py
 import json
+import logging
 import os
 import sys
-
-import asyncio
 
 from dispatcher.brokers.pg_notify import publish_message
 from dispatcher.control import Control
@@ -15,8 +14,7 @@ tools_dir = os.path.abspath(
 
 sys.path.append(tools_dir)
 
-from test_methods import sleep_function, print_hello
-
+from test_methods import print_hello, sleep_function
 
 # Database connection details
 CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777"
@@ -29,7 +27,7 @@ TEST_MSGS = [
 ]
 
 
-async def main():
+def main():
     print('writing some basic test messages')
     for channel, message in TEST_MSGS:
         # Send the notification
@@ -74,9 +72,8 @@ async def main():
     print(json.dumps(running_data, indent=2))
 
     print('')
-    print('cancel a delayed tasks')
-    running_data = ctl.control_with_reply('cancel', data={'task': 'test_methods.sleep_function'})
-    print(json.dumps(running_data, indent=2))
+    print('cancel a delayed task with no reply for demonstration')
+    ctl.control('cancel', data={'task': 'test_methods.sleep_function'})  # NOTE: no reply
     print('confirmation that it has been canceled')
     running_data = ctl.control_with_reply('running', data={'task': 'test_methods.sleep_function'})
     print(json.dumps(running_data, indent=2))
@@ -89,4 +86,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    logging.basicConfig(level='ERROR', stream=sys.stdout)
+    main()

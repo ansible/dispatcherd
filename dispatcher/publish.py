@@ -100,6 +100,7 @@ class task:
                     queue = queue()
                 # TODO: before sending, consult an app-specific callback if configured
                 from dispatcher.brokers.pg_notify import publish_message
+
                 # NOTE: the kw will communicate things in the database connection data
                 publish_message(queue, json.dumps(obj), config=config, **kw)
                 return (obj, queue)
