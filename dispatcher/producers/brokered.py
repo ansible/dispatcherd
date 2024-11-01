@@ -12,9 +12,12 @@ class BrokeredProducer:
         self.broker = broker
         self.config = config
         self.channels = channels
+        self.connection = None
 
     async def start_producing(self, dispatcher):
         self.production_task = asyncio.create_task(self.produce_forever(dispatcher))
+        # TODO: implement connection retry logic
+        self.production_task.add_done_callback(dispatcher.fatal_error_callback)
 
     def all_tasks(self):
         if self.production_task:
@@ -38,6 +41,10 @@ class BrokeredProducer:
                 await self.production_task
             except asyncio.CancelledError:
                 logger.info(f'Successfully canceled production from {self.broker}')
+            except Exception:
+                # traceback logged in fatal callback
+                if not hasattr(self.production_task, '_dispatcher_tb_logged'):
+                    logger.exception(f'Broker {self.broker} shutdown saw an unexpected exception from production task')
             self.production_task = None
         if self.connection:
             await self.connection.close()

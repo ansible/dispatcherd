@@ -75,6 +75,7 @@ class DispatcherMain:
         self.delayed_messages = []
         self.received_count = 0
         self.ctl_tasks = ControlTasks()
+        self.shutting_down = False
 
         # Initialize all the producers, this should not start anything, just establishes objects
         self.producers = []
@@ -90,15 +91,31 @@ class DispatcherMain:
             if 'scheduled' in producer_config:
                 self.producers.append(ScheduledProducer(producer_config['scheduled']))
 
+    def fatal_error_callback(self, *args):
+        if self.shutting_down:
+            return
+
+        for task in args:
+            try:
+                task.result()
+            except Exception:
+                logger.exception(f'Exception from {task.get_name()}, exit flag set')
+                task._dispatcher_tb_logged = True
+
+        self.exit_event.set()
+
+    def receive_signal(self, sig=None):
+        if sig:
+            logging.warning(f"Received exit signal {sig.name}...")
+        self.exit_event.set()
+
     async def connect_signals(self):
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown(sig)))
+            loop.add_signal_handler(sig, self.receive_signal)
 
-    async def shutdown(self, sig=None):
-        if sig:
-            logging.info(f"Received exit signal {sig.name}...")
-
+    async def shutdown(self):
+        self.shutting_down = True
         logging.debug("Shutting down, starting with producers.")
         for producer in self.producers:
             try:
@@ -192,7 +209,7 @@ class DispatcherMain:
 
     async def start_working(self):
         logger.debug('Filling the worker pool')
-        await self.pool.start_working()
+        await self.pool.start_working(self)
 
         logger.debug('Starting task production')
         for producer in self.producers:
@@ -206,5 +223,7 @@ class DispatcherMain:
 
         logger.info('Dispatcher running forever, or until shutdown command')
         await self.exit_event.wait()
+
+        await self.shutdown()
 
         logger.debug('Dispatcher loop fully completed')
