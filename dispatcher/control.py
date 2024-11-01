@@ -1,18 +1,23 @@
-import logging
-import uuid
+import asyncio
 import json
+import logging
 import time
+import uuid
+
+from dispatcher.producers.brokered import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch')
 
 
 class Control(object):
-    services = ('dispatcher', 'callback_receiver')
-    result = None
-
     def __init__(self, queue, config=None):
         self.queuename = queue
         self.config = config
+        self.received_replies = []
+        self.expected_replies = None
+        self.exit_event = None
+        self.shutting_down = False
+        self.loop = None
 
     def running(self, *args, **kwargs):
         return self.control_with_reply('running', *args, **kwargs)
@@ -23,60 +28,80 @@ class Control(object):
         else:
             self.control({'control': 'cancel', 'task_ids': task_ids, 'reply_to': None}, extra_data={'task_ids': task_ids})
 
-    def schedule(self, *args, **kwargs):
-        return self.control_with_reply('schedule', *args, **kwargs)
-
     @classmethod
     def generate_reply_queue_name(cls):
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
-    def get_connection(self):
-        from dispatcher.brokers.pg_notify import get_connection, get_django_connection
+    def fatal_error_callback(self, *args):
+        if self.shutting_down:
+            return
 
-        if self.config:
-            connection = get_connection(self.config)
-        else:
-            connection = get_django_connection()
+        for task in args:
+            try:
+                task.result()
+            except Exception:
+                logger.exception(f'Exception from {task.get_name()}, exit flag set')
+                task._dispatcher_tb_logged = True
 
-        return connection
+        self.exit_event.set()
 
-    # TODO: implement in broker
-    def notify(self, connection, data):
-        payload = json.dumps(data)
-        connection.execute('SELECT pg_notify(%s, %s);', (self.queuename, payload))
+    async def process_message(self, payload, broker=None):
+        self.received_replies.append(payload)
+        if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
+            self.exit_event.set()
 
-    def control_with_reply(self, command, timeout=1, data=None):
-        logger.warning('checking {} for {}'.format(command, self.queuename))
+    async def acontrol_with_reply(self, producer, send_data, expected_replies, timeout):
+        self.shutting_down = False
+        self.received_replies = []
+
+        self.expected_replies = expected_replies
+        self.exit_event = asyncio.Event()
+        await producer.start_producing(self)
+
+        payload = json.dumps(send_data)
+        await producer.notify(self.queuename, payload)
+
+        try:
+            await asyncio.wait_for(self.exit_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {len(self.received_replies)}')
+
+        self.shutting_down = True
+        await producer.shutdown()
+
+    def control_with_reply(self, command, expected_replies=1, timeout=1, data=None):
+        logger.info('control-and-reply {} to {}'.format(command, self.queuename))
+        start = time.time()
         reply_queue = Control.generate_reply_queue_name()
-        self.result = None
 
-        connection = self.get_connection()
-
-        # if not connection.get_autocommit():
-        #     raise RuntimeError('Control-with-reply messages can only be done in autocommit mode')
-
-        replies = []
-
-        def save_reply(n):
-            replies.append((n.channel, n.payload))
-
-        # TODO: implement in broker... may not support all brokers
-        connection.execute(f"LISTEN {reply_queue}")
-        connection.add_notify_handler(save_reply)
+        if not self.config:
+            raise RuntimeError('Must use a new psycopg connection to do control-and-reply')
 
         send_data = {'control': command, 'reply_to': reply_queue}
         if data:
             send_data['control_data'] = data
-        self.notify(connection, send_data)
 
-        time.sleep(timeout)
+        producer = BrokeredProducer(broker='pg_notify', config=self.config, channels=[reply_queue])
 
-        connection.execute("SELECT 1").fetchone()
+        self.loop = asyncio.new_event_loop()
+        try:
+            self.loop.run_until_complete(self.acontrol_with_reply(producer, send_data, expected_replies, timeout))
+        finally:
+            self.loop.close()
+            self.loop = None
 
-        parsed_replies = [json.loads(payload) for q, payload in replies]
+        parsed_replies = [json.loads(payload) for payload in self.received_replies]
+        logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
 
         return parsed_replies
 
-    def control(self, data):
-        connection = self.get_connection()
-        self.notify(connection, data)
+    # NOTE: this is the synchronous version, only to be used for no-reply
+    def control(self, command, data=None):
+        from dispatcher.brokers.pg_notify import publish_message
+
+        send_data = {'control': command}
+        if data:
+            send_data['control_data'] = data
+
+        payload = json.dumps(send_data)
+        publish_message(self.queuename, payload, config=self.config)
