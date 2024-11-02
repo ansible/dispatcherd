@@ -147,15 +147,15 @@ class DispatcherMain:
         logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')
         await asyncio.sleep(capsule.delay)
         logger.debug(f'Wakeup for delayed task: {capsule.message}')
-        await self.process_message_internal(capsule.message)
+        await self.process_message_internal(capsule.message, capsule.broker)
         if capsule in self.delayed_messages:
             self.delayed_messages.remove(capsule)
             logger.info(f'fully processed delayed task (uuid={capsule.uuid})')
 
-    def create_delayed_task(self, message):
+    def create_delayed_task(self, message, broker):
         "Called as alternative to sending to worker now, send to worker later"
         # capsule, as in, time capsule
-        capsule = SimpleNamespace(uuid=message['uuid'], delay=message['delay'], message=message, task=None)
+        capsule = SimpleNamespace(uuid=message['uuid'], delay=message['delay'], message=message, task=None, broker=broker)
         new_task = asyncio.create_task(self.sleep_then_process(capsule))
         capsule.task = new_task
         self.delayed_messages.append(capsule)
@@ -181,7 +181,7 @@ class DispatcherMain:
 
         if 'delay' in message:
             # NOTE: control messages with reply should never be delayed, document this for users
-            self.create_delayed_task(message)
+            self.create_delayed_task(message, broker)
         else:
             await self.process_message_internal(message, broker=broker)
 
@@ -191,14 +191,8 @@ class DispatcherMain:
             control_data = message.get('control_data', {})
             returned = await method(self, **control_data)
             if 'reply_to' in message:
-                logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
-                await self.pool.dispatch_task(
-                    {
-                        'task': 'dispatcher.brokers.pg_notify.publish_message',
-                        'args': [message['reply_to'], json.dumps(returned)],
-                        'kwargs': {'config': broker.config},
-                    }
-                )
+                logger.info(f"Control action {message['control']} output {returned}, returning")
+                await broker.notify(message['reply_to'], json.dumps(returned))
             else:
                 logger.info(f"Control action {message['control']} returned {returned}, done")
         else:
