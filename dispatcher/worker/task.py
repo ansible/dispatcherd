@@ -58,10 +58,10 @@ class TaskWorker:
     def should_exit(self) -> str:
         """Called before continuing the loop, something suspicious, return True, should exit"""
         if os.getppid() != self.ppid:
-            logger.error('My parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
+            logger.error(f'Worker {self.worker_id}, my parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
             return True
         elif self.signal_handler.kill_now:
-            logger.error('Exiting main loop of worker process due to interupt signal')
+            logger.error(f'Worker {self.worker_id} exiting main loop of worker process due to interupt signal')
             return True
         return False
 
@@ -193,6 +193,9 @@ def work_loop(worker_id, queue, finished_queue):
 
         try:
             message = queue.get()
+        except DispatcherCancel:
+            logger.info(f'Worker {worker_id} a task cancel signal in main loop, ignoring')
+            continue
         except QueueEmpty:
             logger.info(f'Worker {worker_id} Encountered strange QueueEmpty condition')
             continue  # a race condition that mostly can be ignored
@@ -204,13 +207,13 @@ def work_loop(worker_id, queue, finished_queue):
 
             if isinstance(message, str):
                 if message.lower() == "stop":
-                    logger.warning(f"Worker {worker_id} stopping.")
+                    logger.warning(f"Worker id={worker_id} stopping.")
                     break
 
             try:
                 message = json.loads(message)
             except Exception as e:
-                logger.error(f'Worker {worker.worker_id} could not process message {message}, error: {str(e)}')
+                logger.error(f'Worker id={worker_id} could not process message {message}, error: {str(e)}')
                 break
 
         time_started = time.time()
@@ -220,4 +223,4 @@ def work_loop(worker_id, queue, finished_queue):
         finished_queue.put(worker.get_finished_message(result, message, time_started))
 
     finished_queue.put(worker.get_shutdown_message())
-    logger.debug('Informed the pool manager that we have exited')
+    logger.debug(f'Informed the pool manager that we have exited, worker id={worker_id}')

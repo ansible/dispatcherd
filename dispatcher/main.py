@@ -70,8 +70,7 @@ class ControlTasks:
 class DispatcherMain:
     def __init__(self, config):
         self.exit_event = asyncio.Event()
-        num_workers = 3
-        self.pool = WorkerPool(num_workers)
+        self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3))
         self.delayed_messages = []
         self.received_count = 0
         self.ctl_tasks = ControlTasks()
@@ -104,9 +103,8 @@ class DispatcherMain:
 
         self.exit_event.set()
 
-    def receive_signal(self, sig=None):
-        if sig:
-            logging.warning(f"Received exit signal {sig.name}...")
+    def receive_signal(self, *args, **kwargs):
+        logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.exit_event.set()
 
     async def connect_signals(self):
