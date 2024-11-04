@@ -79,6 +79,7 @@ class WorkerPool:
         self.finished_count = 0
         self.shutdown_timeout = 3
         self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
+        self.management_lock = asyncio.Lock()
 
     async def start_working(self, dispatcher):
         self.read_results_task = asyncio.create_task(self.read_results_forever())
@@ -96,7 +97,6 @@ class WorkerPool:
                 if worker.status == 'initialized':
                     logger.debug(f'Starting subprocess for worker {worker.worker_id}')
                     await worker.start()
-                    await self.drain_queue()  # see if there is any waiting work this new worker can handle
 
             await self.management_event.wait()
         logger.debug('Pool worker management task exiting')
@@ -155,26 +155,27 @@ class WorkerPool:
         logger.info('The finished watcher has returned. Pool is shut down')
 
     async def dispatch_task(self, message):
-        uuid = message.get("uuid", "<unknown>")
-        worker = None
-        for candidate_worker in self.workers.values():
-            if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
-                worker = candidate_worker
-                break
+        async with self.management_lock:
+            uuid = message.get("uuid", "<unknown>")
+            worker = None
+            for candidate_worker in self.workers.values():
+                if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
+                    worker = candidate_worker
+                    break
 
-        if not worker or self.shutting_down:
-            # TODO: under certain conditions scale up workers
-            if self.shutting_down:
-                logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
-            else:
-                logger.warning(f'Ran out of workers, queueing task (uuid={uuid}), current ct={len(self.queued_messages)}')
-            self.queued_messages.append(message)
-            return
+            if not worker or self.shutting_down:
+                # TODO: under certain conditions scale up workers
+                if self.shutting_down:
+                    logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
+                else:
+                    logger.warning(f'Ran out of workers, queueing task (uuid={uuid}), current ct={len(self.queued_messages)}')
+                self.queued_messages.append(message)
+                return
 
-        logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+            logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
 
-        # Put the message in the selected worker's queue
-        worker.current_task = message  # NOTE: this marks the worker as busy
+            # Put the message in the selected worker's queue
+            worker.current_task = message  # NOTE: this marks the worker as busy
         worker.message_queue.put(message)
 
     async def drain_queue(self):
@@ -190,8 +191,9 @@ class WorkerPool:
         logger.debug(msg)
 
         # Mark the worker as no longer busy
-        worker.mark_finished_task()
-        self.finished_count += 1
+        async with self.management_lock:
+            worker.mark_finished_task()
+            self.finished_count += 1
 
     async def read_results_forever(self):
         """Perpetual task that continuously waits for task completions."""
@@ -208,8 +210,9 @@ class WorkerPool:
                 await self.drain_queue()
 
             elif event == 'shutdown':
-                worker.status = 'exited'
-                worker.exit_msg_event.set()
+                async with self.management_lock:
+                    worker.status = 'exited'
+                    worker.exit_msg_event.set()
                 if self.shutting_down:
                     if all(worker.status in ['exited', 'error', 'initialized'] for worker in self.workers.values()):
                         logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
@@ -219,8 +222,9 @@ class WorkerPool:
                         logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining: {stats}")
                 else:
                     await worker.join()
-                    del self.workers[worker.worker_id]
-                    self.management_event.set()
+                    async with self.management_lock:
+                        del self.workers[worker.worker_id]
+                        self.management_event.set()
                     logger.debug(f"Worker {worker_id} finished exiting. It will be restarted.")
 
             elif event == 'done':
