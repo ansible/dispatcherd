@@ -36,7 +36,7 @@ def standalone():
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level), stream=sys.stdout)
 
-    logging.debug(f"Configured standard out logging at {args.log_level} level")
+    logger.debug(f"Configured standard out logging at {args.log_level} level")
 
     config = {
         "producers": {"brokers": {"pg_notify": {"conninfo": CONNECTION_STRING}, "channels": CHANNELS}, "scheduled": CELERYBEAT_SCHEDULE},

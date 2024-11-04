@@ -73,6 +73,7 @@ class DispatcherMain:
         self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3))
         self.delayed_messages = []
         self.received_count = 0
+        self.control_count = 0
         self.ctl_tasks = ControlTasks()
         self.shutting_down = False
 
@@ -114,7 +115,7 @@ class DispatcherMain:
 
     async def shutdown(self):
         self.shutting_down = True
-        logging.debug("Shutting down, starting with producers.")
+        logger.debug("Shutting down, starting with producers.")
         for producer in self.producers:
             try:
                 await producer.shutdown()
@@ -190,11 +191,13 @@ class DispatcherMain:
             returned = await method(self, **control_data)
             if 'reply_to' in message:
                 logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
+                self.control_count += 1
                 await self.pool.dispatch_task(
                     {
-                        'task': 'dispatcher.brokers.pg_notify.publish_message',
+                        'task': f'dispatcher.brokers.{broker.broker}.publish_message',
                         'args': [message['reply_to'], json.dumps(returned)],
-                        'kwargs': {'config': broker.config},
+                        'kwargs': {'config': broker.config, 'new_connection': True},
+                        'uuid': f'control-{self.control_count}'
                     }
                 )
             else:
@@ -220,5 +223,16 @@ class DispatcherMain:
         await self.exit_event.wait()
 
         await self.shutdown()
+
+        for task in asyncio.all_tasks():
+            if task == asyncio.current_task():
+                continue
+            if not task.done():
+                logger.warning(f'Task {task} did not shut down in shutdown process')
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         logger.debug('Dispatcher loop fully completed')

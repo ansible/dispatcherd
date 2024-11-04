@@ -17,27 +17,49 @@ class PoolWorker:
         self.current_task = None
         self.finished_count = 0
         self.status = 'initialized'
+        self.exit_msg_event = asyncio.Event()
 
     async def start(self):
         self.status = 'spawned'
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.process.start)
+        self.process.start()
+        logger.debug(f'Worker {self.worker_id} pid={self.process.pid} subprocess has spawned')
         self.status = 'starting'  # Not ready until it sends callback message
 
+    async def join(self):
+        logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
+        self.process.join()
+
     async def stop(self):
-        self.status = 'stopping'
         self.message_queue.put("stop")
         if self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
             logger.warning(f'Worker {self.worker_id} is currently running task (uuid={uuid}), canceling for shutdown')
             self.cancel()
-        self.process.join()
-        logger.debug(f'Worker {self.worker_id} pid={self.process.pid} exited code={self.process.exitcode}')
-        self.status = 'initialized'
+
+        try:
+            await asyncio.wait_for(self.exit_msg_event.wait(), timeout=3)
+            self.exit_msg_event.clear()
+            self.process.join(3)  # argument is timeout
+        except asyncio.TimeoutError:
+            logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
+            self.status = 'error'
+
+        for i in range(3):
+            if self.process.is_alive():
+                logger.error(f'Worker {self.worker_id} pid={self.process.pid} is still alive after SIGKILL, try {i}')
+                await asyncio.sleep(1)
+                self.process.kill()
+            else:
+                logger.debug(f'Worker {self.worker_id} pid={self.process.pid} exited code={self.process.exitcode}')
+                self.status = 'initialized'
+                return
+
+        logger.critical(f'Worker {self.worker_id} pid={self.process.pid} failed to exit after SIGKILL')
+        self.status = 'error'
+        return
 
     def cancel(self):
-        # SIGTERM
-        self.process.terminate()
+        self.process.terminate()  # SIGTERM
 
     def mark_finished_task(self):
         self.current_task = None
@@ -56,47 +78,37 @@ class WorkerPool:
         self.shutting_down = False
         self.finished_count = 0
         self.shutdown_timeout = 3
+        self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
 
     async def start_working(self, dispatcher):
-        await self._spawn_workers()
         self.read_results_task = asyncio.create_task(self.read_results_forever())
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
+        self.management_task = asyncio.create_task(self.manage_workers())
+        self.management_task.add_done_callback(dispatcher.fatal_error_callback)
 
-    async def worker_start(self, worker):
-        "Wraps worker start method just so we can set pool variables as result"
-        logger.debug(f'Starting subprocess for worker {worker.worker_id}')
-        await worker.start()
-        self.start_worker_task = None  # de-reference myself
-        # if we bursted a whole bunch of pool.up(), like for startup, we may need to do more work
-        await self.start_next_worker()
-        await self.drain_queue()  # see if there is any waiting work this new worker can handle
+    async def manage_workers(self):
+        """Enforces worker policy like min and max workers, and later, auto scale-down"""
+        while not self.shutting_down:
+            while len(self.workers) < self.num_workers:
+                await self.up()
 
-    async def start_next_worker(self):
-        """If a worker is initialized but does not have a process started, start a task to do so
+            for worker in self.workers.values():
+                if worker.status == 'initialized':
+                    logger.debug(f'Starting subprocess for worker {worker.worker_id}')
+                    await worker.start()
+                    await self.drain_queue()  # see if there is any waiting work this new worker can handle
 
-        The reason for this as opposed to just... starting the workers,
-        is so we do not block the main process
-        this should be an idepotent method which may be called in many hooks"""
-        if self.start_worker_task:
-            return  # do not be starting up more than 1 worker at a time
-        for worker in self.workers.values():
-            if worker.status == 'initialized':
-                self.start_worker_task = asyncio.create_task(self.worker_start(worker))
-                return
+            await self.management_event.wait()
+        logger.debug('Pool worker management task exiting')
 
     async def up(self):
         worker = PoolWorker(worker_id=self.next_worker_id, finished_queue=self.finished_queue)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1
-        await self.start_next_worker()
-
-    async def _spawn_workers(self):
-        while len(self.workers) < self.num_workers:
-            await self.up()
 
     async def stop_workers(self):
-        for worker in self.workers.values():
-            await worker.stop()
+        stop_tasks = [worker.stop() for worker in self.workers.values()]
+        await asyncio.gather(*stop_tasks)
 
     async def force_shutdown(self):
         for worker in self.workers.values():
@@ -113,6 +125,7 @@ class WorkerPool:
 
     async def shutdown(self):
         self.shutting_down = True
+        self.management_event.set()
         await self.stop_workers()
 
         if self.read_results_task:
@@ -133,7 +146,9 @@ class WorkerPool:
             logger.info('Canceling worker spawn task')
             self.start_worker_task.cancel()
             try:
-                await self.start_worker_task
+                await asyncio.wait_for(self.start_worker_task, timeout=self.shutdown_timeout)
+            except asyncio.TimeoutError:
+                logger.error('The scaleup task failed to shut down')
             except asyncio.CancelledError:
                 pass  # intended
 
@@ -156,7 +171,7 @@ class WorkerPool:
             self.queued_messages.append(message)
             return
 
-        logging.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+        logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
 
         # Put the message in the selected worker's queue
         worker.current_task = message  # NOTE: this marks the worker as busy
@@ -193,20 +208,20 @@ class WorkerPool:
                 await self.drain_queue()
 
             elif event == 'shutdown':
-                # TODO: remove worker from worker list... but we do not have autoscale pool yet so need that
                 worker.status = 'exited'
+                worker.exit_msg_event.set()
                 if self.shutting_down:
-                    if all(worker.status == 'exited' for worker in self.workers.values()):
-                        logger.debug(f"Worker {worker_id} exited and that is all, exiting finished monitoring.")
-                        break
+                    if all(worker.status in ['exited', 'error', 'initialized'] for worker in self.workers.values()):
+                        logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
+                        return
                     else:
-                        logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down.")
-                elif not self.workers:
-                    logger.info('All workers exited, exiting results thread out of abundance of caution')
-                    break
+                        stats = [worker.status for worker in self.workers.values()]
+                        logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining: {stats}")
                 else:
-                    logger.debug(f"Worker {worker_id} finished exiting. The rest of this is not yet coded.")
-                    continue
+                    await worker.join()
+                    del self.workers[worker.worker_id]
+                    self.management_event.set()
+                    logger.debug(f"Worker {worker_id} finished exiting. It will be restarted.")
 
             elif event == 'done':
                 await self.process_finished(worker, message)
