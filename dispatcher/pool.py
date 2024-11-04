@@ -67,7 +67,7 @@ class PoolWorker:
 
 
 class WorkerPool:
-    def __init__(self, num_workers):
+    def __init__(self, num_workers, fd_lock=None):
         self.num_workers = num_workers
         self.workers = {}
         self.next_worker_id = 0
@@ -80,6 +80,7 @@ class WorkerPool:
         self.shutdown_timeout = 3
         self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
         self.management_lock = asyncio.Lock()
+        self.fd_lock = fd_lock or asyncio.Lock()
 
     async def start_working(self, dispatcher):
         self.read_results_task = asyncio.create_task(self.read_results_forever())
@@ -96,7 +97,8 @@ class WorkerPool:
             for worker in self.workers.values():
                 if worker.status == 'initialized':
                     logger.debug(f'Starting subprocess for worker {worker.worker_id}')
-                    await worker.start()
+                    async with self.fd_lock:  # never fork while connecting
+                        await worker.start()
 
             await self.management_event.wait()
         logger.debug('Pool worker management task exiting')

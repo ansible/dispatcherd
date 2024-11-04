@@ -70,12 +70,15 @@ class ControlTasks:
 class DispatcherMain:
     def __init__(self, config):
         self.exit_event = asyncio.Event()
-        self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3))
         self.delayed_messages = []
         self.received_count = 0
         self.control_count = 0
         self.ctl_tasks = ControlTasks()
         self.shutting_down = False
+        # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
+        # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
+        self.fd_lock = asyncio.Lock()
+        self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3), self.fd_lock)
 
         # Initialize all the producers, this should not start anything, just establishes objects
         self.producers = []
@@ -210,8 +213,9 @@ class DispatcherMain:
         await self.pool.start_working(self)
 
         logger.debug('Starting task production')
-        for producer in self.producers:
-            await producer.start_producing(self)
+        async with self.fd_lock:  # lots of connecting going on here
+            for producer in self.producers:
+                await producer.start_producing(self)
 
     async def main(self):
         logger.info('Connecting dispatcher signal handling')
