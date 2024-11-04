@@ -18,6 +18,7 @@ class PoolWorker:
         self.finished_count = 0
         self.status = 'initialized'
         self.exit_msg_event = asyncio.Event()
+        self.active_cancel = False
 
     async def start(self):
         self.status = 'spawned'
@@ -59,11 +60,18 @@ class PoolWorker:
         return
 
     def cancel(self):
+        self.active_cancel = True  # signal for result callback
         self.process.terminate()  # SIGTERM
 
     def mark_finished_task(self):
+        self.active_cancel = False
         self.current_task = None
         self.finished_count += 1
+
+    @property
+    def inactive(self):
+        "Return True if no further shutdown or callback messages are expected from this worker"
+        return self.status in ['exited', 'error', 'initialized']
 
 
 class WorkerPool:
@@ -159,7 +167,7 @@ class WorkerPool:
             uuids = [message.get('uuid', '<unknown>') for message in self.queued_messages]
             logger.error(f'Dispatcher shut down with queued work, uuids: {uuids}')
 
-        logger.info('The finished watcher has returned. Pool is shut down')
+        logger.info('Pool is shut down')
 
     async def dispatch_task(self, message):
         async with self.management_lock:
@@ -195,7 +203,12 @@ class WorkerPool:
         msg = f"Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}"
         if message.get("result"):
             result = message["result"]
-            msg += f", result: {result}"
+            if worker.active_cancel:
+                msg += ', expected cancel'
+            if result == '<cancel>':
+                msg += ', canceled'
+            else:
+                msg += f", result: {result}"
         logger.debug(msg)
 
         # Mark the worker as no longer busy
@@ -232,7 +245,7 @@ class WorkerPool:
                     worker.status = 'exited'
                     worker.exit_msg_event.set()
                 if self.shutting_down:
-                    if all(worker.status in ['exited', 'error', 'initialized'] for worker in self.workers.values()):
+                    if all(worker.inactive for worker in self.workers.values()):
                         logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
                         return
                     else:

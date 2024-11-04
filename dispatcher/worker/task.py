@@ -84,7 +84,12 @@ class TaskWorker:
         # don't print kwargs, they often contain launch-time secrets
         logger.debug(f'task (uuid={self.get_uuid(message)}) starting {task}(*{args}) on worker {self.worker_id}')
 
-        return _call(*args, **kwargs)
+        try:
+            return _call(*args, **kwargs)
+        except DispatcherCancel:
+            # Log exception because this can provide valuable info about where a task was when getting signal
+            logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
+            return '<cancel>'
 
     def perform_work(self, message):
         """
@@ -111,8 +116,6 @@ class TaskWorker:
         result = None
         try:
             result = self.run_callable(message)
-        except DispatcherCancel:
-            logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
         except Exception as exc:
             result = exc
 
@@ -152,7 +155,7 @@ class TaskWorker:
     def get_finished_message(self, raw_result, message, time_started):
         """I finished the task in message, giving result. This is what I send back to traffic control."""
         result = None
-        if type(raw_result) in (type(None), list, dict, int):
+        if type(raw_result) in (type(None), list, dict, int, str):
             result = raw_result
         elif isinstance(raw_result, Exception):
             pass  # already logged when task errors
