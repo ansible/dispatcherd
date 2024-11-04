@@ -43,11 +43,11 @@ class PoolWorker:
             self.process.join(3)  # argument is timeout
         except asyncio.TimeoutError:
             logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
-            self.status = 'error'
+            self.status = 'error'  # can signal for result task to exit, since no longer waiting for it here
 
         for i in range(3):
             if self.process.is_alive():
-                logger.error(f'Worker {self.worker_id} pid={self.process.pid} is still alive after SIGKILL, try {i}')
+                logger.error(f'Worker {self.worker_id} pid={self.process.pid} is still trying SIGKILL, attempt {i}')
                 await asyncio.sleep(1)
                 self.process.kill()
             else:
