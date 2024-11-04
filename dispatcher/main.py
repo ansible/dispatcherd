@@ -200,7 +200,7 @@ class DispatcherMain:
                         'task': f'dispatcher.brokers.{broker.broker}.publish_message',
                         'args': [message['reply_to'], json.dumps(returned)],
                         'kwargs': {'config': broker.config, 'new_connection': True},
-                        'uuid': f'control-{self.control_count}'
+                        'uuid': f'control-{self.control_count}',
                     }
                 )
             else:

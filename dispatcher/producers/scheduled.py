@@ -26,10 +26,7 @@ class ScheduledProducer:
             await asyncio.sleep(per_seconds)
             logger.debug(f"Produced scheduled task: {task_name}")
             self.produced_count += 1
-            await dispatcher.process_message({
-                'task': task_name,
-                'uuid': f'sch-{self.produced_count}'
-            })
+            await dispatcher.process_message({'task': task_name, 'uuid': f'sch-{self.produced_count}'})
 
     async def shutdown(self):
         logger.info('Stopping scheduled tasks')
