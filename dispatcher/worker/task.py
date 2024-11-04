@@ -21,8 +21,9 @@ class DispatcherCancel(Exception):
 
 
 class WorkerSignalHandler:
-    def __init__(self):
+    def __init__(self, worker_id):
         self.kill_now = False
+        self.worker_id = worker_id
         signal.signal(signal.SIGTERM, self.task_cancel)
         signal.signal(signal.SIGINT, self.exit_gracefully)
 
@@ -30,7 +31,7 @@ class WorkerSignalHandler:
         raise DispatcherCancel
 
     def exit_gracefully(self, *args, **kwargs):
-        logger.info('Received worker process exit signal')
+        logger.info(f'Worker {self.worker_id} received worker process exit signal')
         self.kill_now = True
 
 
@@ -53,15 +54,14 @@ class TaskWorker:
         self.worker_id = worker_id
         self.ppid = os.getppid()
         self.pid = os.getpid()
-        self.signal_handler = WorkerSignalHandler()
+        self.signal_handler = WorkerSignalHandler(worker_id)
 
     def should_exit(self) -> str:
         """Called before continuing the loop, something suspicious, return True, should exit"""
         if os.getppid() != self.ppid:
-            logger.error('My parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
+            logger.error(f'Worker {self.worker_id}, my parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
             return True
         elif self.signal_handler.kill_now:
-            logger.error('Exiting main loop of worker process due to interupt signal')
             return True
         return False
 
@@ -84,7 +84,12 @@ class TaskWorker:
         # don't print kwargs, they often contain launch-time secrets
         logger.debug(f'task (uuid={self.get_uuid(message)}) starting {task}(*{args}) on worker {self.worker_id}')
 
-        return _call(*args, **kwargs)
+        try:
+            return _call(*args, **kwargs)
+        except DispatcherCancel:
+            # Log exception because this can provide valuable info about where a task was when getting signal
+            logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
+            return '<cancel>'
 
     def perform_work(self, message):
         """
@@ -111,8 +116,6 @@ class TaskWorker:
         result = None
         try:
             result = self.run_callable(message)
-        except DispatcherCancel:
-            logger.warning(f'Worker task canceled (uuid={self.get_uuid(message)})')
         except Exception as exc:
             result = exc
 
@@ -152,7 +155,7 @@ class TaskWorker:
     def get_finished_message(self, raw_result, message, time_started):
         """I finished the task in message, giving result. This is what I send back to traffic control."""
         result = None
-        if type(raw_result) in (type(None), list, dict):
+        if type(raw_result) in (type(None), list, dict, int, str):
             result = raw_result
         elif isinstance(raw_result, Exception):
             pass  # already logged when task errors
@@ -193,6 +196,9 @@ def work_loop(worker_id, queue, finished_queue):
 
         try:
             message = queue.get()
+        except DispatcherCancel:
+            logger.info(f'Worker {worker_id} a task cancel signal in main loop, ignoring')
+            continue
         except QueueEmpty:
             logger.info(f'Worker {worker_id} Encountered strange QueueEmpty condition')
             continue  # a race condition that mostly can be ignored
@@ -204,13 +210,13 @@ def work_loop(worker_id, queue, finished_queue):
 
             if isinstance(message, str):
                 if message.lower() == "stop":
-                    logger.warning(f"Worker {worker_id} stopping.")
+                    logger.warning(f"Worker {worker_id} exiting main loop due to stop message.")
                     break
 
             try:
                 message = json.loads(message)
             except Exception as e:
-                logger.error(f'Worker {worker.worker_id} could not process message {message}, error: {str(e)}')
+                logger.error(f'Worker {worker_id} could not process message {message}, error: {str(e)}')
                 break
 
         time_started = time.time()
@@ -220,4 +226,4 @@ def work_loop(worker_id, queue, finished_queue):
         finished_queue.put(worker.get_finished_message(result, message, time_started))
 
     finished_queue.put(worker.get_shutdown_message())
-    logger.debug('Informed the pool manager that we have exited')
+    logger.debug(f'Worker {worker_id} informed the pool manager that we have exited')

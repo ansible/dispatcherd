@@ -78,15 +78,17 @@ def publish_message(queue, message, config=None, new_connection=False):
     if not new_connection:
         conn = get_django_connection()
 
+    created_new_conn = False
     if not conn:
         if config is None:
             raise RuntimeError('Could not use Django connection, and no postgres config supplied')
         conn = get_connection(config)
+        created_new_conn = True
 
     with conn.cursor() as cur:
         cur.execute('SELECT pg_notify(%s, %s);', (queue, message))
 
     logger.debug(f'Sent pg_notify message to {queue}')
 
-    if new_connection:
+    if created_new_conn:
         conn.close()

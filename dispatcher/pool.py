@@ -17,56 +17,108 @@ class PoolWorker:
         self.current_task = None
         self.finished_count = 0
         self.status = 'initialized'
+        self.exit_msg_event = asyncio.Event()
+        self.active_cancel = False
 
-    def start(self):
+    async def start(self):
+        self.status = 'spawned'
         self.process.start()
-        self.status = 'starting'
+        logger.debug(f'Worker {self.worker_id} pid={self.process.pid} subprocess has spawned')
+        self.status = 'starting'  # Not ready until it sends callback message
 
-    async def stop(self):
-        self.status = 'stopping'
-        self.message_queue.put("stop")
-        if self.current_task:
-            logger.warning(f'Worker {self.worker_id} is current running task (uuid={self.current_task["uuid"]}), canceling for shutdown')
-            self.cancel()
+    async def join(self):
+        logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join()
 
+    async def stop(self):
+        self.message_queue.put("stop")
+        if self.current_task:
+            uuid = self.current_task.get('uuid', '<unknown>')
+            logger.warning(f'Worker {self.worker_id} is currently running task (uuid={uuid}), canceling for shutdown')
+            self.cancel()
+
+        try:
+            await asyncio.wait_for(self.exit_msg_event.wait(), timeout=3)
+            self.exit_msg_event.clear()
+            self.process.join(3)  # argument is timeout
+        except asyncio.TimeoutError:
+            logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
+            self.status = 'error'  # can signal for result task to exit, since no longer waiting for it here
+
+        for i in range(3):
+            if self.process.is_alive():
+                logger.error(f'Worker {self.worker_id} pid={self.process.pid} is still trying SIGKILL, attempt {i}')
+                await asyncio.sleep(1)
+                self.process.kill()
+            else:
+                logger.debug(f'Worker {self.worker_id} pid={self.process.pid} exited code={self.process.exitcode}')
+                self.status = 'initialized'
+                return
+
+        logger.critical(f'Worker {self.worker_id} pid={self.process.pid} failed to exit after SIGKILL')
+        self.status = 'error'
+        return
+
     def cancel(self):
-        # SIGTERM
-        self.process.terminate()
+        self.active_cancel = True  # signal for result callback
+        self.process.terminate()  # SIGTERM
 
     def mark_finished_task(self):
+        self.active_cancel = False
         self.current_task = None
         self.finished_count += 1
 
+    @property
+    def inactive(self):
+        "Return True if no further shutdown or callback messages are expected from this worker"
+        return self.status in ['exited', 'error', 'initialized']
+
 
 class WorkerPool:
-    def __init__(self, num_workers):
+    def __init__(self, num_workers, fd_lock=None):
         self.num_workers = num_workers
         self.workers = {}
         self.next_worker_id = 0
         self.finished_queue = multiprocessing.Queue()
-        self.queued_messages = []  # TODO: use deque, invent new kinds of message anxiety and panic
+        self.queued_messages = []  # TODO: use deque, invent new kinds of logging anxiety
         self.read_results_task = None
+        self.start_worker_task = None
         self.shutting_down = False
         self.finished_count = 0
         self.shutdown_timeout = 3
-        # TODO: worker management lock
+        self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
+        self.management_lock = asyncio.Lock()
+        self.fd_lock = fd_lock or asyncio.Lock()
 
     async def start_working(self, dispatcher):
-        self._spawn_workers()
         self.read_results_task = asyncio.create_task(self.read_results_forever())
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
+        self.management_task = asyncio.create_task(self.manage_workers())
+        self.management_task.add_done_callback(dispatcher.fatal_error_callback)
 
-    def _spawn_workers(self):
-        for i in range(self.num_workers):
-            worker = PoolWorker(worker_id=self.next_worker_id, finished_queue=self.finished_queue)
-            worker.start()
-            self.workers[self.next_worker_id] = worker
-            self.next_worker_id += 1
+    async def manage_workers(self):
+        """Enforces worker policy like min and max workers, and later, auto scale-down"""
+        while not self.shutting_down:
+            while len(self.workers) < self.num_workers:
+                await self.up()
+
+            for worker in self.workers.values():
+                if worker.status == 'initialized':
+                    logger.debug(f'Starting subprocess for worker {worker.worker_id}')
+                    async with self.fd_lock:  # never fork while connecting
+                        await worker.start()
+
+            await self.management_event.wait()
+        logger.debug('Pool worker management task exiting')
+
+    async def up(self):
+        worker = PoolWorker(worker_id=self.next_worker_id, finished_queue=self.finished_queue)
+        self.workers[self.next_worker_id] = worker
+        self.next_worker_id += 1
 
     async def stop_workers(self):
-        for worker in self.workers.values():
-            await worker.stop()
+        stop_tasks = [worker.stop() for worker in self.workers.values()]
+        await asyncio.gather(*stop_tasks)
 
     async def force_shutdown(self):
         for worker in self.workers.values():
@@ -83,7 +135,10 @@ class WorkerPool:
 
     async def shutdown(self):
         self.shutting_down = True
+        self.management_event.set()
         await self.stop_workers()
+        self.finished_queue.put('stop')
+
         if self.read_results_task:
             logger.info('Waiting for the finished watcher to return')
             try:
@@ -97,38 +152,69 @@ class WorkerPool:
                 # traceback logged in fatal callback
                 if not hasattr(self.read_results_task, '_dispatcher_tb_logged'):
                     logger.exception('Pool shutdown saw an unexpected exception from results task')
-        logger.info('The finished watcher has returned. Pool is shut down')
+
+        if self.start_worker_task:
+            logger.info('Canceling worker spawn task')
+            self.start_worker_task.cancel()
+            try:
+                await asyncio.wait_for(self.start_worker_task, timeout=self.shutdown_timeout)
+            except asyncio.TimeoutError:
+                logger.error('The scaleup task failed to shut down')
+            except asyncio.CancelledError:
+                pass  # intended
+
+        if self.queued_messages:
+            uuids = [message.get('uuid', '<unknown>') for message in self.queued_messages]
+            logger.error(f'Dispatcher shut down with queued work, uuids: {uuids}')
+
+        logger.info('Pool is shut down')
 
     async def dispatch_task(self, message):
-        for candidate_worker in self.workers.values():
-            if not candidate_worker.current_task:
-                worker = candidate_worker
-                break
-        else:
-            # TODO: under certain conditions scale up workers
-            logger.warning(f'Ran out of available workers, queueing up next task, current queued {len(self.queued_messages)}')
-            self.queued_messages.append(message)
-            return
+        async with self.management_lock:
+            uuid = message.get("uuid", "<unknown>")
+            worker = None
+            for candidate_worker in self.workers.values():
+                if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
+                    worker = candidate_worker
+                    break
 
-        uuid = message.get("uuid", "<unknown>")
-        logging.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+            if not worker or self.shutting_down:
+                # TODO: under certain conditions scale up workers
+                if self.shutting_down:
+                    logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
+                else:
+                    logger.warning(f'Ran out of workers, queueing task (uuid={uuid}), current ct={len(self.queued_messages)}')
+                self.queued_messages.append(message)
+                return
 
-        # Put the message in the selected worker's queue, NOTE: this marks the worker as busy
-        worker.current_task = message
+            logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
 
-        # Go ahead and do the put synchronously, because it is just putting it on the queue
+            # Put the message in the selected worker's queue
+            worker.current_task = message  # NOTE: this marks the worker as busy
         worker.message_queue.put(message)
 
+    async def drain_queue(self):
+        if self.queued_messages and (not self.shutting_down):
+            requeue_message = self.queued_messages.pop()
+            await self.dispatch_task(requeue_message)
+
     async def process_finished(self, worker, message):
-        msg = f"Worker {worker.worker_id} finished task, ct={worker.finished_count}"
+        uuid = message.get('uuid', '<unknown>')
+        msg = f"Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}"
         if message.get("result"):
             result = message["result"]
-            msg += f", result: {result}"
+            if worker.active_cancel:
+                msg += ', expected cancel'
+            if result == '<cancel>':
+                msg += ', canceled'
+            else:
+                msg += f", result: {result}"
         logger.debug(msg)
 
         # Mark the worker as no longer busy
-        worker.mark_finished_task()
-        self.finished_count += 1
+        async with self.management_lock:
+            worker.mark_finished_task()
+            self.finished_count += 1
 
     async def read_results_forever(self):
         """Perpetual task that continuously waits for task completions."""
@@ -136,32 +222,42 @@ class WorkerPool:
         while True:
             # Wait for a result from the finished queue
             message = await loop.run_in_executor(None, self.finished_queue.get)
+
+            if message == 'stop':
+                if self.shutting_down:
+                    stats = [worker.status for worker in self.workers.values()]
+                    logger.debug(f'Results message got administrative stop message, worker status: {stats}')
+                    return
+                else:
+                    logger.error('Results queue got stop message even through not shutting down')
+                    continue
+
             worker_id = message["worker"]
             event = message["event"]
             worker = self.workers[worker_id]
 
             if event == 'ready':
                 worker.status = 'ready'
+                await self.drain_queue()
 
             elif event == 'shutdown':
-                # TODO: remove worker from worker list... but we do not have autoscale pool yet so need that
-                worker.status = 'exited'
+                async with self.management_lock:
+                    worker.status = 'exited'
+                    worker.exit_msg_event.set()
                 if self.shutting_down:
-                    if all(worker.status == 'exited' for worker in self.workers.values()):
-                        logger.debug(f"Worker {worker_id} exited and that is all, exiting finished monitoring.")
-                        break
+                    if all(worker.inactive for worker in self.workers.values()):
+                        logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
+                        return
                     else:
-                        logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down.")
-                elif not self.workers:
-                    logger.info('All workers exited, exiting results thread out of abundance of caution')
-                    break
+                        stats = [worker.status for worker in self.workers.values()]
+                        logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining: {stats}")
                 else:
-                    logger.debug(f"Worker {worker_id} finished exiting. The rest of this is not yet coded.")
-                    continue
+                    await worker.join()
+                    async with self.management_lock:
+                        del self.workers[worker.worker_id]
+                        self.management_event.set()
+                    logger.debug(f"Worker {worker_id} finished exiting. It will be restarted.")
 
             elif event == 'done':
                 await self.process_finished(worker, message)
-
-            if self.queued_messages and (not self.shutting_down):
-                requeue_message = self.queued_messages.pop()
-                await self.dispatch_task(requeue_message)
+                await self.drain_queue()

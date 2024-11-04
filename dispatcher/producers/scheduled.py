@@ -8,6 +8,7 @@ class ScheduledProducer:
     def __init__(self, task_schedule):
         self.task_schedule = task_schedule
         self.scheduled_tasks = []
+        self.produced_count = 0
 
     async def start_producing(self, dispatcher):
         for task_name, options in self.task_schedule.items():
@@ -24,7 +25,8 @@ class ScheduledProducer:
         while True:
             await asyncio.sleep(per_seconds)
             logger.debug(f"Produced scheduled task: {task_name}")
-            await dispatcher.process_message(task_name)
+            self.produced_count += 1
+            await dispatcher.process_message({'task': task_name, 'uuid': f'sch-{self.produced_count}'})
 
     async def shutdown(self):
         logger.info('Stopping scheduled tasks')

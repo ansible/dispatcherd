@@ -70,12 +70,15 @@ class ControlTasks:
 class DispatcherMain:
     def __init__(self, config):
         self.exit_event = asyncio.Event()
-        num_workers = 3
-        self.pool = WorkerPool(num_workers)
         self.delayed_messages = []
         self.received_count = 0
+        self.control_count = 0
         self.ctl_tasks = ControlTasks()
         self.shutting_down = False
+        # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
+        # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
+        self.fd_lock = asyncio.Lock()
+        self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3), self.fd_lock)
 
         # Initialize all the producers, this should not start anything, just establishes objects
         self.producers = []
@@ -104,9 +107,8 @@ class DispatcherMain:
 
         self.exit_event.set()
 
-    def receive_signal(self, sig=None):
-        if sig:
-            logging.warning(f"Received exit signal {sig.name}...")
+    def receive_signal(self, *args, **kwargs):
+        logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.exit_event.set()
 
     async def connect_signals(self):
@@ -116,7 +118,7 @@ class DispatcherMain:
 
     async def shutdown(self):
         self.shutting_down = True
-        logging.debug("Shutting down, starting with producers.")
+        logger.debug("Shutting down, starting with producers.")
         for producer in self.producers:
             try:
                 await producer.shutdown()
@@ -192,11 +194,13 @@ class DispatcherMain:
             returned = await method(self, **control_data)
             if 'reply_to' in message:
                 logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
+                self.control_count += 1
                 await self.pool.dispatch_task(
                     {
-                        'task': 'dispatcher.brokers.pg_notify.publish_message',
+                        'task': f'dispatcher.brokers.{broker.broker}.publish_message',
                         'args': [message['reply_to'], json.dumps(returned)],
-                        'kwargs': {'config': broker.config},
+                        'kwargs': {'config': broker.config, 'new_connection': True},
+                        'uuid': f'control-{self.control_count}',
                     }
                 )
             else:
@@ -209,8 +213,9 @@ class DispatcherMain:
         await self.pool.start_working(self)
 
         logger.debug('Starting task production')
-        for producer in self.producers:
-            await producer.start_producing(self)
+        async with self.fd_lock:  # lots of connecting going on here
+            for producer in self.producers:
+                await producer.start_producing(self)
 
     async def main(self):
         logger.info('Connecting dispatcher signal handling')
@@ -222,5 +227,16 @@ class DispatcherMain:
         await self.exit_event.wait()
 
         await self.shutdown()
+
+        for task in asyncio.all_tasks():
+            if task == asyncio.current_task():
+                continue
+            if not task.done():
+                logger.warning(f'Task {task} did not shut down in shutdown process')
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         logger.debug('Dispatcher loop fully completed')
