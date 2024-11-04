@@ -112,7 +112,7 @@ class TaskWorker:
         try:
             result = self.run_callable(message)
         except DispatcherCancel:
-            logger.warning(f'Worker id={self.worker_id} task canceled (uuid={self.get_uuid(message)})')
+            logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
         except Exception as exc:
             result = exc
 

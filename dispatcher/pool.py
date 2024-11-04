@@ -127,6 +127,7 @@ class WorkerPool:
         self.shutting_down = True
         self.management_event.set()
         await self.stop_workers()
+        self.finished_queue.put('stop')
 
         if self.read_results_task:
             logger.info('Waiting for the finished watcher to return')
@@ -151,6 +152,10 @@ class WorkerPool:
                 logger.error('The scaleup task failed to shut down')
             except asyncio.CancelledError:
                 pass  # intended
+
+        if self.queued_messages:
+            uuids = [message.get('uuid', '<unknown>') for message in self.queued_messages]
+            logger.error(f'Dispatcher shut down with queued work, uuids: {uuids}')
 
         logger.info('The finished watcher has returned. Pool is shut down')
 
@@ -184,7 +189,8 @@ class WorkerPool:
             await self.dispatch_task(requeue_message)
 
     async def process_finished(self, worker, message):
-        msg = f"Worker {worker.worker_id} finished task, ct={worker.finished_count}"
+        uuid = message.get('uuid', '<unknown>')
+        msg = f"Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}"
         if message.get("result"):
             result = message["result"]
             msg += f", result: {result}"
@@ -201,6 +207,16 @@ class WorkerPool:
         while True:
             # Wait for a result from the finished queue
             message = await loop.run_in_executor(None, self.finished_queue.get)
+
+            if message == 'stop':
+                if self.shutting_down:
+                    stats = [worker.status for worker in self.workers.values()]
+                    logger.debug(f'Results message got administrative stop message, worker status: {stats}')
+                    return
+                else:
+                    logger.error('Results queue got stop message even through not shutting down')
+                    continue
+
             worker_id = message["worker"]
             event = message["event"]
             worker = self.workers[worker_id]
