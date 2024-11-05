@@ -233,11 +233,9 @@ class WorkerPool:
             worker.message_queue.put(message)
 
     async def drain_queue(self):
-        if self.shutting_down:
-            return
         while requeue_message := self.get_unblocked_message():
-            if not self.get_free_worker():
-                break  # no capacity left
+            if (not self.get_free_worker()) or self.shutting_down:
+                return
             self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
 
