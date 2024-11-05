@@ -110,6 +110,7 @@ class WorkerPool:
                         await worker.start()
 
             await self.management_event.wait()
+            self.management_event.clear()
         logger.debug('Pool worker management task exiting')
 
     async def up(self):
