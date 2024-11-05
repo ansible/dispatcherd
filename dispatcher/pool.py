@@ -207,30 +207,26 @@ class WorkerPool:
         async with self.management_lock:
             uuid = message.get("uuid", "<unknown>")
 
-            if self.message_is_blocked(message):
+            if self.should_discard(message):
+                logger.info(f'Discarding task because it is already running: \n{message}')
+                return
+            elif self.shutting_down:
+                logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
+                self.queued_messages.append(message)
+                return
+            elif self.message_is_blocked(message):
                 logger.info(f'Queuing task (uuid={uuid}) because it is already running, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
                 return
-            elif self.should_discard(message):
-                logger.info(f'Discarding task because it is already running: \n{message}')
-                return
 
-            worker = self.get_free_worker()
-
-            if not worker or self.shutting_down:
+            if worker := self.get_free_worker():
+                logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+                worker.current_task = message  # NOTE: this marks the worker as busy
+                worker.message_queue.put(message)
+            else:
                 # TODO: under certain conditions scale up workers
-                if self.shutting_down:
-                    logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
-                else:
-                    logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
+                logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
-                return
-
-            logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
-
-            # Put the message in the selected worker's queue
-            worker.current_task = message  # NOTE: this marks the worker as busy
-            worker.message_queue.put(message)
 
     async def drain_queue(self):
         while requeue_message := self.get_unblocked_message():
