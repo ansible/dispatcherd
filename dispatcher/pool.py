@@ -103,6 +103,9 @@ class WorkerPool:
             while len(self.workers) < self.num_workers:
                 await self.up()
 
+            # TODO: if all workers are busy, queue has unblocked work, below max_workers
+            # scale up 1 more worker in that case
+
             for worker in self.workers.values():
                 if worker.status == 'initialized':
                     logger.debug(f'Starting subprocess for worker {worker.worker_id}')
@@ -225,9 +228,9 @@ class WorkerPool:
                 worker.current_task = message  # NOTE: this marks the worker as busy
                 worker.message_queue.put(message)
             else:
-                # TODO: under certain conditions scale up workers
                 logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
+                self.management_event.set()  # kick manager task to start auto-scale up
 
     async def drain_queue(self):
         while requeue_message := self.get_unblocked_message():
