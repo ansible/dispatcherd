@@ -169,21 +169,59 @@ class WorkerPool:
 
         logger.info('Pool is shut down')
 
+    def get_free_worker(self):
+        for candidate_worker in self.workers.values():
+            if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
+                return candidate_worker
+        return None
+
+    def running_tasks(self, include_queued=True):
+        if include_queued:
+            for message in self.queued_messages:
+                yield message
+        for worker in self.workers.values():
+            if worker.current_task:
+                yield worker.current_task
+
+    def already_running(self, message, include_queued=True):
+        for other_message in self.running_tasks(include_queued=include_queued):
+            keys = ('task', 'args', 'kwargs')
+            if all(other_message.get(key) == message.get(key) for key in keys):
+                return True
+        return False
+
+    def message_is_blocked(self, message):
+        return bool(message.get('on_duplicate') == 'serial' and self.already_running(message, include_queued=False))
+
+    def should_discard(self, message):
+        return bool(message.get('on_duplicate') == 'discard' and self.already_running(message))
+
+    def get_unblocked_message(self):
+        # reversing matches behavior with pop, which comes from end of list
+        for message in reversed(self.queued_messages):
+            if not self.message_is_blocked(message):
+                return message
+
     async def dispatch_task(self, message):
         async with self.management_lock:
             uuid = message.get("uuid", "<unknown>")
-            worker = None
-            for candidate_worker in self.workers.values():
-                if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
-                    worker = candidate_worker
-                    break
+
+            if self.message_is_blocked(message):
+                logger.info(f'Queuing task (uuid={uuid}) because it is already running, queued_ct={len(self.queued_messages)}')
+                self.queued_messages.append(message)
+                return
+            elif self.should_discard(message):
+                logger.info(f'Discarding task because it is already running: \n{message}')
+                return
+
+            worker = self.get_free_worker()
 
             if not worker or self.shutting_down:
                 # TODO: under certain conditions scale up workers
                 if self.shutting_down:
                     logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
                 else:
-                    logger.warning(f'Ran out of workers, queueing task (uuid={uuid}), current ct={len(self.queued_messages)}')
+                    logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
                 return
 
@@ -191,11 +229,15 @@ class WorkerPool:
 
             # Put the message in the selected worker's queue
             worker.current_task = message  # NOTE: this marks the worker as busy
-        worker.message_queue.put(message)
+            worker.message_queue.put(message)
 
     async def drain_queue(self):
-        if self.queued_messages and (not self.shutting_down):
-            requeue_message = self.queued_messages.pop()
+        if self.shutting_down:
+            return
+        while requeue_message := self.get_unblocked_message():
+            if not self.get_free_worker():
+                break  # no capacity left
+            self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
 
     async def process_finished(self, worker, message):

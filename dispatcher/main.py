@@ -162,7 +162,7 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload, broker=None):
+    async def process_message(self, payload, broker=None, channel=None):
         # Convert payload from client into python dict
         # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
@@ -179,6 +179,8 @@ class DispatcherMain:
         # A client may provide a task uuid (hope they do it correctly), if not add it
         if 'uuid' not in message:
             message['uuid'] = f'internal-{self.received_count}'
+        if channel:
+            message['channel'] = channel
         self.received_count += 1
 
         if 'delay' in message:

@@ -45,7 +45,7 @@ class Control(object):
 
         self.exit_event.set()
 
-    async def process_message(self, payload, broker=None):
+    async def process_message(self, payload, broker=None, channel=None):
         self.received_replies.append(payload)
         if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
             self.exit_event.set()

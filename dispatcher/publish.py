@@ -2,6 +2,7 @@ import inspect
 import json
 import logging
 import time
+from enum import Enum
 from uuid import uuid4
 
 logger = logging.getLogger('awx.main.dispatch')
@@ -9,6 +10,12 @@ logger = logging.getLogger('awx.main.dispatch')
 
 def serialize_task(f):
     return '.'.join([f.__module__, f.__name__])
+
+
+class DuplicateBehavior(Enum):
+    parallel = 'parallel'  # run multiple versions of same task at same time
+    discard = 'discard'  # if task is submitted twice, discard the 2nd one
+    serial = 'serial'  # hold duplicate submissions in queue but only run 1 at a time
 
 
 class task:
@@ -44,21 +51,15 @@ class task:
     @task(queue='tower_broadcast')
     def announce():
         print("Run this everywhere!")
-
-    # The special parameter bind_kwargs tells the main dispatcher process to add certain kwargs
-
-    @task(bind_kwargs=['dispatch_time'])
-    def print_time(dispatch_time=None):
-        print(f"Time I was dispatched: {dispatch_time}")
     """
 
-    def __init__(self, queue=None, bind_kwargs=None):
+    def __init__(self, queue=None, on_duplicate=DuplicateBehavior.parallel.value):
         self.queue = queue
-        self.bind_kwargs = bind_kwargs
+        self.on_duplicate = on_duplicate
 
     def __call__(self, fn=None):
         queue = self.queue
-        bind_kwargs = self.bind_kwargs
+        on_duplicate = self.on_duplicate
 
         class PublisherMixin(object):
             queue = None
@@ -83,19 +84,24 @@ class task:
                     obj['delay'] = delay
 
                 # TODO: callback to add other things, guid in case of AWX
-                if bind_kwargs:
-                    obj['bind_kwargs'] = bind_kwargs
+
+                if on_duplicate != DuplicateBehavior.parallel.value:
+                    obj['on_duplicate'] = on_duplicate
+
                 obj.update(**kw)
                 return obj
 
             @classmethod
-            def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, delay=None, config=None, **kw):
+            def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, delay=None, config=None, on_duplicate=None, **kw):
                 queue = queue or getattr(cls.queue, 'im_func', cls.queue)
                 if not queue:
                     msg = f'{cls.name}: Queue value required and may not be None'
                     logger.error(msg)
                     raise ValueError(msg)
                 obj = cls.get_async_body(args=args, kwargs=kwargs, uuid=uuid, delay=delay, **kw)
+                if on_duplicate:
+                    obj['on_duplicate'] = on_duplicate
+
                 if callable(queue):
                     queue = queue()
                 # TODO: before sending, consult an app-specific callback if configured
