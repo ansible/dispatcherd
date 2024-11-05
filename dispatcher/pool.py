@@ -3,6 +3,7 @@ import logging
 import multiprocessing
 import os
 
+from dispatcher.utils import DuplicateBehavior
 from dispatcher.worker.task import work_loop
 
 logger = logging.getLogger(__name__)
@@ -191,10 +192,10 @@ class WorkerPool:
         return False
 
     def message_is_blocked(self, message):
-        return bool(message.get('on_duplicate') == 'serial' and self.already_running(message, include_queued=False))
+        return bool(message.get('on_duplicate') == DuplicateBehavior.serial.value and self.already_running(message, include_queued=False))
 
     def should_discard(self, message):
-        return bool(message.get('on_duplicate') == 'discard' and self.already_running(message))
+        return bool(message.get('on_duplicate') == DuplicateBehavior.discard.value and self.already_running(message))
 
     def get_unblocked_message(self):
         # reversing matches behavior with pop, which comes from end of list

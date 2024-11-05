@@ -2,20 +2,15 @@ import inspect
 import json
 import logging
 import time
-from enum import Enum
 from uuid import uuid4
+
+from dispatcher.utils import DuplicateBehavior
 
 logger = logging.getLogger('awx.main.dispatch')
 
 
 def serialize_task(f):
     return '.'.join([f.__module__, f.__name__])
-
-
-class DuplicateBehavior(Enum):
-    parallel = 'parallel'  # run multiple versions of same task at same time
-    discard = 'discard'  # if task is submitted twice, discard the 2nd one
-    serial = 'serial'  # hold duplicate submissions in queue but only run 1 at a time
 
 
 class task:
