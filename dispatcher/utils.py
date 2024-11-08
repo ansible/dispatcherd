@@ -30,7 +30,14 @@ def serialize_task(f) -> str:
     return '.'.join([f.__module__, f.__name__])
 
 
+class MessageAction(Enum):
+    run = 'run'
+    discard = 'discard'
+    queue = 'queue'
+
+
 class DuplicateBehavior(Enum):
     parallel = 'parallel'  # run multiple versions of same task at same time
     discard = 'discard'  # if task is submitted twice, discard the 2nd one
     serial = 'serial'  # hold duplicate submissions in queue but only run 1 at a time
+    queue_one = 'queue_one'  # hold only 1 duplicate submission in queue, discard any more
