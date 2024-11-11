@@ -162,7 +162,7 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload, broker=None):
+    async def process_message(self, payload, broker=None, channel=None):
         # Convert payload from client into python dict
         # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
@@ -179,6 +179,8 @@ class DispatcherMain:
         # A client may provide a task uuid (hope they do it correctly), if not add it
         if 'uuid' not in message:
             message['uuid'] = f'internal-{self.received_count}'
+        if channel:
+            message['channel'] = channel
         self.received_count += 1
 
         if 'delay' in message:
@@ -210,12 +212,20 @@ class DispatcherMain:
 
     async def start_working(self):
         logger.debug('Filling the worker pool')
-        await self.pool.start_working(self)
+        try:
+            await self.pool.start_working(self)
+        except Exception:
+            logger.exception(f'Pool {self.pool} failed to start working')
+            self.exit_event.set()
 
         logger.debug('Starting task production')
         async with self.fd_lock:  # lots of connecting going on here
             for producer in self.producers:
-                await producer.start_producing(self)
+                try:
+                    await producer.start_producing(self)
+                except Exception:
+                    logger.exception(f'Producer {producer} failed to start')
+                    self.exit_event.set()
 
     async def main(self):
         logger.info('Connecting dispatcher signal handling')
@@ -232,7 +242,7 @@ class DispatcherMain:
             if task == asyncio.current_task():
                 continue
             if not task.done():
-                logger.warning(f'Task {task} did not shut down in shutdown process')
+                logger.warning(f'Task {task} did not shut down in shutdown method')
                 task.cancel()
                 try:
                     await task

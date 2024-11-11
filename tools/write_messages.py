@@ -14,7 +14,7 @@ tools_dir = os.path.abspath(
 
 sys.path.append(tools_dir)
 
-from test_methods import print_hello, sleep_function
+from test_methods import print_hello, sleep_function, sleep_discard
 
 # Database connection details
 CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777"
@@ -84,6 +84,28 @@ def main():
         alive = ctl.control_with_reply('alive')
         print(alive)
 
+    print('')
+    print('demo of submitting discarding tasks')
+    for i in range(10):
+        publish_message(channel, json.dumps(
+            {'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}
+        ), config={'conninfo': CONNECTION_STRING})
+    print('demo of discarding task marked as discarding')
+    for i in range(10):
+        sleep_discard.apply_async(args=[2], config={'conninfo': CONNECTION_STRING})
+    print('demo of discarding tasks with apply_async contract')
+    for i in range(10):
+        sleep_function.apply_async(args=[3], on_duplicate='discard', config={'conninfo': CONNECTION_STRING})
+    print('demo of submitting waiting tasks')
+    for i in range(10):
+        publish_message(channel, json.dumps(
+            {'task': 'lambda: __import__("time").sleep(10)', 'on_duplicate': 'serial', 'uuid': f'wait-{i}'}
+            ), config={'conninfo': CONNECTION_STRING})
+    print('demo of submitting queue-once tasks')
+    for i in range(10):
+        publish_message(channel, json.dumps(
+            {'task': 'lambda: __import__("time").sleep(8)', 'on_duplicate': 'queue_one', 'uuid': f'queue_one-{i}'}
+        ), config={'conninfo': CONNECTION_STRING})
 
 if __name__ == "__main__":
     logging.basicConfig(level='ERROR', stream=sys.stdout)

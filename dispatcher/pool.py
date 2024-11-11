@@ -3,6 +3,7 @@ import logging
 import multiprocessing
 import os
 
+from dispatcher.utils import DuplicateBehavior, MessageAction
 from dispatcher.worker.task import work_loop
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ class WorkerPool:
             while len(self.workers) < self.num_workers:
                 await self.up()
 
+            # TODO: if all workers are busy, queue has unblocked work, below max_workers
+            # scale up 1 more worker in that case
+
             for worker in self.workers.values():
                 if worker.status == 'initialized':
                     logger.debug(f'Starting subprocess for worker {worker.worker_id}')
@@ -109,6 +113,7 @@ class WorkerPool:
                         await worker.start()
 
             await self.management_event.wait()
+            self.management_event.clear()
         logger.debug('Pool worker management task exiting')
 
     async def up(self):
@@ -169,33 +174,93 @@ class WorkerPool:
 
         logger.info('Pool is shut down')
 
+    def get_free_worker(self):
+        for candidate_worker in self.workers.values():
+            if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
+                return candidate_worker
+        return None
+
+    def running_tasks(self):
+        for worker in self.workers.values():
+            if worker.current_task:
+                yield worker.current_task
+
+    def _duplicate_in_list(self, message, task_iter):
+        for other_message in task_iter:
+            if other_message is message:
+                continue
+            keys = ('task', 'args', 'kwargs')
+            if all(other_message.get(key) == message.get(key) for key in keys):
+                return True
+        return False
+
+    def already_running(self, message):
+        return self._duplicate_in_list(message, self.running_tasks())
+
+    def already_queued(self, message):
+        return self._duplicate_in_list(message, self.queued_messages)
+
+    def get_blocking_action(self, message):
+        on_duplicate = message.get('on_duplicate', DuplicateBehavior.parallel.value)
+
+        if on_duplicate == DuplicateBehavior.serial.value:
+            if self.already_running(message):
+                return MessageAction.queue.value
+
+        elif on_duplicate == DuplicateBehavior.discard.value:
+            if self.already_running(message) or self.already_queued(message):
+                return MessageAction.discard.value
+
+        elif on_duplicate == DuplicateBehavior.queue_one.value:
+            if self.already_queued(message):
+                return MessageAction.discard.value
+            elif self.already_running(message):
+                return MessageAction.queue.value
+
+        elif on_duplicate != DuplicateBehavior.parallel.value:
+            logger.warning(f'Got unexpected on_duplicate value {on_duplicate}')
+
+        return MessageAction.run.value
+
+    def message_is_blocked(self, message):
+        return bool(self.get_blocking_action(message) == MessageAction.queue.value)
+
+    def get_unblocked_message(self):
+        for message in self.queued_messages:
+            if not self.message_is_blocked(message):
+                return message
+
     async def dispatch_task(self, message):
         async with self.management_lock:
             uuid = message.get("uuid", "<unknown>")
-            worker = None
-            for candidate_worker in self.workers.values():
-                if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
-                    worker = candidate_worker
-                    break
 
-            if not worker or self.shutting_down:
-                # TODO: under certain conditions scale up workers
-                if self.shutting_down:
-                    logger.info(f'Not starting task (uuid={uuid}) because we are shutting down')
-                else:
-                    logger.warning(f'Ran out of workers, queueing task (uuid={uuid}), current ct={len(self.queued_messages)}')
+            blocking_action = self.get_blocking_action(message)
+            if blocking_action == MessageAction.discard.value:
+                logger.info(f'Discarding task because it is already running: \n{message}')
+                return
+            elif self.shutting_down:
+                logger.info(f'Not starting task (uuid={uuid}) because we are shutting down, queued_ct={len(self.queued_messages)}')
+                self.queued_messages.append(message)
+                return
+            elif blocking_action == MessageAction.queue.value:
+                logger.info(f'Queuing task (uuid={uuid}) because it is already running or queued, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
                 return
 
-            logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
-
-            # Put the message in the selected worker's queue
-            worker.current_task = message  # NOTE: this marks the worker as busy
-        worker.message_queue.put(message)
+            if worker := self.get_free_worker():
+                logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+                worker.current_task = message  # NOTE: this marks the worker as busy
+                worker.message_queue.put(message)
+            else:
+                logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
+                self.queued_messages.append(message)
+                self.management_event.set()  # kick manager task to start auto-scale up
 
     async def drain_queue(self):
-        if self.queued_messages and (not self.shutting_down):
-            requeue_message = self.queued_messages.pop()
+        while requeue_message := self.get_unblocked_message():
+            if (not self.get_free_worker()) or self.shutting_down:
+                return
+            self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
 
     async def process_finished(self, worker, message):

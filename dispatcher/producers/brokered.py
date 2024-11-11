@@ -31,8 +31,7 @@ class BrokeredProducer:
 
     async def produce_forever(self, dispatcher):
         async for channel, payload in aprocess_notify(self.connection, self.channels):
-            logger.info(f"Received message from channel '{channel}': {payload}")
-            await dispatcher.process_message(payload, broker=self)
+            await dispatcher.process_message(payload, broker=self, channel=channel)
 
     async def notify(self, channel, payload=None):
         await apublish_message(self.connection, channel, payload=payload)
