@@ -1,0 +1,65 @@
+---
+name: CI
+on:
+  pull_request:
+  push:
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dispatcher
+        run: pip install -e dispatcher
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run tests
+        run: pytest tests/unit tests/integration
+
+  black:
+    name: Run black
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dispatcher
+        run: pip install -e dispatcher
+
+      - name: Install black
+        run: pip install black
+
+      - name: Run tests
+        run: black --check dispatcher
+
+  isort:
+    name: Run isort
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dispatcher
+        run: pip install -e dispatcher
+
+      - name: Install isort
+        run: pip install isort
+
+      - name: Run tests
+        run: isort --check dispatcher

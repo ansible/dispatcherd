@@ -56,7 +56,7 @@ class TaskWorker:
         self.pid = os.getpid()
         self.signal_handler = WorkerSignalHandler(worker_id)
 
-    def should_exit(self) -> str:
+    def should_exit(self) -> bool:
         """Called before continuing the loop, something suspicious, return True, should exit"""
         if os.getppid() != self.ppid:
             logger.error(f'Worker {self.worker_id}, my parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
