@@ -264,11 +264,16 @@ class WorkerPool:
                 self.management_event.set()  # kick manager task to start auto-scale up
 
     async def drain_queue(self):
+        work_done = False
         while requeue_message := self.get_unblocked_message():
             if (not self.get_free_worker()) or self.shutting_down:
                 return
             self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
+            work_done = True
+
+        if work_done:
+            self.events.queue_cleared.set()
 
     async def process_finished(self, worker, message):
         uuid = message.get('uuid', '<unknown>')
@@ -287,16 +292,6 @@ class WorkerPool:
         async with self.management_lock:
             worker.mark_finished_task()
             self.finished_count += 1
-
-        if self.queued_messages:
-            if not self.shutting_down:
-                requeue_message = self.queued_messages.pop()
-                await self.dispatch_task(requeue_message)
-                logger.debug('submitted work due to finishing other work')
-        else:
-            if not any(worker.current_task for worker in self.workers.values()):
-                self.events.queue_cleared.set()
-                logger.debug('work queue has been cleared')
 
     async def read_results_forever(self):
         """Perpetual task that continuously waits for task completions."""
