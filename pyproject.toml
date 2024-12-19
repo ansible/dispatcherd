@@ -46,3 +46,6 @@ skip-string-normalization = true
 [tool.isort]
 profile = "black"
 line_length = 160
+
+[project.optional-dependencies]
+pg_notify = ["psycopg[binary]"]
