@@ -14,12 +14,8 @@ jobs:
 
       - name: Install dispatcher
         run: pip install -e .[pg_notify]
-
-      - name: Install pytest
-        run: pip install pytest
-
-      - name: Run tests
-        run: pytest tests/unit tests/integration
+      - run: pip install pytest
+      - run: pytest tests/unit tests/integration
 
   black:
     name: Run black
@@ -29,11 +25,8 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install black
-        run: pip install black
-
-      - name: Check black
-        run: black --check dispatcher
+      - run: pip install black
+      - run: black --check dispatcher
 
   isort:
     name: Run isort
@@ -43,11 +36,8 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install isort
-        run: pip install isort
-
-      - name: Check isort
-        run: isort --check dispatcher
+      - run: pip install isort
+      - run: isort --check dispatcher
 
   mypy:
     name: Run mypy
@@ -57,8 +47,5 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install mypy
-        run: pip install mypy
-
-      - name: Run mypy
-        run: mypy --ignore-missing-imports dispatcher
+      - run: pip install mypy
+      - run: mypy --ignore-missing-imports dispatcher
