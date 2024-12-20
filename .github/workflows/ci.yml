@@ -43,6 +43,7 @@ jobs:
 
   isort:
     name: Run isort
+    runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
