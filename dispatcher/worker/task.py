@@ -1,6 +1,7 @@
 import inspect
 import json
 import logging
+import multiprocessing
 import os
 import signal
 import sys
@@ -180,7 +181,7 @@ class TaskWorker:
         return {"worker": self.worker_id, "event": "shutdown"}
 
 
-def work_loop(worker_id, queue, finished_queue):
+def work_loop(worker_id: int, queue: multiprocessing.Queue, finished_queue):
     """
     Worker function that processes messages from the queue and sends confirmation
     to the finished_queue once done.

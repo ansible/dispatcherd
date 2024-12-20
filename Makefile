@@ -14,3 +14,8 @@ clean:
 	find . -type f -regex ".*\.py[co]$$" -delete
 	find . -type d -name "__pycache__" -delete
 	rm -rf dispatcher.egg-info/
+
+linters:
+	black dispatcher/
+	isort dispatcher/
+	mypy --ignore-missing-imports dispatcher

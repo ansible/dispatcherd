@@ -2,6 +2,9 @@ import asyncio
 import logging
 import multiprocessing
 import os
+import signal
+from asyncio import Task
+from typing import Iterator, Optional
 
 from dispatcher.utils import DuplicateBehavior, MessageAction
 from dispatcher.worker.task import work_loop
@@ -10,28 +13,28 @@ logger = logging.getLogger(__name__)
 
 
 class PoolWorker:
-    def __init__(self, worker_id, finished_queue):
+    def __init__(self, worker_id: int, finished_queue: multiprocessing.Queue):
         self.worker_id = worker_id
         # TODO: rename message_queue to call_queue, because this is what cpython ProcessPoolExecutor calls them
-        self.message_queue = multiprocessing.Queue()
+        self.message_queue: multiprocessing.Queue = multiprocessing.Queue()
         self.process = multiprocessing.Process(target=work_loop, args=(self.worker_id, self.message_queue, finished_queue))
-        self.current_task = None
+        self.current_task: Optional[dict] = None
         self.finished_count = 0
         self.status = 'initialized'
         self.exit_msg_event = asyncio.Event()
         self.active_cancel = False
 
-    async def start(self):
+    async def start(self) -> None:
         self.status = 'spawned'
         self.process.start()
         logger.debug(f'Worker {self.worker_id} pid={self.process.pid} subprocess has spawned')
         self.status = 'starting'  # Not ready until it sends callback message
 
-    async def join(self):
+    async def join(self) -> None:
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join()
 
-    async def stop(self):
+    async def stop(self) -> None:
         self.message_queue.put("stop")
         if self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
@@ -60,30 +63,30 @@ class PoolWorker:
         self.status = 'error'
         return
 
-    def cancel(self):
+    def cancel(self) -> None:
         self.active_cancel = True  # signal for result callback
         self.process.terminate()  # SIGTERM
 
-    def mark_finished_task(self):
+    def mark_finished_task(self) -> None:
         self.active_cancel = False
         self.current_task = None
         self.finished_count += 1
 
     @property
-    def inactive(self):
+    def inactive(self) -> bool:
         "Return True if no further shutdown or callback messages are expected from this worker"
         return self.status in ['exited', 'error', 'initialized']
 
 
 class WorkerPool:
-    def __init__(self, num_workers, fd_lock=None):
+    def __init__(self, num_workers: int, fd_lock: Optional[asyncio.Lock] = None):
         self.num_workers = num_workers
-        self.workers = {}
+        self.workers: dict[int, PoolWorker] = {}
         self.next_worker_id = 0
-        self.finished_queue = multiprocessing.Queue()
-        self.queued_messages = []  # TODO: use deque, invent new kinds of logging anxiety
-        self.read_results_task = None
-        self.start_worker_task = None
+        self.finished_queue: multiprocessing.Queue = multiprocessing.Queue()
+        self.queued_messages: list[dict] = []  # TODO: use deque, invent new kinds of logging anxiety
+        self.read_results_task: Optional[Task] = None
+        self.start_worker_task: Optional[Task] = None
         self.shutting_down = False
         self.finished_count = 0
         self.shutdown_timeout = 3
@@ -91,13 +94,14 @@ class WorkerPool:
         self.management_lock = asyncio.Lock()
         self.fd_lock = fd_lock or asyncio.Lock()
 
-    async def start_working(self, dispatcher):
+    async def start_working(self, dispatcher) -> None:
         self.read_results_task = asyncio.create_task(self.read_results_forever())
+        logger.warning(f'type of task {type(self.read_results_task)}')
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
         self.management_task = asyncio.create_task(self.manage_workers())
         self.management_task.add_done_callback(dispatcher.fatal_error_callback)
 
-    async def manage_workers(self):
+    async def manage_workers(self) -> None:
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shutting_down:
             while len(self.workers) < self.num_workers:
@@ -116,29 +120,30 @@ class WorkerPool:
             self.management_event.clear()
         logger.debug('Pool worker management task exiting')
 
-    async def up(self):
+    async def up(self) -> None:
         worker = PoolWorker(worker_id=self.next_worker_id, finished_queue=self.finished_queue)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1
 
-    async def stop_workers(self):
+    async def stop_workers(self) -> None:
         stop_tasks = [worker.stop() for worker in self.workers.values()]
         await asyncio.gather(*stop_tasks)
 
-    async def force_shutdown(self):
+    async def force_shutdown(self) -> None:
         for worker in self.workers.values():
-            if worker.process.is_alive():
+            if worker.process.pid and worker.process.is_alive():
                 logger.warning(f'Force killing worker {worker.worker_id} pid={worker.process.pid}')
-                os.kill(worker.process.pid)
+                os.kill(worker.process.pid, signal.SIGKILL)
 
-        self.read_results_task.cancel()
-        logger.info('Finished watcher had to be canceled, awaiting it a second time')
-        try:
-            await self.read_results_task
-        except asyncio.CancelledError:
-            pass
+        if self.read_results_task:
+            self.read_results_task.cancel()
+            logger.info('Finished watcher had to be canceled, awaiting it a second time')
+            try:
+                await self.read_results_task
+            except asyncio.CancelledError:
+                pass
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         self.shutting_down = True
         self.management_event.set()
         await self.stop_workers()
@@ -174,18 +179,18 @@ class WorkerPool:
 
         logger.info('Pool is shut down')
 
-    def get_free_worker(self):
+    def get_free_worker(self) -> Optional[PoolWorker]:
         for candidate_worker in self.workers.values():
             if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
                 return candidate_worker
         return None
 
-    def running_tasks(self):
+    def running_tasks(self) -> Iterator[dict]:
         for worker in self.workers.values():
             if worker.current_task:
                 yield worker.current_task
 
-    def _duplicate_in_list(self, message, task_iter):
+    def _duplicate_in_list(self, message, task_iter) -> bool:
         for other_message in task_iter:
             if other_message is message:
                 continue
@@ -194,13 +199,13 @@ class WorkerPool:
                 return True
         return False
 
-    def already_running(self, message):
+    def already_running(self, message) -> bool:
         return self._duplicate_in_list(message, self.running_tasks())
 
-    def already_queued(self, message):
+    def already_queued(self, message) -> bool:
         return self._duplicate_in_list(message, self.queued_messages)
 
-    def get_blocking_action(self, message):
+    def get_blocking_action(self, message: dict) -> str:
         on_duplicate = message.get('on_duplicate', DuplicateBehavior.parallel.value)
 
         if on_duplicate == DuplicateBehavior.serial.value:
@@ -222,15 +227,17 @@ class WorkerPool:
 
         return MessageAction.run.value
 
-    def message_is_blocked(self, message):
+    def message_is_blocked(self, message: dict) -> bool:
         return bool(self.get_blocking_action(message) == MessageAction.queue.value)
 
-    def get_unblocked_message(self):
+    def get_unblocked_message(self) -> Optional[dict]:
+        """Returns a message from the queue that is unblocked to run, if one exists"""
         for message in self.queued_messages:
             if not self.message_is_blocked(message):
                 return message
+        return None
 
-    async def dispatch_task(self, message):
+    async def dispatch_task(self, message: dict) -> None:
         async with self.management_lock:
             uuid = message.get("uuid", "<unknown>")
 
@@ -256,14 +263,14 @@ class WorkerPool:
                 self.queued_messages.append(message)
                 self.management_event.set()  # kick manager task to start auto-scale up
 
-    async def drain_queue(self):
+    async def drain_queue(self) -> None:
         while requeue_message := self.get_unblocked_message():
             if (not self.get_free_worker()) or self.shutting_down:
                 return
             self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
 
-    async def process_finished(self, worker, message):
+    async def process_finished(self, worker, message) -> None:
         uuid = message.get('uuid', '<unknown>')
         msg = f"Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}"
         if message.get("result"):
@@ -281,7 +288,7 @@ class WorkerPool:
             worker.mark_finished_task()
             self.finished_count += 1
 
-    async def read_results_forever(self):
+    async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""
         loop = asyncio.get_event_loop()
         while True:

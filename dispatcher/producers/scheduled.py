@@ -5,22 +5,22 @@ logger = logging.getLogger(__name__)
 
 
 class ScheduledProducer:
-    def __init__(self, task_schedule):
+    def __init__(self, task_schedule: dict):
         self.task_schedule = task_schedule
-        self.scheduled_tasks = []
+        self.scheduled_tasks: list[asyncio.Task] = []
         self.produced_count = 0
 
-    async def start_producing(self, dispatcher):
+    async def start_producing(self, dispatcher) -> None:
         for task_name, options in self.task_schedule.items():
             per_seconds = options['schedule'].total_seconds()
             schedule_task = asyncio.create_task(self.run_schedule_forever(task_name, per_seconds, dispatcher))
             self.scheduled_tasks.append(schedule_task)
             schedule_task.add_done_callback(dispatcher.fatal_error_callback)
 
-    def all_tasks(self):
+    def all_tasks(self) -> list[asyncio.Task]:
         return self.scheduled_tasks
 
-    async def run_schedule_forever(self, task_name, per_seconds, dispatcher):
+    async def run_schedule_forever(self, task_name: str, per_seconds, dispatcher) -> None:
         logger.info(f"Starting task runner for {task_name} with interval {per_seconds} seconds")
         while True:
             await asyncio.sleep(per_seconds)
@@ -28,7 +28,7 @@ class ScheduledProducer:
             self.produced_count += 1
             await dispatcher.process_message({'task': task_name, 'uuid': f'sch-{self.produced_count}'})
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         logger.info('Stopping scheduled tasks')
         for task in self.scheduled_tasks:
             task.cancel()

@@ -3,6 +3,7 @@ import json
 import logging
 import signal
 from types import SimpleNamespace
+from typing import Optional, Union
 
 from dispatcher.pool import WorkerPool
 from dispatcher.producers.brokered import BrokeredProducer
@@ -11,7 +12,8 @@ from dispatcher.producers.scheduled import ScheduledProducer
 logger = logging.getLogger(__name__)
 
 
-def task_filter_match(pool_task, msg_data):
+def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
+    """The two messages are functionally the same or not"""
     filterables = ('task', 'args', 'kwargs', 'uuid')
     for key in filterables:
         expected_value = msg_data.get(key)
@@ -21,7 +23,7 @@ def task_filter_match(pool_task, msg_data):
     return True
 
 
-async def _find_tasks(dispatcher, cancel=False, **data):
+async def _find_tasks(dispatcher, cancel: bool = False, **data) -> list[tuple[Optional[str], dict]]:
     "Utility method used for both running and cancel control methods"
     ret = []
     for worker in dispatcher.pool.workers.values():
@@ -55,11 +57,11 @@ async def _find_tasks(dispatcher, cancel=False, **data):
 
 class ControlTasks:
     # TODO: hold pool management lock for these things
-    async def running(self, dispatcher, **data):
+    async def running(self, dispatcher, **data) -> list[tuple[Optional[str], dict]]:
         # TODO: include delayed tasks in results
         return await _find_tasks(dispatcher, **data)
 
-    async def cancel(self, dispatcher, **data):
+    async def cancel(self, dispatcher, **data) -> list[tuple[Optional[str], dict]]:
         # TODO: include delayed tasks in results
         return await _find_tasks(dispatcher, cancel=True, **data)
 
@@ -68,9 +70,9 @@ class ControlTasks:
 
 
 class DispatcherMain:
-    def __init__(self, config):
+    def __init__(self, config: dict):
         self.exit_event = asyncio.Event()
-        self.delayed_messages = []
+        self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
         self.ctl_tasks = ControlTasks()
@@ -81,7 +83,7 @@ class DispatcherMain:
         self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3), self.fd_lock)
 
         # Initialize all the producers, this should not start anything, just establishes objects
-        self.producers = []
+        self.producers: list[Union[ScheduledProducer, BrokeredProducer]] = []
         if 'producers' in config:
             producer_config = config['producers']
             if 'brokers' in producer_config:
@@ -94,7 +96,8 @@ class DispatcherMain:
             if 'scheduled' in producer_config:
                 self.producers.append(ScheduledProducer(producer_config['scheduled']))
 
-    def fatal_error_callback(self, *args):
+    def fatal_error_callback(self, *args) -> None:
+        """Method to connect to error callbacks of other tasks, will kick out of main loop"""
         if self.shutting_down:
             return
 
@@ -107,16 +110,16 @@ class DispatcherMain:
 
         self.exit_event.set()
 
-    def receive_signal(self, *args, **kwargs):
+    def receive_signal(self, *args, **kwargs) -> None:
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.exit_event.set()
 
-    async def connect_signals(self):
+    async def connect_signals(self) -> None:
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self.receive_signal)
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         self.shutting_down = True
         logger.debug("Shutting down, starting with producers.")
         for producer in self.producers:
@@ -145,7 +148,7 @@ class DispatcherMain:
         logger.debug('Setting event to exit main loop')
         self.exit_event.set()
 
-    async def sleep_then_process(self, capsule):
+    async def sleep_then_process(self, capsule: SimpleNamespace) -> None:
         logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')
         await asyncio.sleep(capsule.delay)
         logger.debug(f'Wakeup for delayed task: {capsule.message}')
@@ -154,7 +157,7 @@ class DispatcherMain:
             self.delayed_messages.remove(capsule)
             logger.info(f'fully processed delayed task (uuid={capsule.uuid})')
 
-    def create_delayed_task(self, message):
+    def create_delayed_task(self, message: dict) -> None:
         "Called as alternative to sending to worker now, send to worker later"
         # capsule, as in, time capsule
         capsule = SimpleNamespace(uuid=message['uuid'], delay=message['delay'], message=message, task=None)
@@ -162,7 +165,7 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload, broker=None, channel=None):
+    async def process_message(self, payload: dict, broker: Optional[BrokeredProducer] = None, channel: Optional[str] = None) -> None:
         # Convert payload from client into python dict
         # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
@@ -189,7 +192,7 @@ class DispatcherMain:
         else:
             await self.process_message_internal(message, broker=broker)
 
-    async def process_message_internal(self, message, broker=None):
+    async def process_message_internal(self, message: dict, broker=None) -> None:
         if 'control' in message:
             method = getattr(self.ctl_tasks, message['control'])
             control_data = message.get('control_data', {})
@@ -210,7 +213,7 @@ class DispatcherMain:
         else:
             await self.pool.dispatch_task(message)
 
-    async def start_working(self):
+    async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         try:
             await self.pool.start_working(self)
@@ -227,7 +230,7 @@ class DispatcherMain:
                     logger.exception(f'Producer {producer} failed to start')
                     self.exit_event.set()
 
-    async def main(self):
+    async def main(self) -> None:
         logger.info('Connecting dispatcher signal handling')
         await self.connect_signals()
 
