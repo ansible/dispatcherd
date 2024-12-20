@@ -1,8 +1,9 @@
 import importlib
 from enum import Enum
+from typing import Callable, Optional
 
 
-def resolve_callable(task):
+def resolve_callable(task: str) -> Optional[Callable]:
     """
     Transform a dotted notation task into an imported, callable function, e.g.,
 
@@ -16,8 +17,8 @@ def resolve_callable(task):
     if task.startswith('lambda:'):
         return eval(task)
 
-    module, target = task.rsplit('.', 1)
-    module = importlib.import_module(module)
+    module_name, target = task.rsplit('.', 1)
+    module = importlib.import_module(module_name)
     _call = None
     if hasattr(module, target):
         _call = getattr(module, target, None)
@@ -25,7 +26,7 @@ def resolve_callable(task):
     return _call
 
 
-def serialize_task(f) -> str:
+def serialize_task(f: Callable) -> str:
     """The reverse of resolve_callable, transform callable into dotted notation"""
     return '.'.join([f.__module__, f.__name__])
 
