@@ -35,11 +35,14 @@ def get_connection(config):
     return psycopg.Connection.connect(**config, autocommit=True)
 
 
-async def aprocess_notify(connection, channels):
+async def aprocess_notify(connection, channels, connected_event=None):
     async with connection.cursor() as cur:
         for channel in channels:
             await cur.execute(f"LISTEN {channel};")
             logger.info(f"Set up pg_notify listening on channel '{channel}'")
+
+        if connected_event:
+            connected_event.set()
 
         while True:
             logger.debug('Starting listening for pg_notify notifications')
@@ -72,9 +75,12 @@ def get_django_connection():
             return None
 
 
-def publish_message(queue, message, config=None, new_connection=False):
+def publish_message(queue, message, config=None, connection=None, new_connection=False):
     conn = None
-    if not new_connection:
+    if connection:
+        conn = connection
+
+    if (not conn) and (not new_connection):
         conn = get_django_connection()
 
     created_new_conn = False

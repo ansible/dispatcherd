@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import signal
 from asyncio import Task
+from types import SimpleNamespace
 from typing import Iterator, Optional
 
 from dispatcher.utils import DuplicateBehavior, MessageAction
@@ -88,15 +89,25 @@ class WorkerPool:
         self.read_results_task: Optional[Task] = None
         self.start_worker_task: Optional[Task] = None
         self.shutting_down = False
-        self.finished_count = 0
+        self.finished_count: int = 0
+        self.control_count: int = 0
+        self.canceled_count: int = 0
         self.shutdown_timeout = 3
-        self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
         self.management_lock = asyncio.Lock()
         self.fd_lock = fd_lock or asyncio.Lock()
 
+        self.events = self._create_events()
+
+    def _create_events(self):
+        "Benchmark tests have to re-create this because they use same object in different event loops"
+        return SimpleNamespace(
+            queue_cleared=asyncio.Event(),  # queue is now 0 length
+            work_cleared=asyncio.Event(),  # Totally quiet, no blocked or queued messages, no busy workers
+            management_event=asyncio.Event(),  # Process spawning is backgrounded, so this is the kicker
+        )
+
     async def start_working(self, dispatcher) -> None:
         self.read_results_task = asyncio.create_task(self.read_results_forever())
-        logger.warning(f'type of task {type(self.read_results_task)}')
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
         self.management_task = asyncio.create_task(self.manage_workers())
         self.management_task.add_done_callback(dispatcher.fatal_error_callback)
@@ -116,8 +127,8 @@ class WorkerPool:
                     async with self.fd_lock:  # never fork while connecting
                         await worker.start()
 
-            await self.management_event.wait()
-            self.management_event.clear()
+            await self.events.management_event.wait()
+            self.events.management_event.clear()
         logger.debug('Pool worker management task exiting')
 
     async def up(self) -> None:
@@ -145,7 +156,7 @@ class WorkerPool:
 
     async def shutdown(self) -> None:
         self.shutting_down = True
-        self.management_event.set()
+        self.events.management_event.set()
         await self.stop_workers()
         self.finished_queue.put('stop')
 
@@ -261,18 +272,24 @@ class WorkerPool:
             else:
                 logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
-                self.management_event.set()  # kick manager task to start auto-scale up
+                self.events.management_event.set()  # kick manager task to start auto-scale up
 
     async def drain_queue(self) -> None:
+        work_done = False
         while requeue_message := self.get_unblocked_message():
             if (not self.get_free_worker()) or self.shutting_down:
                 return
             self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
+            work_done = True
+
+        if work_done:
+            self.events.queue_cleared.set()
 
     async def process_finished(self, worker, message) -> None:
         uuid = message.get('uuid', '<unknown>')
         msg = f"Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}"
+        result = None
         if message.get("result"):
             result = message["result"]
             if worker.active_cancel:
@@ -285,8 +302,16 @@ class WorkerPool:
 
         # Mark the worker as no longer busy
         async with self.management_lock:
+            if worker.active_cancel and result == '<cancel>':
+                self.canceled_count += 1
+            elif 'control' in worker.current_task:
+                self.control_count += 1
+            else:
+                self.finished_count += 1
             worker.mark_finished_task()
-            self.finished_count += 1
+
+        if not self.queued_messages and all(worker.current_task is None for worker in self.workers.values()):
+            self.events.work_cleared.set()
 
     async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""
@@ -327,7 +352,7 @@ class WorkerPool:
                     await worker.join()
                     async with self.management_lock:
                         del self.workers[worker.worker_id]
-                        self.management_event.set()
+                        self.events.management_event.set()
                     logger.debug(f"Worker {worker_id} finished exiting. It will be restarted.")
 
             elif event == 'done':

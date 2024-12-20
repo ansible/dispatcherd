@@ -198,7 +198,7 @@ def work_loop(worker_id: int, queue: multiprocessing.Queue, finished_queue):
         try:
             message = queue.get()
         except DispatcherCancel:
-            logger.info(f'Worker {worker_id} a task cancel signal in main loop, ignoring')
+            logger.info(f'Worker {worker_id} received a task cancel signal in main loop, ignoring')
             continue
         except QueueEmpty:
             logger.info(f'Worker {worker_id} Encountered strange QueueEmpty condition')
