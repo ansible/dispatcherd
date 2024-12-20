@@ -28,6 +28,7 @@ jobs:
     name: Run black
     runs-on: ubuntu-latest
     permissions:
+      packages: write
       contents: read
     steps:
       - uses: actions/checkout@v4
