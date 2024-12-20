@@ -7,9 +7,6 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,60 +14,38 @@ jobs:
 
       - name: Install dispatcher
         run: pip install -e .[pg_notify]
-
-      - name: Install pytest
-        run: pip install pytest
-
-      - name: Run tests
-        run: pytest tests/unit tests/integration
+      - run: pip install pytest
+      - run: pytest tests/unit tests/integration
 
   black:
     name: Run black
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
 
-      - name: Install black
-        run: pip install black
-
-      - name: Check black
-        run: black --check dispatcher
+      - run: pip install black
+      - run: black --check dispatcher
 
   isort:
     name: Run isort
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
 
-      - name: Install isort
-        run: pip install isort
-
-      - name: Check isort
-        run: isort --check dispatcher
+      - run: pip install isort
+      - run: isort --check dispatcher
 
   mypy:
     name: Run mypy
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
 
-      - name: Install mypy
-        run: pip install mypy
-
-      - name: Run mypy
-        run: mypy --ignore-missing-imports dispatcher
+      - run: pip install mypy
+      - run: mypy --ignore-missing-imports dispatcher
