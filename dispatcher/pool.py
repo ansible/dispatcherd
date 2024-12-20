@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 class PoolWorker:
-    def __init__(self, worker_id, finished_queue):
+    def __init__(self, worker_id: int, finished_queue: multiprocessing.Queue):
         self.worker_id = worker_id
         # TODO: rename message_queue to call_queue, because this is what cpython ProcessPoolExecutor calls them
-        self.message_queue = multiprocessing.Queue()
+        self.message_queue: multiprocessing.Queue = multiprocessing.Queue()
         self.process = multiprocessing.Process(target=work_loop, args=(self.worker_id, self.message_queue, finished_queue))
         self.current_task = None
         self.finished_count = 0
@@ -21,17 +21,17 @@ class PoolWorker:
         self.exit_msg_event = asyncio.Event()
         self.active_cancel = False
 
-    async def start(self):
+    async def start(self) -> None:
         self.status = 'spawned'
         self.process.start()
         logger.debug(f'Worker {self.worker_id} pid={self.process.pid} subprocess has spawned')
         self.status = 'starting'  # Not ready until it sends callback message
 
-    async def join(self):
+    async def join(self) -> None:
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join()
 
-    async def stop(self):
+    async def stop(self) -> None:
         self.message_queue.put("stop")
         if self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
@@ -60,17 +60,17 @@ class PoolWorker:
         self.status = 'error'
         return
 
-    def cancel(self):
+    def cancel(self) -> None:
         self.active_cancel = True  # signal for result callback
         self.process.terminate()  # SIGTERM
 
-    def mark_finished_task(self):
+    def mark_finished_task(self) -> None:
         self.active_cancel = False
         self.current_task = None
         self.finished_count += 1
 
     @property
-    def inactive(self):
+    def inactive(self) -> bool:
         "Return True if no further shutdown or callback messages are expected from this worker"
         return self.status in ['exited', 'error', 'initialized']
 
