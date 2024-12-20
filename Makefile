@@ -14,3 +14,6 @@ clean:
 	find . -type f -regex ".*\.py[co]$$" -delete
 	find . -type d -name "__pycache__" -delete
 	rm -rf dispatcher.egg-info/
+
+benchmark:
+	py.test tests/benchmark/ --benchmark-columns=mean,min,max,stddev,rounds

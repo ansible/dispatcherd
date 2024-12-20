@@ -2,6 +2,7 @@ import asyncio
 import logging
 import multiprocessing
 import os
+from types import SimpleNamespace
 
 from dispatcher.utils import DuplicateBehavior, MessageAction
 from dispatcher.worker.task import work_loop
@@ -90,6 +91,12 @@ class WorkerPool:
         self.management_event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
         self.management_lock = asyncio.Lock()
         self.fd_lock = fd_lock or asyncio.Lock()
+
+        self.events = self._create_events()
+
+    def _create_events(self):
+        "Benchmark tests have to re-create this because they use same object in different event loops"
+        return SimpleNamespace(queue_cleared=asyncio.Event())
 
     async def start_working(self, dispatcher):
         self.read_results_task = asyncio.create_task(self.read_results_forever())
@@ -257,11 +264,16 @@ class WorkerPool:
                 self.management_event.set()  # kick manager task to start auto-scale up
 
     async def drain_queue(self):
+        work_done = False
         while requeue_message := self.get_unblocked_message():
             if (not self.get_free_worker()) or self.shutting_down:
                 return
             self.queued_messages.remove(requeue_message)
             await self.dispatch_task(requeue_message)
+            work_done = True
+
+        if work_done:
+            self.events.queue_cleared.set()
 
     async def process_finished(self, worker, message):
         uuid = message.get('uuid', '<unknown>')

@@ -4,7 +4,6 @@ import pytest
 
 from dispatcher.brokers.pg_notify import publish_message
 
-
 # List of channels to listen on
 CHANNELS = ['test_channel', 'test_channel2', 'test_channel2']
 
