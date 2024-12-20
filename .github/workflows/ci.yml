@@ -35,17 +35,30 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install dispatcher
-        run: pip install -e .[pg_notify]
-
       - name: Install black
         run: pip install black
 
-      - name: Run tests
+      - name: Check black
         run: black --check dispatcher
 
   isort:
     name: Run isort
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install isort
+        run: pip install isort
+
+      - name: Check isort
+        run: isort --check dispatcher
+
+  mypy:
+    name: Run mypy
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -55,11 +68,8 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install dispatcher
-        run: pip install -e .[pg_notify]
+      - name: Install mypy
+        run: pip install mypy
 
-      - name: Install isort
-        run: pip install isort
-
-      - name: Run tests
-        run: isort --check dispatcher
+      - name: Run mypy
+        run: mypy --ignore-missing-imports dispatcher
