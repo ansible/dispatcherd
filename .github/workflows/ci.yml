@@ -38,7 +38,8 @@ jobs:
       - name: Install black
         run: pip install black
 
-      - run: black --check dispatcher
+      - name: Check black
+        run: black --check dispatcher
 
   isort:
     name: Run isort
