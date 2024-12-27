@@ -12,7 +12,7 @@ async def test_run_lambda_function(apg_dispatcher, pg_message):
 
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     await pg_message('lambda: "This worked!"')
-    await clearing_task
+    await asyncio.wait_for(clearing_task, timeout=3)
 
     assert apg_dispatcher.pool.finished_count == 1
 
@@ -26,7 +26,7 @@ async def test_multiple_channels(apg_dispatcher, pg_message):
         pg_message(SLEEP_METHOD, channel='test_channel3'),
         pg_message(SLEEP_METHOD, channel='test_channel4')  # not listening to this
     )
-    await clearing_task
+    await asyncio.wait_for(clearing_task, timeout=3)
 
     assert apg_dispatcher.pool.finished_count == 3
 
@@ -35,7 +35,7 @@ async def test_multiple_channels(apg_dispatcher, pg_message):
 async def test_ten_messages_queued(apg_dispatcher, pg_message):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     await asyncio.gather(*[pg_message(SLEEP_METHOD) for i in range(15)])
-    await clearing_task
+    await asyncio.wait_for(clearing_task, timeout=3)
 
     assert apg_dispatcher.pool.finished_count == 15
 
@@ -48,7 +48,7 @@ async def test_get_running_jobs(apg_dispatcher, pg_message, pg_control):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     running_jobs = await pg_control.acontrol_with_reply('running')
     worker_id, running_job = running_jobs[0][0]
-    await clearing_task
+    await asyncio.wait_for(clearing_task, timeout=3)
 
     assert running_job['uuid'] == 'find_me'
 
@@ -61,7 +61,7 @@ async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     canceled_jobs = await pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'})
     worker_id, canceled_message = canceled_jobs[0][0]
-    await clearing_task
+    await asyncio.wait_for(clearing_task, timeout=3)
 
     assert canceled_message['uuid'] == 'foobar'
 
@@ -87,7 +87,7 @@ async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
     apg_dispatcher.pool.events.work_cleared.clear()
 
     # Wait for task to finish, assertions after completion
-    await apg_dispatcher.pool.events.work_cleared.wait()
+    await asyncio.wait_for(apg_dispatcher.pool.events.work_cleared.wait(), timeout=3)
     pool = apg_dispatcher.pool
     assert [pool.finished_count, pool.canceled_count, pool.control_count] == [1, 0, 1]
 
