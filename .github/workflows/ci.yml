@@ -7,15 +7,27 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    timeout-minutes: 1
+    strategy:
+      matrix:
+        py_version:
+          - '3.10'
+          - '3.11'
+          - '3.13'
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py_version }}
+
       - name: Install dispatcher
         run: pip install -e .[pg_notify]
-      - run: pip install pytest
-      - run: pytest tests/unit tests/integration
+      - run: make postgres
+      - run: pip install pytest pytest-asyncio
+      - run: pytest tests/unit tests/integration -vv -s
 
   black:
     name: Run black
@@ -48,4 +60,17 @@ jobs:
           show-progress: false
 
       - run: pip install mypy
+      - run: pip install -e .[pg_notify]
+      - run: python3 -m pip install types-PyYAML
       - run: mypy --ignore-missing-imports dispatcher
+
+  flake8:
+    name: Run flake8
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - run: pip install flake8
+      - run: flake8 dispatcher
