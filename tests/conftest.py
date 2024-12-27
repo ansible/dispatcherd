@@ -26,7 +26,7 @@ def pg_dispatcher() -> DispatcherMain:
     return DispatcherMain(BASIC_CONFIG)
 
 
-@pytest_asyncio.fixture()
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
     try:
         dispatcher = DispatcherMain(BASIC_CONFIG)
@@ -41,19 +41,19 @@ async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
         await dispatcher.cancel_tasks()
 
 
-@pytest_asyncio.fixture()
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def pg_message(psycopg_conn) -> Callable:
     async def _rf(message, channel='test_channel'):
         await apublish_message(psycopg_conn, channel, message)
     return _rf
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
 def pg_control(psycopg_conn) -> Control:
     return Control('test_channel', async_connection=psycopg_conn)
 
 
-@pytest_asyncio.fixture()
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def psycopg_conn():
     conn = None
     try:

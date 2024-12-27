@@ -46,7 +46,7 @@ async def test_get_running_jobs(apg_dispatcher, pg_message, pg_control):
     await pg_message(msg)
 
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    running_jobs = await pg_control.acontrol_with_reply('running')
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running'), timeout=5)
     worker_id, running_job = running_jobs[0][0]
     await asyncio.wait_for(clearing_task, timeout=3)
 
@@ -59,7 +59,7 @@ async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
     await pg_message(msg)
 
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    canceled_jobs = await pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'})
+    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'}), timeout=5)
     worker_id, canceled_message = canceled_jobs[0][0]
     await asyncio.wait_for(clearing_task, timeout=3)
 
@@ -79,7 +79,7 @@ async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
 
     # Make assertions while task is in the delaying phase
     await asyncio.sleep(0.04)
-    running_jobs = await pg_control.acontrol_with_reply('running')
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running'), timeout=5)
     worker_id, running_job = running_jobs[0][0]
     assert worker_id == '<delayed>'
     assert running_job['uuid'] == 'delay_task'
@@ -102,12 +102,12 @@ async def test_cancel_delayed_task(apg_dispatcher, pg_message, pg_control):
 
     # Make assertions while task is in the delaying phase
     await asyncio.sleep(0.04)
-    canceled_jobs = await pg_control.acontrol_with_reply('cancel', data={'uuid': 'delay_task_will_cancel'})
+    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'delay_task_will_cancel'}), timeout=5)
     worker_id, canceled_job = canceled_jobs[0][0]
     assert worker_id == '<delayed>'
     assert canceled_job['uuid'] == 'delay_task_will_cancel'
 
-    running_jobs = await pg_control.acontrol_with_reply('running')
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running'), timeout=5)
     assert running_jobs == [[]]
 
     assert apg_dispatcher.pool.finished_count == 0
