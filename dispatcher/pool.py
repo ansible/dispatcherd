@@ -107,9 +107,9 @@ class WorkerPool:
         )
 
     async def start_working(self, dispatcher) -> None:
-        self.read_results_task = asyncio.create_task(self.read_results_forever())
+        self.read_results_task = asyncio.create_task(self.read_results_forever(), name='results_task')
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
-        self.management_task = asyncio.create_task(self.manage_workers())
+        self.management_task = asyncio.create_task(self.manage_workers(), name='management_task')
         self.management_task.add_done_callback(dispatcher.fatal_error_callback)
 
     async def manage_workers(self) -> None:

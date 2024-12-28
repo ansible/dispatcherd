@@ -46,9 +46,8 @@ async def test_get_running_jobs(apg_dispatcher, pg_message, pg_control):
     await pg_message(msg)
 
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running'), timeout=5)
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running', timeout=1), timeout=5)
     worker_id, running_job = running_jobs[0][0]
-    await asyncio.wait_for(clearing_task, timeout=3)
 
     assert running_job['uuid'] == 'find_me'
 
@@ -59,14 +58,14 @@ async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
     await pg_message(msg)
 
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'}), timeout=5)
+    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'}, timeout=1), timeout=5)
     worker_id, canceled_message = canceled_jobs[0][0]
     await asyncio.wait_for(clearing_task, timeout=3)
 
     assert canceled_message['uuid'] == 'foobar'
 
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [0, 1, 1]
+    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [0, 1, 1], 'cts: [finished, canceled, control]'
 
 
 @pytest.mark.asyncio
@@ -79,17 +78,19 @@ async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
 
     # Make assertions while task is in the delaying phase
     await asyncio.sleep(0.04)
-    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running'), timeout=5)
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running', timeout=1), timeout=5)
     worker_id, running_job = running_jobs[0][0]
     assert worker_id == '<delayed>'
     assert running_job['uuid'] == 'delay_task'
+    await asyncio.wait_for(apg_dispatcher.pool.events.work_cleared.wait(), timeout=3)
+    pool = apg_dispatcher.pool
+    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [0, 0, 1], 'cts: [finished, canceled, control]'
     # Completing the reply itself will be a work_cleared event, so we have to clear the event
     apg_dispatcher.pool.events.work_cleared.clear()
 
     # Wait for task to finish, assertions after completion
     await asyncio.wait_for(apg_dispatcher.pool.events.work_cleared.wait(), timeout=3)
-    pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [1, 0, 1]
+    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [1, 0, 1], 'cts: [finished, canceled, control]'
 
 
 @pytest.mark.asyncio
@@ -102,12 +103,12 @@ async def test_cancel_delayed_task(apg_dispatcher, pg_message, pg_control):
 
     # Make assertions while task is in the delaying phase
     await asyncio.sleep(0.04)
-    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'delay_task_will_cancel'}), timeout=5)
+    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'delay_task_will_cancel'}, timeout=1), timeout=5)
     worker_id, canceled_job = canceled_jobs[0][0]
     assert worker_id == '<delayed>'
     assert canceled_job['uuid'] == 'delay_task_will_cancel'
 
-    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running'), timeout=5)
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running', timeout=1), timeout=5)
     assert running_jobs == [[]]
 
     assert apg_dispatcher.pool.finished_count == 0

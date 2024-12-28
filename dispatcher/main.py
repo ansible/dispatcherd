@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Optional, Union
 
 from dispatcher.pool import WorkerPool
+from dispatcher.producers.base import BaseProducer
 from dispatcher.producers.brokered import BrokeredProducer
 from dispatcher.producers.scheduled import ScheduledProducer
 
@@ -110,7 +111,7 @@ class DispatcherMain:
             try:
                 task.result()
             except Exception:
-                logger.exception(f'Exception from {task.get_name()}, exit flag set')
+                logger.exception(f'Exception from task {task.get_name()}, exit flag set')
                 task._dispatcher_tb_logged = True
 
         self.events.exit_event.set()
@@ -157,6 +158,9 @@ class DispatcherMain:
 
         logger.debug('Setting event to exit main loop')
         self.events.exit_event.set()
+
+    async def connected_callback(self, producer: BaseProducer) -> None:
+        return
 
     async def sleep_then_process(self, capsule: SimpleNamespace) -> None:
         logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')

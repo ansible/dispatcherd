@@ -35,14 +35,14 @@ def get_connection(config):
     return psycopg.Connection.connect(**config, autocommit=True)
 
 
-async def aprocess_notify(connection, channels, connected_event=None):
+async def aprocess_notify(connection, channels, connected_callback=None):
     async with connection.cursor() as cur:
         for channel in channels:
             await cur.execute(f"LISTEN {channel};")
             logger.info(f"Set up pg_notify listening on channel '{channel}'")
 
-        if connected_event:
-            connected_event.set()
+        if connected_callback:
+            await connected_callback()
 
         while True:
             logger.debug('Starting listening for pg_notify notifications')

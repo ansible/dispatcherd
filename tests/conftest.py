@@ -1,5 +1,7 @@
 import asyncio
 
+import contextlib
+
 from typing import Callable, AsyncIterator
 
 import pytest
@@ -48,13 +50,8 @@ async def pg_message(psycopg_conn) -> Callable:
     return _rf
 
 
-@pytest_asyncio.fixture(loop_scope="function", scope="function")
-def pg_control(psycopg_conn) -> Control:
-    return Control('test_channel', async_connection=psycopg_conn)
-
-
-@pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def psycopg_conn():
+@contextlib.asynccontextmanager
+async def connection_for_test():
     conn = None
     try:
         conn = await aget_connection({'conninfo': CONNECTION_STRING})
@@ -62,3 +59,19 @@ async def psycopg_conn():
     finally:
         if conn:
             await conn.close()
+
+
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
+async def pg_control() -> AsyncIterator[Control]:
+    """This has to use a different connection from dispatcher itself
+
+    because psycopg will pool async connections, meaning that submission
+    for the control task would be blocked by the listening query of the dispatcher itself"""
+    async with connection_for_test() as conn:
+        yield Control('test_channel', async_connection=conn)
+
+
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
+async def psycopg_conn():
+    async with connection_for_test() as conn:
+        yield conn

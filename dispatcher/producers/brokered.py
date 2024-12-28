@@ -17,11 +17,12 @@ class BrokeredProducer(BaseProducer):
         self.channels = channels
         self.connection = connection
         self.old_connection = bool(connection)
+        self.dispatcher = None
 
     async def start_producing(self, dispatcher) -> None:
         await self.connect()
 
-        self.production_task = asyncio.create_task(self.produce_forever(dispatcher))
+        self.production_task = asyncio.create_task(self.produce_forever(dispatcher), name=f'{self.broker}_production')
         # TODO: implement connection retry logic
         self.production_task.add_done_callback(dispatcher.fatal_error_callback)
 
@@ -34,11 +35,18 @@ class BrokeredProducer(BaseProducer):
         if self.connection is None:
             self.connection = await aget_connection(self.config)
 
+    async def connected_callback(self):
+        self.events.ready_event.set()
+        logger.info(f'in broker connected callback {self.dispatcher}')
+        if self.dispatcher:
+            await self.dispatcher.connected_callback(self)
+
     async def produce_forever(self, dispatcher) -> None:
-        async for channel, payload in aprocess_notify(self.connection, self.channels, connected_event=self.events.ready_event):
+        self.dispatcher = dispatcher
+        async for channel, payload in aprocess_notify(self.connection, self.channels, connected_callback=self.connected_callback):
             await dispatcher.process_message(payload, broker=self, channel=channel)
 
-    async def notify(self, channel, payload=None) -> None:
+    async def notify(self, channel: str, payload: Optional[str] = None) -> None:
         await apublish_message(self.connection, channel, payload=payload)
 
     async def shutdown(self) -> None:
@@ -55,5 +63,6 @@ class BrokeredProducer(BaseProducer):
             self.production_task = None
         if not self.old_connection:
             if self.connection:
+                logger.debug(f'Closing {self.broker} connection')
                 await self.connection.close()
                 self.connection = None
