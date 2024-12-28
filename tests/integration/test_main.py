@@ -60,9 +60,8 @@ async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'}, timeout=1), timeout=5)
     worker_id, canceled_message = canceled_jobs[0][0]
-    await asyncio.wait_for(clearing_task, timeout=3)
-
     assert canceled_message['uuid'] == 'foobar'
+    await asyncio.wait_for(clearing_task, timeout=3)
 
     pool = apg_dispatcher.pool
     assert [pool.finished_count, pool.canceled_count, pool.control_count] == [0, 1, 1], 'cts: [finished, canceled, control]'

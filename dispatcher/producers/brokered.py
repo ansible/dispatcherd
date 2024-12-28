@@ -35,9 +35,8 @@ class BrokeredProducer(BaseProducer):
         if self.connection is None:
             self.connection = await aget_connection(self.config)
 
-    async def connected_callback(self):
+    async def connected_callback(self) -> None:
         self.events.ready_event.set()
-        logger.info(f'in broker connected callback {self.dispatcher}')
         if self.dispatcher:
             await self.dispatcher.connected_callback(self)
 
