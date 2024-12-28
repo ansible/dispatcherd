@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+from tests.data import methods as test_methods
+
 SLEEP_METHOD = 'lambda: __import__("time").sleep(0.1)'
 
 
@@ -12,6 +14,17 @@ async def test_run_lambda_function(apg_dispatcher, pg_message):
 
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     await pg_message('lambda: "This worked!"')
+    await asyncio.wait_for(clearing_task, timeout=3)
+
+    assert apg_dispatcher.pool.finished_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_decorated_function(apg_dispatcher, conn_config):
+    assert apg_dispatcher.pool.finished_count == 0
+
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    test_methods.print_hello.apply_async(config=conn_config)
     await asyncio.wait_for(clearing_task, timeout=3)
 
     assert apg_dispatcher.pool.finished_count == 1
@@ -112,20 +125,24 @@ async def test_cancel_delayed_task(apg_dispatcher, pg_message, pg_control):
 
     assert apg_dispatcher.pool.finished_count == 0
 
-    # # NOTE: this task will error unless you run the dispatcher itself with it in the PYTHONPATH, which is intended
-    # sleep_function.apply_async(
-    #     args=[3],  # sleep 3 seconds
-    #     delay=10,
-    #     config={'conninfo': CONNECTION_STRING}
-    # )
 
+@pytest.mark.asyncio
+async def test_cancel_with_no_reply(apg_dispatcher, pg_message, pg_control):
+    assert apg_dispatcher.pool.finished_count == 0
 
-    # print('')
-    # print('cancel a delayed task with no reply for demonstration')
-    # ctl.control('cancel', data={'task': 'test_methods.sleep_function'})  # NOTE: no reply
-    # print('confirmation that it has been canceled')
-    # running_data = ctl.control_with_reply('running', data={'task': 'test_methods.sleep_function'})
-    # print(json.dumps(running_data, indent=2))
+    # Send message to run task with a delay
+    msg = json.dumps({'task': 'lambda: print("This task should be canceled before start")', 'uuid': 'delay_task_will_cancel', 'delay': 2.0})
+    await pg_message(msg)
+
+    # Make assertions while task is in the delaying phase
+    await asyncio.sleep(0.04)
+    await pg_control.acontrol('cancel', data={'uuid': 'delay_task_will_cancel'})
+    await asyncio.sleep(0.04)
+
+    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running', timeout=1), timeout=5)
+    assert running_jobs == [[]]
+
+    assert apg_dispatcher.pool.finished_count == 0
 
     # print('')
     # print('running alive check a few times')

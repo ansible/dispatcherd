@@ -11,7 +11,7 @@ import pytest_asyncio
 from dispatcher.main import DispatcherMain
 from dispatcher.control import Control
 
-from dispatcher.brokers.pg_notify import apublish_message, aget_connection
+from dispatcher.brokers.pg_notify import apublish_message, aget_connection, get_connection
 
 
 # List of channels to listen on
@@ -50,8 +50,13 @@ async def pg_message(psycopg_conn) -> Callable:
     return _rf
 
 
+@pytest.fixture
+def conn_config():
+    return {'conninfo': CONNECTION_STRING}
+
+
 @contextlib.asynccontextmanager
-async def connection_for_test():
+async def aconnection_for_test():
     conn = None
     try:
         conn = await aget_connection({'conninfo': CONNECTION_STRING})
@@ -67,11 +72,11 @@ async def pg_control() -> AsyncIterator[Control]:
 
     because psycopg will pool async connections, meaning that submission
     for the control task would be blocked by the listening query of the dispatcher itself"""
-    async with connection_for_test() as conn:
+    async with aconnection_for_test() as conn:
         yield Control('test_channel', async_connection=conn)
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def psycopg_conn():
-    async with connection_for_test() as conn:
+    async with aconnection_for_test() as conn:
         yield conn

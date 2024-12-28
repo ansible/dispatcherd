@@ -87,7 +87,7 @@ class task:
                 return obj
 
             @classmethod
-            def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, delay=None, config=None, on_duplicate=None, **kw):
+            def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, delay=None, connection=None, config=None, on_duplicate=None, **kw):
                 queue = queue or getattr(cls.queue, 'im_func', cls.queue)
                 if not queue:
                     msg = f'{cls.name}: Queue value required and may not be None'
@@ -103,7 +103,7 @@ class task:
                 from dispatcher.brokers.pg_notify import publish_message
 
                 # NOTE: the kw will communicate things in the database connection data
-                publish_message(queue, json.dumps(obj), config=config, **kw)
+                publish_message(queue, json.dumps(obj), connection=connection, config=config, **kw)
                 return (obj, queue)
 
         # If the object we're wrapping *is* a class (e.g., RunJob), return

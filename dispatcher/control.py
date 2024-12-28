@@ -104,6 +104,15 @@ class Control(object):
 
         return await self.acontrol_with_reply_internal(self.make_producer(reply_queue), send_data, expected_replies, timeout)
 
+    async def acontrol(self, command, data=None):
+        send_data = {'control': command}
+        if data:
+            send_data['control_data'] = data
+
+        control_callbacks = ControlCallbacks(self.queuename, send_data, 0)
+        producer = self.make_producer(Control.generate_reply_queue_name())  # reply queue not used
+        await control_callbacks.connected_callback(producer)
+
     def control_with_reply(self, command, expected_replies=1, timeout=1, data=None):
         logger.info('control-and-reply {} to {}'.format(command, self.queuename))
         start = time.time()
