@@ -92,11 +92,20 @@ class WorkerPool:
         self.finished_count: int = 0
         self.control_count: int = 0
         self.canceled_count: int = 0
+        self.discard_count: int = 0
         self.shutdown_timeout = 3
         self.management_lock = asyncio.Lock()
         self.fd_lock = fd_lock or asyncio.Lock()
 
         self.events = self._create_events()
+
+    @property
+    def processed_count(self):
+        return self.finished_count + self.canceled_count + self.discard_count
+
+    @property
+    def received_count(self):
+        return self.processed_count + len(self.queued_messages) + sum(1 for w in self.workers.values() if w.current_task)
 
     def _create_events(self):
         "Benchmark tests have to re-create this because they use same object in different event loops"
@@ -255,6 +264,7 @@ class WorkerPool:
             blocking_action = self.get_blocking_action(message)
             if blocking_action == MessageAction.discard.value:
                 logger.info(f'Discarding task because it is already running: \n{message}')
+                self.discard_count += 1
                 return
             elif self.shutting_down:
                 logger.info(f'Not starting task (uuid={uuid}) because we are shutting down, queued_ct={len(self.queued_messages)}')

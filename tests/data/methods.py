@@ -18,6 +18,11 @@ def sleep_serial(seconds=1):
     time.sleep(seconds)
 
 
+@task(queue='test_channel', on_duplicate='queue_one')
+def sleep_queue_one(seconds=1):
+    time.sleep(seconds)
+
+
 @task(queue='test_channel')
 def print_hello():
     print('hello world!!')
