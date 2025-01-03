@@ -7,9 +7,6 @@ from typing import Optional, Union
 
 from dispatcher.pool import WorkerPool
 from dispatcher import producers as producer_module
-# from dispatcher.producers.base import BaseProducer
-# from dispatcher.producers.brokered import BrokeredProducer
-# from dispatcher.producers.scheduled import ScheduledProducer
 
 logger = logging.getLogger(__name__)
 
