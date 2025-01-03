@@ -1,7 +1,6 @@
 from unittest import mock
 
 from dispatcher.publish import task
-from dispatcher.utils import serialize_task
 
 import pytest
 
@@ -76,21 +75,3 @@ def test_class_normal_call(registry, mock_apply_async):
     TestMethod.delay()
 
     mock_apply_async.assert_called_once_with((), {})
-
-
-def test_apply_async_with_no_queue(registry):
-    @task(registry=registry)
-    def test_method():
-        return
-
-    dmethod = registry.get_from_callable(test_method)
-
-    # Can not run a method if we do not have a queue
-    with pytest.raises(ValueError):
-        dmethod.apply_async()
-
-    # But providing a queue at time of submission works
-    with mock.patch('dispatcher.brokers.pg_notify.publish_message') as mock_publish_method:
-        dmethod.apply_async(queue='fooqueue')
-
-    mock_publish_method.assert_called_once()

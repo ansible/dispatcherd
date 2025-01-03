@@ -6,17 +6,19 @@ from typing import Iterator, Optional
 
 from dispatcher.process import ProcessManager, ProcessProxy
 from dispatcher.utils import DuplicateBehavior, MessageAction
+from dispatcher.config import settings as global_settings, LazySettings
 
 logger = logging.getLogger(__name__)
 
 
 class PoolWorker:
-    def __init__(self, worker_id: int, process: ProcessProxy) -> None:
+    def __init__(self, worker_id: int, process: ProcessProxy, settings: LazySettings = global_settings) -> None:
         self.worker_id = worker_id
         self.process = process
         self.current_task: Optional[dict] = None
         self.started_at: Optional[int] = None
         self.is_active_cancel: bool = False
+        self.settings_stash: dict = settings.serialize()
 
         # Tracking information for worker
         self.finished_count = 0
@@ -94,8 +96,8 @@ class PoolEvents:
 
 
 class WorkerPool:
-    def __init__(self, num_workers: int, fd_lock: Optional[asyncio.Lock] = None):
-        self.num_workers = num_workers
+    def __init__(self, max_workers: int, fd_lock: Optional[asyncio.Lock] = None):
+        self.max_workers = max_workers
         self.workers: dict[int, PoolWorker] = {}
         self.next_worker_id = 0
         self.process_manager = ProcessManager()
@@ -132,7 +134,7 @@ class WorkerPool:
     async def manage_workers(self) -> None:
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shutting_down:
-            while len(self.workers) < self.num_workers:
+            while len(self.workers) < self.max_workers:
                 await self.up()
 
             # TODO: if all workers are busy, queue has unblocked work, below max_workers
@@ -186,7 +188,7 @@ class WorkerPool:
             self.events.timeout_event.clear()
 
     async def up(self) -> None:
-        process = self.process_manager.create_process((self.next_worker_id,))
+        process = self.process_manager.create_process((self.settings_stash, self.next_worker_id,))
         worker = PoolWorker(self.next_worker_id, process)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1

@@ -9,6 +9,7 @@ import traceback
 from queue import Empty as QueueEmpty
 
 from dispatcher.registry import registry
+from dispatcher.config import setup
 
 logger = logging.getLogger(__name__)
 
@@ -197,11 +198,14 @@ class TaskWorker:
         return {"worker": self.worker_id, "event": "shutdown"}
 
 
-def work_loop(worker_id: int, queue: multiprocessing.Queue, finished_queue):
+def work_loop(settings: dict, worker_id: int, queue: multiprocessing.Queue, finished_queue):
     """
     Worker function that processes messages from the queue and sends confirmation
     to the finished_queue once done.
     """
+    # Load settings passed from parent
+    # this assures that workers are all configured the same
+    setup(config=settings)
     worker = TaskWorker(worker_id)
     # TODO: add an app callback here to set connection name and things like that
 

@@ -49,8 +49,8 @@ There are 2 ways to run the dispatcher service:
 - A CLI entrypoint `dispatcher-standalone` for demo purposes
 
 ```python
-from dispatcher.main import DispatcherMain
-import asyncio
+from dispatcher.config import setup
+from dispatcher import run_service
 
 config = {
     "producers": {
@@ -63,13 +63,9 @@ config = {
     },
     "pool": {"max_workers": 4},
 }
-loop = asyncio.get_event_loop()
-dispatcher = DispatcherMain(config)
+setup(config)
 
-try:
-    loop.run_until_complete(dispatcher.main())
-finally:
-    loop.close()
+run_service()
 ```
 
 Configuration tells how to connect to postgres, and what channel(s) to listen to.

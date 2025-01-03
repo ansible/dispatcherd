@@ -5,7 +5,8 @@ import time
 import uuid
 from types import SimpleNamespace
 
-from dispatcher.producers.brokered import BrokeredProducer
+from dispatcher.factories import get_async_publisher_from_settings, get_sync_publisher_from_settings
+from dispatcher.producers import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -28,7 +29,7 @@ class ControlCallbacks:
     def _create_events(self):
         return SimpleNamespace(exit_event=asyncio.Event())
 
-    async def process_message(self, payload, broker=None, channel=None):
+    async def process_message(self, payload, producer=None, channel=None):
         self.received_replies.append(payload)
         if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
             self.events.exit_event.set()
@@ -55,10 +56,9 @@ class ControlCallbacks:
 
 
 class Control(object):
-    def __init__(self, queue, config=None, async_connection=None):
+    def __init__(self, queue, config=None):
         self.queuename = queue
         self.config = config
-        self.async_connection = async_connection
 
     def running(self, *args, **kwargs):
         return self.control_with_reply('running', *args, **kwargs)
@@ -90,11 +90,8 @@ class Control(object):
         return [json.loads(payload) for payload in control_callbacks.received_replies]
 
     def make_producer(self, reply_queue):
-        if self.async_connection:
-            conn_kwargs = {'connection': self.async_connection}
-        else:
-            conn_kwargs = {'config': self.config}
-        return BrokeredProducer(broker='pg_notify', channels=[reply_queue], **conn_kwargs)
+        broker = get_async_publisher_from_settings(channels=[reply_queue])
+        return BrokeredProducer(broker, close_on_exit=True)
 
     async def acontrol_with_reply(self, command, expected_replies=1, timeout=1, data=None):
         reply_queue = Control.generate_reply_queue_name()
@@ -118,9 +115,6 @@ class Control(object):
         start = time.time()
         reply_queue = Control.generate_reply_queue_name()
 
-        if (not self.config) and (not self.async_connection):
-            raise RuntimeError('Must use a new psycopg connection to do control-and-reply')
-
         send_data = {'control': command, 'reply_to': reply_queue}
         if data:
             send_data['control_data'] = data
@@ -139,11 +133,10 @@ class Control(object):
 
     # NOTE: this is the synchronous version, only to be used for no-reply
     def control(self, command, data=None):
-        from dispatcher.brokers.pg_notify import publish_message
-
         send_data = {'control': command}
         if data:
             send_data['control_data'] = data
 
         payload = json.dumps(send_data)
-        publish_message(self.queuename, payload, config=self.config)
+        broker = get_sync_publisher_from_settings()
+        broker.publish_message(channel=self.queuename, message=payload)

@@ -1,20 +1,23 @@
 # Demo config
 ---
-pool:
-  max_workers: 3
-producers:
-  brokers:
-    # List of channels to listen on
+service:
+  max_workers: 4
+brokers:
+  pg_notify:
+    config:
+      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777
+    sync_connection_factory: dispatcher.brokers.pg_notify.connection_saver
     channels:
     - test_channel
     - test_channel2
     - test_channel3
-    pg_notify:
-      # Database connection details
-      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost
-        port=55777
-  scheduled:
-    'lambda: __import__("time").sleep(1)':
-      schedule: 3
-    'lambda: __import__("time").sleep(2)':
-      schedule: 3
+    default_publish_channel: test_channel
+producers:
+  ScheduledProducer:
+    task_schedule:
+      'lambda: __import__("time").sleep(1)':
+        schedule: 3
+      'lambda: __import__("time").sleep(2)':
+        schedule: 3
+publish:
+  default_broker: pg_notify

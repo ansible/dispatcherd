@@ -3,13 +3,10 @@ import json
 import logging
 import signal
 from types import SimpleNamespace
-from typing import Optional, Union
+from typing import Iterable, Optional
 
 from dispatcher.pool import WorkerPool
-from dispatcher.producers.base import BaseProducer
-from dispatcher.producers.brokered import BrokeredProducer
-from dispatcher.producers.scheduled import ScheduledProducer
-from dispatcher.utils import MODULE_METHOD_DELIMITER
+from dispatcher.producers import BaseProducer
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +76,7 @@ class DispatcherEvents:
 
 
 class DispatcherMain:
-    def __init__(self, config: dict):
+    def __init__(self, service_config: dict, producers: Iterable[BaseProducer]):
         self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
@@ -88,23 +85,16 @@ class DispatcherMain:
         # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
         # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
         self.fd_lock = asyncio.Lock()
-        self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3), self.fd_lock)
+        self.pool = WorkerPool(fd_lock=self.fd_lock, **service_config)
 
-        # Initialize all the producers, this should not start anything, just establishes objects
-        self.producers: list[Union[ScheduledProducer, BrokeredProducer]] = []
-        if 'producers' in config:
-            producer_config = config['producers']
-            if 'brokers' in producer_config:
-                for broker_name, broker_config in producer_config['brokers'].items():
-                    # TODO: import from the broker module here, some importlib stuff
-                    # TODO: make channels specific to broker, probably
-                    if broker_name != 'pg_notify':
-                        continue
-                    self.producers.append(BrokeredProducer(broker=broker_name, config=broker_config, channels=producer_config['brokers']['channels']))
-            if 'scheduled' in producer_config:
-                self.producers.append(ScheduledProducer(producer_config['scheduled']))
+        # Set all the producers, this should still not start anything, just establishes objects
+        self.producers = producers
 
         self.events: DispatcherEvents = DispatcherEvents()
+
+    def _create_events(self):
+        "Benchmark tests have to re-create this because they use same object in different event loops"
+        return SimpleNamespace(exit_event=asyncio.Event())
 
     def fatal_error_callback(self, *args) -> None:
         """Method to connect to error callbacks of other tasks, will kick out of main loop"""
@@ -183,7 +173,7 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload: dict, broker: Optional[BrokeredProducer] = None, channel: Optional[str] = None) -> None:
+    async def process_message(self, payload: dict, producer: Optional[BaseProducer] = None, channel: Optional[str] = None) -> None:
         # Convert payload from client into python dict
         # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
@@ -208,9 +198,9 @@ class DispatcherMain:
             # NOTE: control messages with reply should never be delayed, document this for users
             self.create_delayed_task(message)
         else:
-            await self.process_message_internal(message, broker=broker)
+            await self.process_message_internal(message, producer=producer)
 
-    async def process_message_internal(self, message: dict, broker=None) -> None:
+    async def process_message_internal(self, message: dict, producer=None) -> None:
         if 'control' in message:
             method = getattr(self.ctl_tasks, message['control'])
             control_data = message.get('control_data', {})
@@ -220,9 +210,8 @@ class DispatcherMain:
                 self.control_count += 1
                 await self.pool.dispatch_task(
                     {
-                        'task': f'dispatcher.brokers.{broker.broker}{MODULE_METHOD_DELIMITER}publish_message',
+                        'task': 'dispatcher.tasks.reply_to_control',
                         'args': [message['reply_to'], json.dumps(returned)],
-                        'kwargs': {'config': broker.config, 'new_connection': True},
                         'uuid': f'control-{self.control_count}',
                         'control': 'reply',  # for record keeping
                     }

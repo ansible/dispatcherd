@@ -7,6 +7,7 @@ from typing import Callable, Optional, Set, Tuple
 from uuid import uuid4
 
 from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
+from dispatcher.config import settings as global_settings, DispatcherSettings
 
 logger = logging.getLogger(__name__)
 
@@ -79,23 +80,21 @@ class DispatcherMethod:
 
         return body
 
-    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, connection=None, config=None, **kw) -> Tuple[dict, str]:
+    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, settings: DispatcherSettings = global_settings, **kw) -> Tuple[dict, str]:
         queue = queue or self.submission_defaults.get('queue')
-        if not queue:
-            msg = f'{self.fn}: Queue value required and may not be None'
-            logger.error(msg)
-            raise ValueError(msg)
 
         if callable(queue):
             queue = queue()
 
         obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
 
-        # TODO: before sending, consult an app-specific callback if configured
-        from dispatcher.brokers.pg_notify import publish_message
+        from dispatcher.factories import get_sync_publisher_from_settings
 
-        # NOTE: the kw will communicate things in the database connection data
-        publish_message(queue, json.dumps(obj), connection=connection, config=config)
+        broker = get_sync_publisher_from_settings(settings=settings)
+
+        # TODO: exit if a setting is applied to disable publishing
+
+        broker.publish_message(channel=queue, message=json.dumps(obj))
         return (obj, queue)
 
 
