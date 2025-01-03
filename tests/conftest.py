@@ -43,8 +43,8 @@ async def aconnection_for_test():
         # Make sure database is running to avoid deadlocks which can come
         # from using the loop provided by pytest asyncio
         async with conn.cursor() as cursor:
-            cursor.execute('SELECT 1')
-            cursor.fetchall()
+            await cursor.execute('SELECT 1')
+            await cursor.fetchall()
 
         yield conn
     finally:
