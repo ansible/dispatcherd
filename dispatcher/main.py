@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Optional, Union
 
 from dispatcher.pool import WorkerPool
+from dispatcher.producers.base import BaseProducer
 from dispatcher.producers.brokered import BrokeredProducer
 from dispatcher.producers.scheduled import ScheduledProducer
 
@@ -71,7 +72,6 @@ class ControlTasks:
 
 class DispatcherMain:
     def __init__(self, config: dict):
-        self.exit_event = asyncio.Event()
         self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
@@ -96,6 +96,12 @@ class DispatcherMain:
             if 'scheduled' in producer_config:
                 self.producers.append(ScheduledProducer(producer_config['scheduled']))
 
+        self.events = self._create_events()
+
+    def _create_events(self):
+        "Benchmark tests have to re-create this because they use same object in different event loops"
+        return SimpleNamespace(exit_event=asyncio.Event())
+
     def fatal_error_callback(self, *args) -> None:
         """Method to connect to error callbacks of other tasks, will kick out of main loop"""
         if self.shutting_down:
@@ -105,14 +111,19 @@ class DispatcherMain:
             try:
                 task.result()
             except Exception:
-                logger.exception(f'Exception from {task.get_name()}, exit flag set')
+                logger.exception(f'Exception from task {task.get_name()}, exit flag set')
                 task._dispatcher_tb_logged = True
 
-        self.exit_event.set()
+        self.events.exit_event.set()
 
     def receive_signal(self, *args, **kwargs) -> None:
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
-        self.exit_event.set()
+        self.events.exit_event.set()
+
+    async def wait_for_producers_ready(self) -> None:
+        "Returns when all the producers have hit their ready event"
+        for producer in self.producers:
+            await producer.events.ready_event.wait()
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_event_loop()
@@ -146,7 +157,10 @@ class DispatcherMain:
             logger.exception('Pool manager encountered error')
 
         logger.debug('Setting event to exit main loop')
-        self.exit_event.set()
+        self.events.exit_event.set()
+
+    async def connected_callback(self, producer: BaseProducer) -> None:
+        return
 
     async def sleep_then_process(self, capsule: SimpleNamespace) -> None:
         logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')
@@ -206,6 +220,7 @@ class DispatcherMain:
                         'args': [message['reply_to'], json.dumps(returned)],
                         'kwargs': {'config': broker.config, 'new_connection': True},
                         'uuid': f'control-{self.control_count}',
+                        'control': 'reply',  # for record keeping
                     }
                 )
             else:
@@ -219,7 +234,7 @@ class DispatcherMain:
             await self.pool.start_working(self)
         except Exception:
             logger.exception(f'Pool {self.pool} failed to start working')
-            self.exit_event.set()
+            self.events.exit_event.set()
 
         logger.debug('Starting task production')
         async with self.fd_lock:  # lots of connecting going on here
@@ -228,19 +243,9 @@ class DispatcherMain:
                     await producer.start_producing(self)
                 except Exception:
                     logger.exception(f'Producer {producer} failed to start')
-                    self.exit_event.set()
+                    self.events.exit_event.set()
 
-    async def main(self) -> None:
-        logger.info('Connecting dispatcher signal handling')
-        await self.connect_signals()
-
-        await self.start_working()
-
-        logger.info('Dispatcher running forever, or until shutdown command')
-        await self.exit_event.wait()
-
-        await self.shutdown()
-
+    async def cancel_tasks(self):
         for task in asyncio.all_tasks():
             if task == asyncio.current_task():
                 continue
@@ -251,5 +256,18 @@ class DispatcherMain:
                     await task
                 except asyncio.CancelledError:
                     pass
+
+    async def main(self) -> None:
+        logger.info('Connecting dispatcher signal handling')
+        await self.connect_signals()
+
+        await self.start_working()
+
+        logger.info('Dispatcher running forever, or until shutdown command')
+        await self.events.exit_event.wait()
+
+        await self.shutdown()
+
+        await self.cancel_tasks()
 
         logger.debug('Dispatcher loop fully completed')

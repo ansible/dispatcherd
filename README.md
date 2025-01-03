@@ -15,7 +15,7 @@ You need to have 2 terminal tabs open to run this.
 ```
 # tab 1
 make postgres
-dispatcher-standalone
+PYTHONPATH=$PYTHONPATH:tools/ dispatcher-standalone
 # tab 2
 python tools/write_messages.py
 ```

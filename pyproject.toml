@@ -24,6 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
+dependencies = [
+    "pyyaml"
+]
 
 [project.scripts]
 dispatcher-standalone = "dispatcher.cli:standalone"
@@ -49,3 +52,6 @@ line_length = 160
 
 [project.optional-dependencies]
 pg_notify = ["psycopg[binary]"]
+
+[tool.pytest.ini_options]
+log_cli_level = "DEBUG"
