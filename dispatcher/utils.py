@@ -2,13 +2,15 @@ import importlib
 from enum import Enum
 from typing import Callable, Optional
 
+from dispatcher.constants import MODULE_METHOD_DEL
+
 
 def resolve_callable(task: str) -> Optional[Callable]:
     """
     Transform a dotted notation task into an imported, callable function, e.g.,
 
-    awx.main.tasks.system.delete_inventory
-    awx.main.tasks.jobs.RunProjectUpdate
+    awx.main.tasks.system:delete_inventory
+    awx.main.tasks.jobs:RunProjectUpdate
 
     In AWX this also did validation that the method was marked as a task.
     That is out of scope of this method now.
@@ -17,7 +19,7 @@ def resolve_callable(task: str) -> Optional[Callable]:
     if task.startswith('lambda:'):
         return eval(task)
 
-    module_name, target = task.rsplit('.', 1)
+    module_name, target = task.rsplit(MODULE_METHOD_DEL, 1)
     module = importlib.import_module(module_name)
     _call = None
     if hasattr(module, target):

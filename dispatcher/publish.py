@@ -5,12 +5,9 @@ import time
 from uuid import uuid4
 
 from dispatcher.utils import DuplicateBehavior
+from dispatcher.registry import registry, DispatcherMethodRegistry
 
 logger = logging.getLogger('awx.main.dispatch')
-
-
-def serialize_task(f):
-    return '.'.join([f.__module__, f.__name__])
 
 
 class task:
@@ -48,11 +45,14 @@ class task:
         print("Run this everywhere!")
     """
 
-    def __init__(self, queue=None, on_duplicate=DuplicateBehavior.parallel.value):
+    def __init__(self, queue=None, on_duplicate: str = DuplicateBehavior.parallel.value, registry: DispatcherMethodRegistry = registry):
         self.queue = queue
         self.on_duplicate = on_duplicate
+        self.registry = registry
 
-    def __call__(self, fn=None):
+    def __call__(self, fn):
+        dmethod = self.registry.register(fn)
+
         queue = self.queue
         on_duplicate = self.on_duplicate
 
@@ -93,12 +93,14 @@ class task:
                     msg = f'{cls.name}: Queue value required and may not be None'
                     logger.error(msg)
                     raise ValueError(msg)
+
+                if callable(queue):
+                    queue = queue()
+
                 obj = cls.get_async_body(args=args, kwargs=kwargs, uuid=uuid, delay=delay, **kw)
                 if on_duplicate:
                     obj['on_duplicate'] = on_duplicate
 
-                if callable(queue):
-                    queue = queue()
                 # TODO: before sending, consult an app-specific callback if configured
                 from dispatcher.brokers.pg_notify import publish_message
 
@@ -112,7 +114,7 @@ class task:
         # being decorated *plus* PublisherMixin so cls.apply_async() and
         # cls.delay() work
         bases = []
-        ns = {'name': serialize_task(fn), 'queue': queue}
+        ns = {'name': dmethod.serialize_task(), 'queue': queue}
         if inspect.isclass(fn):
             bases = list(fn.__bases__)
             ns.update(fn.__dict__)
