@@ -12,10 +12,6 @@ class DispatcherError(RuntimeError):
     pass
 
 
-class RegistrationClosed(DispatcherError):
-    pass
-
-
 class NotRegistered(DispatcherError):
     pass
 
@@ -73,7 +69,9 @@ class DispatcherMethodRegistry:
 
     def register(self, fn) -> DispatcherMethod:
         if self._registration_closed:
-            raise RegistrationClosed('Can not register new methods after import')
+            self._lookup_dict = {}
+            self._registration_closed = False
+
         with self.lock:
             dmethod = DispatcherMethod(fn)
             self.registry.add(dmethod)
