@@ -1,8 +1,17 @@
 import importlib
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, Optional, Protocol, Type, Union, runtime_checkable
 
-from dispatcher.constants import MODULE_METHOD_DEL
+
+@runtime_checkable
+class RunnableClass(Protocol):
+    def run(self, *args, **kwargs) -> None: ...
+
+
+MODULE_METHOD_DEL = ':'
+
+
+DispatcherCallable = Union[Callable, Type[RunnableClass]]
 
 
 def resolve_callable(task: str) -> Optional[Callable]:

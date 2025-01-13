@@ -4,8 +4,8 @@ import logging
 import time
 from uuid import uuid4
 
+from dispatcher.registry import DispatcherMethodRegistry, registry
 from dispatcher.utils import DuplicateBehavior
-from dispatcher.registry import registry, DispatcherMethodRegistry
 
 logger = logging.getLogger('awx.main.dispatch')
 

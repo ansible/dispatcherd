@@ -1,6 +1,6 @@
 import pytest
 
-from dispatcher.registry import DispatcherMethodRegistry
+from dispatcher.registry import DispatcherMethodRegistry, InvalidMethod
 
 
 @pytest.fixture
@@ -27,3 +27,12 @@ def test_register_class(registry):
     assert SomeClass in set(dmethod.fn for dmethod in registry.registry)
     assert 'test_registry:test_register_class.<locals>.SomeClass' in registry.lookup_dict
     assert len(registry.registry) == 1
+
+
+def test_no_objects(registry):
+    class SomeClass:
+        def run(self):
+            return
+
+    with pytest.raises(InvalidMethod):
+        registry.register(SomeClass())

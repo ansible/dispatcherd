@@ -1,11 +1,9 @@
-import threading
 import inspect
+import threading
 import time
+from typing import Optional, Set
 
-from typing import Callable, Optional, Set, Protocol, runtime_checkable, Union
-
-from dispatcher.constants import MODULE_METHOD_DEL
-from dispatcher.utils import resolve_callable
+from dispatcher.utils import MODULE_METHOD_DEL, DispatcherCallable, resolve_callable
 
 
 class DispatcherError(RuntimeError):
@@ -16,13 +14,8 @@ class NotRegistered(DispatcherError):
     pass
 
 
-@runtime_checkable
-class RunnableClass(Protocol):
-    def run(self, *args, **kwargs) -> None:
-        ...
-
-
-DispatcherCallable = Union[Callable, RunnableClass]
+class InvalidMethod(DispatcherError):
+    pass
 
 
 class MethodRun:
@@ -35,6 +28,8 @@ class MethodRun:
 
 class DispatcherMethod:
     def __init__(self, fn: DispatcherCallable):
+        if not hasattr(fn, '__qualname__'):
+            raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
         self.call_ct: int = 0
         self.runtime: float = 0.0
@@ -43,7 +38,7 @@ class DispatcherMethod:
         """The reverse of resolve_callable, transform callable into dotted notation"""
         return MODULE_METHOD_DEL.join([self.fn.__module__, self.fn.__qualname__])
 
-    def get_callable(self) -> Callable:
+    def get_callable(self) -> DispatcherCallable:
         if inspect.isclass(self.fn):
             # the callable is a class, e.g., RunJob; instantiate and
             # return its `run()` method
@@ -55,13 +50,16 @@ class DispatcherMethod:
         return {'task': self.serialize_task(), 'time_pub': time.time()}
 
 
-class UnregisteredMethod:
+class UnregisteredMethod(DispatcherMethod):
     def __init__(self, task: str):
-        super().__init__(resolve_callable(task))
+        fn = resolve_callable(task)
+        if fn is None:
+            raise ImportError(f'Dispatcher could not import provided identifier: {task}')
+        super().__init__(fn)
 
 
 class DispatcherMethodRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self.registry: Set[DispatcherMethod] = set()
         self.lock = threading.Lock()
         self._lookup_dict: dict[str, DispatcherMethod] = {}
@@ -86,7 +84,7 @@ class DispatcherMethodRegistry:
                 self._lookup_dict[dmethod.serialize_task()] = dmethod
         return self._lookup_dict
 
-    def get_method(self, task: str, allow_unregistered: bool= True) -> DispatcherMethod:
+    def get_method(self, task: str, allow_unregistered: bool = True) -> DispatcherMethod:
         if task in self.lookup_dict:
             return self.lookup_dict[task]
 
