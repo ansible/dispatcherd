@@ -1,20 +1,19 @@
 # Demo config
 ---
 pool:
-  max_workers: 3
+  max_workers: 4
 producers:
-  brokers:
-    # List of channels to listen on
+  BrokeredProducer:
+    broker: pg_notify
+    config:
+      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777
     channels:
     - test_channel
     - test_channel2
     - test_channel3
-    pg_notify:
-      # Database connection details
-      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost
-        port=55777
-  scheduled:
-    'lambda: __import__("time").sleep(1)':
-      schedule: 3
-    'lambda: __import__("time").sleep(2)':
-      schedule: 3
+  ScheduledProducer:
+    task_schedule:
+      'lambda: __import__("time").sleep(1)':
+        schedule: 3
+      'lambda: __import__("time").sleep(2)':
+        schedule: 3

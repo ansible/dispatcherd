@@ -5,10 +5,8 @@ import signal
 from types import SimpleNamespace
 from typing import Optional, Union
 
+from dispatcher import producers as producer_module
 from dispatcher.pool import WorkerPool
-from dispatcher.producers.base import BaseProducer
-from dispatcher.producers.brokered import BrokeredProducer
-from dispatcher.producers.scheduled import ScheduledProducer
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +81,12 @@ class DispatcherMain:
         self.pool = WorkerPool(config.get('pool', {}).get('max_workers', 3), self.fd_lock)
 
         # Initialize all the producers, this should not start anything, just establishes objects
-        self.producers: list[Union[ScheduledProducer, BrokeredProducer]] = []
+        self.producers: list[Union[producer_module.ScheduledProducer, producer_module.BrokeredProducer]] = []
         if 'producers' in config:
-            producer_config = config['producers']
-            if 'brokers' in producer_config:
-                for broker_name, broker_config in producer_config['brokers'].items():
-                    # TODO: import from the broker module here, some importlib stuff
-                    # TODO: make channels specific to broker, probably
-                    if broker_name != 'pg_notify':
-                        continue
-                    self.producers.append(BrokeredProducer(broker=broker_name, config=broker_config, channels=producer_config['brokers']['channels']))
-            if 'scheduled' in producer_config:
-                self.producers.append(ScheduledProducer(producer_config['scheduled']))
+            all_producer_config = config['producers']
+            for cls_name, producer_config in all_producer_config.items():
+                producer_cls = getattr(producer_module, cls_name)
+                self.producers.append(producer_cls(**producer_config))
 
         self.events = self._create_events()
 
@@ -159,7 +151,7 @@ class DispatcherMain:
         logger.debug('Setting event to exit main loop')
         self.events.exit_event.set()
 
-    async def connected_callback(self, producer: BaseProducer) -> None:
+    async def connected_callback(self, producer: producer_module.BaseProducer) -> None:
         return
 
     async def sleep_then_process(self, capsule: SimpleNamespace) -> None:
@@ -179,7 +171,7 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload: dict, broker: Optional[BrokeredProducer] = None, channel: Optional[str] = None) -> None:
+    async def process_message(self, payload: dict, broker: Optional[producer_module.BrokeredProducer] = None, channel: Optional[str] = None) -> None:
         # Convert payload from client into python dict
         # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
