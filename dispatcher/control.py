@@ -129,13 +129,13 @@ class Control(object):
 
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(self.acontrol_with_reply_internal(producer, send_data, expected_replies, timeout))
+            replies = loop.run_until_complete(self.acontrol_with_reply_internal(producer, send_data, expected_replies, timeout))
         finally:
             loop.close()
             loop = None
 
         logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
-        return self.parsed_replies
+        return replies
 
     # NOTE: this is the synchronous version, only to be used for no-reply
     def control(self, command, data=None):
