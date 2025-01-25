@@ -1,7 +1,8 @@
 import logging
 from typing import Optional
 
-from dispatcher.registry import DispatcherMethodRegistry, registry as default_registry
+from dispatcher.registry import DispatcherMethodRegistry
+from dispatcher.registry import registry as default_registry
 from dispatcher.utils import DispatcherCallable
 
 logger = logging.getLogger('awx.main.dispatch')
@@ -18,7 +19,12 @@ def _task_decorator(fn: DispatcherCallable, registry=default_registry, **kwargs)
     return fn
 
 
-def task(fn_maybe: Optional[DispatcherCallable] = None, queue: Optional[str] = None, on_duplicate: Optional[str] = None, registry: DispatcherMethodRegistry = default_registry):
+def task(
+    fn_maybe: Optional[DispatcherCallable] = None,
+    queue: Optional[str] = None,
+    on_duplicate: Optional[str] = None,
+    registry: DispatcherMethodRegistry = default_registry,
+):
     """
     Used to decorate a function or class so that it can be run asynchronously
     via the task dispatcher.  Tasks can be simple functions:

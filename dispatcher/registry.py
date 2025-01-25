@@ -1,12 +1,12 @@
 import inspect
+import json
+import logging
 import threading
 import time
 from typing import Optional, Set
 from uuid import uuid4
-import logging
-import json
 
-from dispatcher.utils import MODULE_METHOD_DEL, DispatcherCallable, resolve_callable, DuplicateBehavior
+from dispatcher.utils import MODULE_METHOD_DEL, DispatcherCallable, DuplicateBehavior, resolve_callable
 
 logger = logging.getLogger(__name__)
 
