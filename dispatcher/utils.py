@@ -28,6 +28,9 @@ def resolve_callable(task: str) -> Optional[Callable]:
     if task.startswith('lambda:'):
         return eval(task)
 
+    if MODULE_METHOD_DEL not in task:
+        raise RuntimeError(f'Given task name can not be parsed as task {task}')
+
     module_name, target = task.rsplit(MODULE_METHOD_DEL, 1)
     module = importlib.import_module(module_name)
     _call = None
@@ -39,7 +42,7 @@ def resolve_callable(task: str) -> Optional[Callable]:
 
 def serialize_task(f: Callable) -> str:
     """The reverse of resolve_callable, transform callable into dotted notation"""
-    return '.'.join([f.__module__, f.__name__])
+    return MODULE_METHOD_DEL.join([f.__module__, f.__name__])
 
 
 class MessageAction(Enum):

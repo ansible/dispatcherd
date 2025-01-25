@@ -1,12 +1,6 @@
 import pytest
 
-from dispatcher.registry import DispatcherMethodRegistry, InvalidMethod
-
-
-@pytest.fixture
-def registry():
-    "Return a fresh registry, separate from the global one, for testing"
-    return DispatcherMethodRegistry()
+from dispatcher.registry import InvalidMethod
 
 
 def test_registry_ordinary_method(registry):
