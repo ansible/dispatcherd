@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 import time
-from typing import Optional, Set
+from typing import Optional, Set, Callable
 from uuid import uuid4
 
 from dispatcher.utils import MODULE_METHOD_DEL, DispatcherCallable, DuplicateBehavior, resolve_callable
@@ -23,14 +23,6 @@ class InvalidMethod(DispatcherError):
     pass
 
 
-class MethodRun:
-    def __init__(self, message: dict):
-        self.published: Optional[float] = None
-        self.received: Optional[float] = None
-        self.dispatched: Optional[float] = None
-        self.finished: Optional[float] = None
-
-
 class DispatcherMethod:
     def __init__(self, fn: DispatcherCallable, queue: Optional[str] = None, on_duplicate: Optional[str] = None):
         if not hasattr(fn, '__qualname__'):
@@ -45,7 +37,7 @@ class DispatcherMethod:
         """The reverse of resolve_callable, transform callable into dotted notation"""
         return MODULE_METHOD_DEL.join([self.fn.__module__, self.fn.__qualname__])
 
-    def get_callable(self) -> DispatcherCallable:
+    def get_callable(self) -> Callable:
         if inspect.isclass(self.fn):
             # the callable is a class, e.g., RunJob; instantiate and
             # return its `run()` method
