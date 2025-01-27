@@ -3,10 +3,10 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Optional, Set
+from typing import Callable, Optional, Set, Tuple
 from uuid import uuid4
 
-from dispatcher.utils import MODULE_METHOD_DEL, DispatcherCallable, DuplicateBehavior, resolve_callable
+from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, DuplicateBehavior, resolve_callable
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +24,16 @@ class InvalidMethod(DispatcherError):
 
 
 class DispatcherMethod:
-    def __init__(self, fn: DispatcherCallable, queue: Optional[str] = None, on_duplicate: Optional[str] = None):
+    def __init__(self, fn: DispatcherCallable, queue: Optional[str] = None, on_duplicate: Optional[str] = None) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
         self.queue = queue
         self.on_duplicate = on_duplicate
-        self.call_ct: int = 0
-        self.runtime: float = 0.0
 
     def serialize_task(self) -> str:
         """The reverse of resolve_callable, transform callable into dotted notation"""
-        return MODULE_METHOD_DEL.join([self.fn.__module__, self.fn.__qualname__])
+        return MODULE_METHOD_DELIMITER.join([self.fn.__module__, self.fn.__qualname__])
 
     def get_callable(self) -> Callable:
         if inspect.isclass(self.fn):
@@ -51,10 +49,10 @@ class DispatcherMethod:
             defaults['on_duplicate'] = self.on_duplicate
         return defaults
 
-    def delay(self, *args, **kwargs):
+    def delay(self, *args, **kwargs) -> Tuple[dict, str]:
         return self.apply_async(args, kwargs)
 
-    def get_async_body(self, args=None, kwargs=None, uuid=None, delay=None, **kw):
+    def get_async_body(self, args=None, kwargs=None, uuid=None, delay=None, **kw) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
         This same message gets passed over the dispatcher IPC queue to workers
@@ -71,10 +69,10 @@ class DispatcherMethod:
         body.update(**kw)
         return body
 
-    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, delay=None, connection=None, config=None, on_duplicate=None, **kw):
+    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, delay=None, connection=None, config=None, on_duplicate=None, **kw) -> Tuple[dict, str]:
         queue = queue or self.queue
         if not queue:
-            msg = f'{self.name}: Queue value required and may not be None'
+            msg = f'{self.fn}: Queue value required and may not be None'
             logger.error(msg)
             raise ValueError(msg)
 
@@ -94,7 +92,7 @@ class DispatcherMethod:
 
 
 class UnregisteredMethod(DispatcherMethod):
-    def __init__(self, task: str):
+    def __init__(self, task: str) -> None:
         fn = resolve_callable(task)
         if fn is None:
             raise ImportError(f'Dispatcher could not import provided identifier: {task}')

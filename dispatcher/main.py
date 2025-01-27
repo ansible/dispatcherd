@@ -9,7 +9,7 @@ from dispatcher.pool import WorkerPool
 from dispatcher.producers.base import BaseProducer
 from dispatcher.producers.brokered import BrokeredProducer
 from dispatcher.producers.scheduled import ScheduledProducer
-from dispatcher.utils import MODULE_METHOD_DEL
+from dispatcher.utils import MODULE_METHOD_DELIMITER
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +217,7 @@ class DispatcherMain:
                 self.control_count += 1
                 await self.pool.dispatch_task(
                     {
-                        'task': f'dispatcher.brokers.{broker.broker}{MODULE_METHOD_DEL}publish_message',
+                        'task': f'dispatcher.brokers.{broker.broker}{MODULE_METHOD_DELIMITER}publish_message',
                         'args': [message['reply_to'], json.dumps(returned)],
                         'kwargs': {'config': broker.config, 'new_connection': True},
                         'uuid': f'control-{self.control_count}',
