@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 import time
-from typing import Optional, Set, Callable
+from typing import Callable, Optional, Set
 from uuid import uuid4
 
 from dispatcher.utils import MODULE_METHOD_DEL, DispatcherCallable, DuplicateBehavior, resolve_callable
