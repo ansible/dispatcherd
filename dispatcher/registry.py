@@ -6,7 +6,7 @@ import time
 from typing import Callable, Optional, Set, Tuple
 from uuid import uuid4
 
-from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, DuplicateBehavior, resolve_callable
+from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +24,11 @@ class InvalidMethod(DispatcherError):
 
 
 class DispatcherMethod:
-    def __init__(self, fn: DispatcherCallable, queue: Optional[str] = None, on_duplicate: Optional[str] = None) -> None:
+    def __init__(self, fn: DispatcherCallable, **submission_defaults) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
-        self.queue = queue
-        self.on_duplicate = on_duplicate
+        self.submission_defaults = submission_defaults or {}
 
     def serialize_task(self) -> str:
         """The reverse of resolve_callable, transform callable into dotted notation"""
@@ -44,33 +43,35 @@ class DispatcherMethod:
         return self.fn
 
     def publication_defaults(self) -> dict:
-        defaults = {'task': self.serialize_task(), 'time_pub': time.time()}
-        if self.on_duplicate not in [DuplicateBehavior.parallel.value, None]:
-            defaults['on_duplicate'] = self.on_duplicate
+        defaults = self.submission_defaults.copy()
+        defaults['task'] = self.serialize_task()
+        defaults['time_pub'] = time.time()
         return defaults
 
     def delay(self, *args, **kwargs) -> Tuple[dict, str]:
         return self.apply_async(args, kwargs)
 
-    def get_async_body(self, args=None, kwargs=None, uuid=None, delay=None, **kw) -> dict:
+    def get_async_body(self, args=None, kwargs=None, uuid=None, on_duplicate: Optional[str] = None, delay: float = 0.0) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
         This same message gets passed over the dispatcher IPC queue to workers
         If a task is submitted to a multiprocessing pool, skipping pg_notify, this might be used directly
         """
         body = self.publication_defaults()
+        # These params are forced to be set on every submission, can not be generic to task
         body.update({'uuid': uuid or str(uuid4()), 'args': args or [], 'kwargs': kwargs or {}})
-
-        if delay is not None:
-            body['delay'] = delay
 
         # TODO: callback to add other things, guid in case of AWX
 
-        body.update(**kw)
+        if on_duplicate:
+            body['on_duplicate'] = on_duplicate
+        if delay:
+            body['delay'] = delay
+
         return body
 
-    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, delay=None, connection=None, config=None, on_duplicate=None, **kw) -> Tuple[dict, str]:
-        queue = queue or self.queue
+    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, connection=None, config=None, **kw) -> Tuple[dict, str]:
+        queue = queue or self.submission_defaults.get('queue')
         if not queue:
             msg = f'{self.fn}: Queue value required and may not be None'
             logger.error(msg)
@@ -79,15 +80,13 @@ class DispatcherMethod:
         if callable(queue):
             queue = queue()
 
-        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, delay=delay, **kw)
-        if on_duplicate:
-            obj['on_duplicate'] = on_duplicate
+        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
 
         # TODO: before sending, consult an app-specific callback if configured
         from dispatcher.brokers.pg_notify import publish_message
 
         # NOTE: the kw will communicate things in the database connection data
-        publish_message(queue, json.dumps(obj), connection=connection, config=config, **kw)
+        publish_message(queue, json.dumps(obj), connection=connection, config=config)
         return (obj, queue)
 
 

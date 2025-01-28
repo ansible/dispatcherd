@@ -8,23 +8,29 @@ from dispatcher.utils import DispatcherCallable
 logger = logging.getLogger('awx.main.dispatch')
 
 
-def _task_decorator(fn: DispatcherCallable, registry=default_registry, **kwargs) -> DispatcherCallable:
-    "Core logic of the task decorator, register method and then glue on some methods from the registry"
+class DispatcherDecorator:
+    def __init__(self, registry: DispatcherMethodRegistry, *, queue: Optional[str] = None, on_duplicate: Optional[str] = None) -> None:
+        self.registry = registry
+        self.queue = queue
+        self.on_duplicate = on_duplicate
 
-    dmethod = registry.register(fn, **kwargs)
+    def __call__(self, fn: DispatcherCallable, /) -> DispatcherCallable:
+        "Concrete task decorator, registers method and glues on some methods from the registry"
 
-    setattr(fn, 'apply_async', dmethod.apply_async)
-    setattr(fn, 'delay', dmethod.delay)
+        dmethod = self.registry.register(fn, queue=self.queue, on_duplicate=self.on_duplicate)
 
-    return fn
+        setattr(fn, 'apply_async', dmethod.apply_async)
+        setattr(fn, 'delay', dmethod.delay)
+
+        return fn
 
 
 def task(
-    fn_maybe: Optional[DispatcherCallable] = None,
+    *,
     queue: Optional[str] = None,
     on_duplicate: Optional[str] = None,
     registry: DispatcherMethodRegistry = default_registry,
-):
+) -> DispatcherDecorator:
     """
     Used to decorate a function or class so that it can be run asynchronously
     via the task dispatcher.  Tasks can be simple functions:
@@ -57,13 +63,9 @@ def task(
     @task(queue='tower_broadcast')
     def announce():
         print("Run this everywhere!")
+
+    # The registry kwarg changes where the registration is saved, mainly for testing
+    # The on_duplicate kwarg controls behavior when multiple instances of the task running
+    # options are documented in dispatcher.utils.DuplicateBehavior
     """
-    # Used directly as a decorator
-    if fn_maybe and callable(fn_maybe):
-        return _task_decorator(fn_maybe)
-
-    # Called with argument, return a decorator
-    def _local_task_decorator(fn: DispatcherCallable) -> DispatcherCallable:
-        return _task_decorator(fn, queue=queue, on_duplicate=on_duplicate, registry=registry)
-
-    return _local_task_decorator
+    return DispatcherDecorator(registry, queue=queue, on_duplicate=on_duplicate)

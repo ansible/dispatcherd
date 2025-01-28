@@ -61,7 +61,7 @@ def test_decorator_kwargs(registry):
         return
 
     dmethod = registry.get_from_callable(test_method)
-    assert dmethod.on_duplicate == 'run_once'
+    assert dmethod.submission_defaults['on_duplicate'] == 'run_once'
 
     assert dmethod.get_async_body()['on_duplicate'] == 'run_once'
 
