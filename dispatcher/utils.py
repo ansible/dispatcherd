@@ -8,7 +8,7 @@ class RunnableClass(Protocol):
     def run(self, *args, **kwargs) -> None: ...
 
 
-MODULE_METHOD_DELIMITER = ':'
+MODULE_METHOD_DELIMITER = '.'
 
 
 DispatcherCallable = Union[Callable, Type[RunnableClass]]
