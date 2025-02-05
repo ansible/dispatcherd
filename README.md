@@ -35,44 +35,39 @@ def print_hello():
 
 The dispatcher service needs to be running before you submit tasks.
 This does not make any attempts at message durability or confirmation.
+If you submit a task in an outage of the service, it will be dropped.
 
-There are 2 ways to run the dispatcher:
- - Importing and running
-  ```python
-  from dispatcher.main import DispatcherMain
-  import asyncio
-  
-  pgnotify_dsn = "dbname=postgres user=postgres"
-  config = {
-      "producers": {
-          "brokers": {
-              "pg_notify": {"conninfo": pgnotify_dsn},
-              "channels": [
-                  "test_channel",
-              ],
-          },
-      },
-      "pool": {"max_workers": 4},
-  }
-  loop = asyncio.get_event_loop()
-  dispatcher = DispatcherMain(config)
-  
-  
-  try:
-      loop.run_until_complete(dispatcher.main())
-  finally:
-      loop.close()
+There are 2 ways to run the dispatcher service:
+ - Importing and running (code snippet below)
  - A CLI entrypoint `dispatcher-standalone` for demo purposes
 
-The dispatcher ultimately requires code hooks anyway,
-so any convienience the CLI offers is not very relevant
-for running things in production.
+```python
+from dispatcher.main import DispatcherMain
+import asyncio
 
-Configuration must be provided so it knows how to connect to postgres,
-and what channel to listen to. The demo has this in `dispatcher.yml`.
-When importing and running, you just pass your configuration directly.
+config = {
+    "producers": {
+        "brokers": {
+            "pg_notify": {"conninfo": "dbname=postgres user=postgres"},
+            "channels": [
+                "test_channel",
+            ],
+        },
+    },
+    "pool": {"max_workers": 4},
+}
+loop = asyncio.get_event_loop()
+dispatcher = DispatcherMain(config)
 
-The demo config contains a list of channels to listen to which includes `test_channel`.
+try:
+    loop.run_until_complete(dispatcher.main())
+finally:
+    loop.close()
+```
+
+Configuration tells how to connect to postgres, and what channel(s) to listen to.
+The demo has this in `dispatcher.yml`, which includes listening to `test_channel`.
+That matches the `@task` in the library.
 
 #### Publisher
 
