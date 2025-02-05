@@ -38,6 +38,30 @@ This does not make any attempts at message durability or confirmation.
 
 There are 2 ways to run the dispatcher:
  - Importing and running
+  ```python
+  from dispatcher.main import DispatcherMain
+  import asyncio
+  
+  pgnotify_dsn = "dbname=postgres user=postgres"
+  config = {
+      "producers": {
+          "brokers": {
+              "pg_notify": {"conninfo": pgnotify_dsn},
+              "channels": [
+                  "test_channel",
+              ],
+          },
+      },
+      "pool": {"max_workers": 4},
+  }
+  loop = asyncio.get_event_loop()
+  dispatcher = DispatcherMain(config)
+  
+  
+  try:
+      loop.run_until_complete(dispatcher.main())
+  finally:
+      loop.close()
  - A CLI entrypoint `dispatcher-standalone` for demo purposes
 
 The dispatcher ultimately requires code hooks anyway,

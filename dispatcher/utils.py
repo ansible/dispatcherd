@@ -18,8 +18,8 @@ def resolve_callable(task: str) -> Optional[Callable]:
     """
     Transform a dotted notation task into an imported, callable function, e.g.,
 
-    awx.main.tasks.system:delete_inventory
-    awx.main.tasks.jobs:RunProjectUpdate
+    awx.main.tasks.system.delete_inventory
+    awx.main.tasks.jobs.RunProjectUpdate
 
     In AWX this also did validation that the method was marked as a task.
     That is out of scope of this method now.
