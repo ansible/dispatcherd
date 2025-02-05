@@ -1,4 +1,3 @@
-import inspect
 import json
 import logging
 import multiprocessing
@@ -9,7 +8,7 @@ import time
 import traceback
 from queue import Empty as QueueEmpty
 
-from dispatcher.utils import resolve_callable
+from dispatcher.registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +75,7 @@ class TaskWorker:
         task = message['task']
         args = message.get('args', [])
         kwargs = message.get('kwargs', {})
-        _call = resolve_callable(task)
-        if inspect.isclass(_call):
-            # the callable is a class, e.g., RunJob; instantiate and
-            # return its `run()` method
-            _call = _call().run
+        _call = registry.get_method(task).get_callable()
 
         # don't print kwargs, they often contain launch-time secrets
         logger.debug(f'task (uuid={self.get_uuid(message)}) starting {task}(*{args}) on worker {self.worker_id}')

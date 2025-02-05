@@ -6,6 +6,7 @@ import sys
 
 from dispatcher.brokers.pg_notify import publish_message
 from dispatcher.control import Control
+from dispatcher.utils import MODULE_METHOD_DELIMITER
 
 # Add the test methods to the path so we can use .delay type contracts
 tools_dir = os.path.abspath(
@@ -68,14 +69,14 @@ def main():
 
     print('')
     print('showing delayed tasks in running list')
-    running_data = ctl.control_with_reply('running', data={'task': 'test_methods.sleep_function'})
+    running_data = ctl.control_with_reply('running', data={'task': f'test_methods{MODULE_METHOD_DELIMITER}sleep_function'})
     print(json.dumps(running_data, indent=2))
 
     print('')
     print('cancel a delayed task with no reply for demonstration')
-    ctl.control('cancel', data={'task': 'test_methods.sleep_function'})  # NOTE: no reply
+    ctl.control('cancel', data={'task': f'test_methods{MODULE_METHOD_DELIMITER}sleep_function'})  # NOTE: no reply
     print('confirmation that it has been canceled')
-    running_data = ctl.control_with_reply('running', data={'task': 'test_methods.sleep_function'})
+    running_data = ctl.control_with_reply('running', data={'task': f'test_methods{MODULE_METHOD_DELIMITER}sleep_function'})
     print(json.dumps(running_data, indent=2))
 
     print('')

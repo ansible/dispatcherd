@@ -1,6 +1,17 @@
 import importlib
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, Optional, Protocol, Type, Union, runtime_checkable
+
+
+@runtime_checkable
+class RunnableClass(Protocol):
+    def run(self, *args, **kwargs) -> None: ...
+
+
+MODULE_METHOD_DELIMITER = '.'
+
+
+DispatcherCallable = Union[Callable, Type[RunnableClass]]
 
 
 def resolve_callable(task: str) -> Optional[Callable]:
@@ -17,7 +28,10 @@ def resolve_callable(task: str) -> Optional[Callable]:
     if task.startswith('lambda:'):
         return eval(task)
 
-    module_name, target = task.rsplit('.', 1)
+    if MODULE_METHOD_DELIMITER not in task:
+        raise RuntimeError(f'Given task name can not be parsed as task {task}')
+
+    module_name, target = task.rsplit(MODULE_METHOD_DELIMITER, 1)
     module = importlib.import_module(module_name)
     _call = None
     if hasattr(module, target):
@@ -28,7 +42,7 @@ def resolve_callable(task: str) -> Optional[Callable]:
 
 def serialize_task(f: Callable) -> str:
     """The reverse of resolve_callable, transform callable into dotted notation"""
-    return '.'.join([f.__module__, f.__name__])
+    return MODULE_METHOD_DELIMITER.join([f.__module__, f.__name__])
 
 
 class MessageAction(Enum):
