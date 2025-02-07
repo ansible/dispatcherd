@@ -314,7 +314,6 @@ class WorkerPool:
         return None
 
     async def dispatch_task(self, message: dict) -> None:
-        logger.info(f'message {message}')
         async with self.management_lock:
             uuid = message.get("uuid", "<unknown>")
 
