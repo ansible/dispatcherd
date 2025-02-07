@@ -15,7 +15,7 @@ tools_dir = os.path.abspath(
 
 sys.path.append(tools_dir)
 
-from test_methods import print_hello, sleep_function, sleep_discard
+from test_methods import sleep_function, sleep_discard, task_has_timeout
 
 # Database connection details
 CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777"
@@ -107,6 +107,9 @@ def main():
         publish_message(channel, json.dumps(
             {'task': 'lambda: __import__("time").sleep(8)', 'on_duplicate': 'queue_one', 'uuid': f'queue_one-{i}'}
         ), config={'conninfo': CONNECTION_STRING})
+
+    print('demo of task_has_timeout that times out due to decorator use')
+    task_has_timeout.apply_async(config={'conninfo': CONNECTION_STRING})
 
 if __name__ == "__main__":
     logging.basicConfig(level='ERROR', stream=sys.stdout)

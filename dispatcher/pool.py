@@ -3,6 +3,7 @@ import logging
 import multiprocessing
 import os
 import signal
+import time
 from asyncio import Task
 from types import SimpleNamespace
 from typing import Iterator, Optional
@@ -19,17 +20,33 @@ class PoolWorker:
         # TODO: rename message_queue to call_queue, because this is what cpython ProcessPoolExecutor calls them
         self.message_queue: multiprocessing.Queue = multiprocessing.Queue()
         self.process = multiprocessing.Process(target=work_loop, args=(self.worker_id, self.message_queue, finished_queue))
+
+        # Info specific to the current task being ran
         self.current_task: Optional[dict] = None
+        self.started_at: Optional[float] = None
+        self.active_cancel: bool = False
+
+        # Tracking information for worker
         self.finished_count = 0
         self.status = 'initialized'
         self.exit_msg_event = asyncio.Event()
-        self.active_cancel = False
 
     async def start(self) -> None:
         self.status = 'spawned'
         self.process.start()
         logger.debug(f'Worker {self.worker_id} pid={self.process.pid} subprocess has spawned')
         self.status = 'starting'  # Not ready until it sends callback message
+
+    async def start_task(self, message: dict) -> None:
+        self.current_task = message  # NOTE: this marks this worker as busy
+        self.message_queue.put(message)
+        self.started_at = time.monotonic()
+
+    @property
+    def timeout_deadline(self) -> Optional[float]:
+        if self.current_task and 'timeout' in self.current_task:
+            return self.started_at + self.current_task['timeout']
+        return None
 
     async def join(self) -> None:
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
@@ -71,6 +88,7 @@ class PoolWorker:
     def mark_finished_task(self) -> None:
         self.active_cancel = False
         self.current_task = None
+        self.started_at = None
         self.finished_count += 1
 
     @property
@@ -113,6 +131,7 @@ class WorkerPool:
             queue_cleared=asyncio.Event(),  # queue is now 0 length
             work_cleared=asyncio.Event(),  # Totally quiet, no blocked or queued messages, no busy workers
             management_event=asyncio.Event(),  # Process spawning is backgrounded, so this is the kicker
+            timeout_event=asyncio.Event(),  # Anything that might affect the timeout watcher task
         )
 
     async def start_working(self, dispatcher) -> None:
@@ -120,6 +139,8 @@ class WorkerPool:
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
         self.management_task = asyncio.create_task(self.manage_workers(), name='management_task')
         self.management_task.add_done_callback(dispatcher.fatal_error_callback)
+        self.timeout_task = asyncio.create_task(self.manage_timeout(), name='timeout_task')
+        self.timeout_task.add_done_callback(dispatcher.fatal_error_callback)
 
     async def manage_workers(self) -> None:
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
@@ -139,6 +160,40 @@ class WorkerPool:
             await self.events.management_event.wait()
             self.events.management_event.clear()
         logger.debug('Pool worker management task exiting')
+
+    async def process_worker_timeouts(self, current_time: float) -> Optional[float]:
+        next_deadline = None
+        for worker in self.workers.values():
+            if worker.active_cancel:
+                continue  # worker has already timed out
+
+            worker_deadline = worker.timeout_deadline
+            if not worker_deadline:
+                # worker does not have a task or task does not have timeout
+                continue
+
+            # Established that worker is running a task that has a timeout
+            if worker_deadline < current_time:
+                # worker gets timed out right now
+                worker.cancel()
+            elif next_deadline is None or worker_deadline < next_deadline:
+                # worker timeout is closer than any yet seen
+                next_deadline = worker_deadline
+        return next_deadline
+
+    async def manage_timeout(self) -> None:
+        while not self.shutting_down:
+            current_time = time.monotonic()
+            pool_deadline = await self.process_worker_timeouts(current_time)
+            if pool_deadline:
+                time_until_deadline = pool_deadline - current_time
+                try:
+                    await asyncio.wait_for(self.events.timeout_event.wait(), timeout=time_until_deadline)
+                except asyncio.TimeoutError:
+                    pass  # will handle in next loop run
+            else:
+                await self.events.timeout_event.wait()
+            self.events.timeout_event.clear()
 
     async def up(self) -> None:
         worker = PoolWorker(worker_id=self.next_worker_id, finished_queue=self.finished_queue)
@@ -166,6 +221,7 @@ class WorkerPool:
     async def shutdown(self) -> None:
         self.shutting_down = True
         self.events.management_event.set()
+        self.events.timeout_event.set()
         await self.stop_workers()
         self.finished_queue.put('stop')
 
@@ -258,6 +314,7 @@ class WorkerPool:
         return None
 
     async def dispatch_task(self, message: dict) -> None:
+        logger.info(f'message {message}')
         async with self.management_lock:
             uuid = message.get("uuid", "<unknown>")
 
@@ -277,8 +334,9 @@ class WorkerPool:
 
             if worker := self.get_free_worker():
                 logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
-                worker.current_task = message  # NOTE: this marks the worker as busy
-                worker.message_queue.put(message)
+                await worker.start_task(message)
+                if 'timeout' in message:
+                    self.events.timeout_event.set()  # kick timeout task to set wakeup
             else:
                 logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
                 self.queued_messages.append(message)
@@ -322,6 +380,9 @@ class WorkerPool:
 
         if not self.queued_messages and all(worker.current_task is None for worker in self.workers.values()):
             self.events.work_cleared.set()
+
+        if 'timeout' in message:
+            self.events.timeout_event.set()
 
     async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""

@@ -21,3 +21,8 @@ def sleep_serial(seconds=1):
 @task(queue='test_channel')
 def print_hello():
     print('hello world!!')
+
+
+@task(queue='test_channel', timeout=1)
+def task_has_timeout():
+    time.sleep(5)
