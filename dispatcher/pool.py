@@ -42,12 +42,6 @@ class PoolWorker:
         self.message_queue.put(message)
         self.started_at = time.monotonic()
 
-    @property
-    def timeout_deadline(self) -> Optional[float]:
-        if self.current_task and 'timeout' in self.current_task:
-            return self.started_at + self.current_task['timeout']
-        return None
-
     async def join(self) -> None:
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join()
@@ -164,24 +158,25 @@ class WorkerPool:
     async def process_worker_timeouts(self, current_time: float) -> Optional[float]:
         next_deadline = None
         for worker in self.workers.values():
-            if worker.active_cancel:
-                continue  # worker has already timed out
+            if (not worker.active_cancel) and worker.current_task and worker.started_at and ('timeout' in worker.current_task):
+                worker_deadline = worker.started_at + worker.current_task['timeout']
 
-            worker_deadline = worker.timeout_deadline
-            if not worker_deadline:
-                # worker does not have a task or task does not have timeout
-                continue
+                # Established that worker is running a task that has a timeout
+                if worker_deadline < current_time:
+                    delta: float = 0.0
+                    timeout: float = 0.0
+                    uuid: str = '<unknown>'
+                    if worker.current_task:
+                        uuid = worker.current_task.get('uuid', '<unknown>')
+                        timeout = worker.current_task['timeout']
+                    if worker.started_at:
+                        delta = current_time - worker.started_at
+                    logger.info(f'Worker {worker.worker_id} runtime {delta:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
+                    worker.cancel()
+                elif next_deadline is None or worker_deadline < next_deadline:
+                    # worker timeout is closer than any yet seen
+                    next_deadline = worker_deadline
 
-            # Established that worker is running a task that has a timeout
-            if worker_deadline < current_time:
-                uuid = worker.current_task.get('uuid', '<unknown>')
-                timeout = worker.current_task.get('timeout')
-                delta = current_time - worker.started_at
-                logger.info(f'Worker {worker.worker_id} runtime {delta:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
-                worker.cancel()
-            elif next_deadline is None or worker_deadline < next_deadline:
-                # worker timeout is closer than any yet seen
-                next_deadline = worker_deadline
         return next_deadline
 
     async def manage_timeout(self) -> None:
