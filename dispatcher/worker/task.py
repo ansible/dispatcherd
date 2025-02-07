@@ -41,6 +41,7 @@ class DispatcherBoundMethods:
     and object of this type will be passed in.
     This contains public methods for users of the dispatcher to call.
     """
+
     def __init__(self, worker_id, message):
         self.worker_id = worker_id
         self.uuid = message.get('uuid', '<unknown>')
