@@ -174,7 +174,10 @@ class WorkerPool:
 
             # Established that worker is running a task that has a timeout
             if worker_deadline < current_time:
-                # worker gets timed out right now
+                uuid = worker.current_task.get('uuid', '<unknown>')
+                timeout = worker.current_task.get('timeout')
+                delta = current_time - worker.started_at
+                logger.info(f'Worker {worker.worker_id} runtime {delta:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
                 worker.cancel()
             elif next_deadline is None or worker_deadline < next_deadline:
                 # worker timeout is closer than any yet seen
