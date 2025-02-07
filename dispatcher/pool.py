@@ -158,19 +158,14 @@ class WorkerPool:
     async def process_worker_timeouts(self, current_time: float) -> Optional[float]:
         next_deadline = None
         for worker in self.workers.values():
-            if (not worker.active_cancel) and worker.current_task and worker.started_at and ('timeout' in worker.current_task):
-                worker_deadline = worker.started_at + worker.current_task['timeout']
+            if (not worker.active_cancel) and worker.current_task and worker.started_at and (worker.current_task.get('timeout')):
+                timeout: float = worker.current_task['timeout']
+                worker_deadline = worker.started_at + timeout
 
                 # Established that worker is running a task that has a timeout
                 if worker_deadline < current_time:
-                    delta: float = 0.0
-                    timeout: float = 0.0
-                    uuid: str = '<unknown>'
-                    if worker.current_task:
-                        uuid = worker.current_task.get('uuid', '<unknown>')
-                        timeout = worker.current_task['timeout']
-                    if worker.started_at:
-                        delta = current_time - worker.started_at
+                    uuid: str = worker.current_task.get('uuid', '<unknown>')
+                    delta: float = current_time - worker.started_at
                     logger.info(f'Worker {worker.worker_id} runtime {delta:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
                     worker.cancel()
                 elif next_deadline is None or worker_deadline < next_deadline:
