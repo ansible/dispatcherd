@@ -15,7 +15,7 @@ tools_dir = os.path.abspath(
 
 sys.path.append(tools_dir)
 
-from test_methods import sleep_function, sleep_discard, task_has_timeout
+from test_methods import sleep_function, sleep_discard, task_has_timeout, hello_world_binder
 
 # Database connection details
 CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777"
@@ -110,6 +110,9 @@ def main():
 
     print('demo of task_has_timeout that times out due to decorator use')
     task_has_timeout.apply_async(config={'conninfo': CONNECTION_STRING})
+
+    print('demo of using bind=True, with hello_world_binder')
+    hello_world_binder.apply_async(config={'conninfo': CONNECTION_STRING})
 
 if __name__ == "__main__":
     logging.basicConfig(level='ERROR', stream=sys.stdout)

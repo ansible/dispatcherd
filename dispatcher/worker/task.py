@@ -35,6 +35,17 @@ class WorkerSignalHandler:
         self.kill_now = True
 
 
+class DispatcherBoundMethods:
+    """
+    If you use the task decorator with the bind=True argument,
+    and object of this type will be passed in.
+    This contains public methods for users of the dispatcher to call.
+    """
+    def __init__(self, worker_id, message):
+        self.worker_id = worker_id
+        self.uuid = message.get('uuid', '<unknown>')
+
+
 class TaskWorker:
     """
     A worker implementation that deserializes task messages and runs native
@@ -50,8 +61,8 @@ class TaskWorker:
     Previously this initialized pre-fork, making init logic unusable.
     """
 
-    def __init__(self, worker_id):
-        self.worker_id = worker_id
+    def __init__(self, worker_id: int):
+        self.worker_id: int = worker_id
         self.ppid = os.getppid()
         self.pid = os.getpid()
         self.signal_handler = WorkerSignalHandler(worker_id)
@@ -68,17 +79,26 @@ class TaskWorker:
     def get_uuid(self, message):
         return message.get('uuid', '<unknown>')
 
+    def produce_binder(self, message: dict) -> DispatcherBoundMethods:
+        """
+        Return the object with public callbacks to pass to the task
+        """
+        return DispatcherBoundMethods(self.worker_id, message)
+
     def run_callable(self, message):
         """
         Given some AMQP message, import the correct Python code and run it.
         """
         task = message['task']
-        args = message.get('args', [])
+        args = message.get('args', []).copy()
         kwargs = message.get('kwargs', {})
         _call = registry.get_method(task).get_callable()
 
         # don't print kwargs, they often contain launch-time secrets
         logger.debug(f'task (uuid={self.get_uuid(message)}) starting {task}(*{args}) on worker {self.worker_id}')
+
+        if message.get('bind') is True:
+            args = [self.produce_binder(message)] + args
 
         try:
             return _call(*args, **kwargs)
