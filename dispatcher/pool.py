@@ -22,7 +22,7 @@ class PoolWorker:
 
         # Info specific to the current task being ran
         self.current_task: Optional[dict] = None
-        self.started_at: Optional[float] = None
+        self.started_at: Optional[int] = None
         self.is_active_cancel: bool = False
 
         # Tracking information for worker
@@ -155,7 +155,7 @@ class WorkerPool:
             self.events.management_event.clear()
         logger.debug('Pool worker management task exiting')
 
-    async def process_worker_timeouts(self, current_time: float) -> Optional[float]:
+    async def process_worker_timeouts(self, current_time: float) -> Optional[int]:
         """
         Cancels tasks that have exceeded their timeout.
         Returns the system clock time of the next task timeout, for rescheduling.
@@ -164,12 +164,12 @@ class WorkerPool:
         for worker in self.workers.values():
             if (not worker.is_active_cancel) and worker.current_task and worker.started_at and (worker.current_task.get('timeout')):
                 timeout: float = worker.current_task['timeout']
-                worker_deadline = worker.started_at + timeout
+                worker_deadline = worker.started_at + int(timeout * 1.0e9)
 
                 # Established that worker is running a task that has a timeout
                 if worker_deadline < current_time:
                     uuid: str = worker.current_task.get('uuid', '<unknown>')
-                    delta: float = current_time - worker.started_at
+                    delta: float = (current_time - worker.started_at) * 1.0e9
                     logger.info(f'Worker {worker.worker_id} runtime {delta:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
                     worker.cancel()
                 elif next_deadline is None or worker_deadline < next_deadline:
@@ -183,7 +183,7 @@ class WorkerPool:
             current_time = time.monotonic_ns()
             pool_deadline = await self.process_worker_timeouts(current_time)
             if pool_deadline:
-                time_until_deadline = pool_deadline - current_time
+                time_until_deadline = (pool_deadline - current_time) * 1.0e-9
                 try:
                     await asyncio.wait_for(self.events.timeout_event.wait(), timeout=time_until_deadline)
                 except asyncio.TimeoutError:
