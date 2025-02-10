@@ -25,7 +25,7 @@ def resolve_callable(task: str) -> Optional[Callable]:
     That is out of scope of this method now.
     This is mainly used by the worker.
     """
-    if task.startswith('lambda:') or task.startswith('lambda '):
+    if task.startswith('lambda'):
         return eval(task)
 
     if MODULE_METHOD_DELIMITER not in task:

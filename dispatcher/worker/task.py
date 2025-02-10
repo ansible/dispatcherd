@@ -38,7 +38,7 @@ class WorkerSignalHandler:
 class DispatcherBoundMethods:
     """
     If you use the task decorator with the bind=True argument,
-    and object of this type will be passed in.
+    an object of this type will be passed in.
     This contains public methods for users of the dispatcher to call.
     """
 
@@ -88,7 +88,7 @@ class TaskWorker:
 
     def run_callable(self, message):
         """
-        Given some AMQP message, import the correct Python code and run it.
+        Import the Python code and run it.
         """
         task = message['task']
         args = message.get('args', []).copy()
