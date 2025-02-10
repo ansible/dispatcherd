@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from dispatcher.registry import InvalidMethod
@@ -30,3 +32,13 @@ def test_no_objects(registry):
 
     with pytest.raises(InvalidMethod):
         registry.register(SomeClass())
+
+
+def test_register_with_timeout(registry):
+    "Tests that a timeout set at the task level will be submitted"
+    def test_method():
+        time.sleep(4)  # will not actually run
+
+    dmethod = registry.register(test_method, timeout=0.2)
+    submit_data = dmethod.get_async_body()
+    assert submit_data['timeout'] == 0.2
