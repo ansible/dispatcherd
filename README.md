@@ -1,12 +1,18 @@
+<!-- License Badge -->
+[![License](https://img.shields.io/github/license/ansible/dispatcher.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
+
 # dispatcher
+
 Working space for dispatcher prototyping
 
 This is firstly intended to be a code split of:
 
-https://github.com/ansible/awx/tree/devel/awx/main/dispatch
+<https://github.com/ansible/awx/tree/devel/awx/main/dispatch>
 
 As a part of doing the split, we also want to resolve a number of
 long-standing design and sustainability issues, thus, asyncio.
+
+Licensed under [Apache Software License 2.0](LICENSE)
 
 ### Usage
 
@@ -38,8 +44,9 @@ This does not make any attempts at message durability or confirmation.
 If you submit a task in an outage of the service, it will be dropped.
 
 There are 2 ways to run the dispatcher service:
- - Importing and running (code snippet below)
- - A CLI entrypoint `dispatcher-standalone` for demo purposes
+
+- Importing and running (code snippet below)
+- A CLI entrypoint `dispatcher-standalone` for demo purposes
 
 ```python
 from dispatcher.main import DispatcherMain
