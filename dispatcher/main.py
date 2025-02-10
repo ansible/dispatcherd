@@ -71,6 +71,13 @@ class ControlTasks:
         return
 
 
+class DispatcherEvents:
+    "Benchmark tests have to re-create this because they use same object in different event loops"
+
+    def __init__(self) -> None:
+        self.exit_event: asyncio.Event = asyncio.Event()
+
+
 class DispatcherMain:
     def __init__(self, config: dict):
         self.delayed_messages: list[SimpleNamespace] = []
@@ -97,11 +104,7 @@ class DispatcherMain:
             if 'scheduled' in producer_config:
                 self.producers.append(ScheduledProducer(producer_config['scheduled']))
 
-        self.events = self._create_events()
-
-    def _create_events(self):
-        "Benchmark tests have to re-create this because they use same object in different event loops"
-        return SimpleNamespace(exit_event=asyncio.Event())
+        self.events: DispatcherEvents = DispatcherEvents()
 
     def fatal_error_callback(self, *args) -> None:
         """Method to connect to error callbacks of other tasks, will kick out of main loop"""
