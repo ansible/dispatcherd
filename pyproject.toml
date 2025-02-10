@@ -10,9 +10,7 @@ name = "dispatcher"
 version = "0.1.0"
 description = "An asyncio-based dispatcher for tasks in a worker pool."
 readme = "README.md"
-authors = [
-    { name = "Alan Rominger", email = "arominge@redhat.com.com" }
-]
+authors = [{ name = "Alan Rominger", email = "arominge@redhat.com.com" }]
 license = { text = "MIT" }
 keywords = ["asyncio", "multiprocessing", "dispatcher", "pg_notify", "python"]
 classifiers = [
@@ -24,15 +22,19 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-dependencies = [
-    "pyyaml"
-]
+dependencies = ["pyyaml"]
 
 [project.scripts]
 dispatcher-standalone = "dispatcher.cli:standalone"
 
 [tool.setuptools.packages.find]
 include = ["dispatcher*"]
+
+[tool.setuptools]
+include-package-data = true # Ensures package data is included
+
+[tool.setuptools.package-data]
+"dispatcher" = ["LICENSE", "README.md"]
 
 # You need psycopg, but this will not help you to install it
 
