@@ -132,3 +132,22 @@ py.test tests/
 This accomplishes the most basic of starting and shutting down.
 With no tasks submitted, it should record running 0 tasks,
 and with a task submitted, it records running 1 task.
+
+## Contributing
+
+We ask all of our community members and contributors to adhere to the [Ansible code of conduct](https://docs.ansible.com/ansible/latest/community/code_of_conduct.html).
+If you have questions or need assistance, please reach out to our community team at <codeofconduct@ansible.com>
+
+Refer to the [Contributing guide](docs/contributing.md) for further information.
+
+## Communication
+
+See the [Communication](https://github.com/ansible/dispatcher/blob/main/docs/contributing.md#communication) section of the
+Contributing guide to find out how to get help and contact us.
+
+For more information about getting in touch, see the
+[Ansible communication guide](https://docs.ansible.com/ansible/devel/community/communication.html).
+
+## Credits
+
+Dispatcher is sponsored by [Red Hat, Inc](https://www.redhat.com).
