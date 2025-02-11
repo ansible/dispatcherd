@@ -1,7 +1,5 @@
 <!-- License Badge -->
-[![License](https://img.shields.io/github/license/ansible/dispatcher.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
-
-# dispatcher
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
 
 Working space for dispatcher prototyping
 
