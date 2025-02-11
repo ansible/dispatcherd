@@ -4,9 +4,9 @@ import logging
 import os
 import sys
 
-from dispatcher.brokers.pg_notify import publish_message
-from dispatcher.control import Control
-from dispatcher.utils import MODULE_METHOD_DELIMITER
+from ansible_dispatcher.brokers.pg_notify import publish_message
+from ansible_dispatcher.control import Control
+from ansible_dispatcher.utils import MODULE_METHOD_DELIMITER
 
 # Add the test methods to the path so we can use .delay type contracts
 tools_dir = os.path.abspath(
@@ -61,11 +61,7 @@ def main():
     publish_message(channel, json.dumps({'task': 'lambda: 987987234', 'uuid': 'foobar2', 'delay': 30}), config={'conninfo': CONNECTION_STRING})
     print('     10 second delay task')
     # NOTE: this task will error unless you run the dispatcher itself with it in the PYTHONPATH, which is intended
-    sleep_function.apply_async(
-        args=[3],  # sleep 3 seconds
-        delay=10,
-        config={'conninfo': CONNECTION_STRING}
-    )
+    sleep_function.apply_async(args=[3], delay=10, config={'conninfo': CONNECTION_STRING})  # sleep 3 seconds
 
     print('')
     print('showing delayed tasks in running list')
@@ -88,9 +84,11 @@ def main():
     print('')
     print('demo of submitting discarding tasks')
     for i in range(10):
-        publish_message(channel, json.dumps(
-            {'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}
-        ), config={'conninfo': CONNECTION_STRING})
+        publish_message(
+            channel,
+            json.dumps({'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}),
+            config={'conninfo': CONNECTION_STRING},
+        )
     print('demo of discarding task marked as discarding')
     for i in range(10):
         sleep_discard.apply_async(args=[2], config={'conninfo': CONNECTION_STRING})
@@ -99,14 +97,19 @@ def main():
         sleep_function.apply_async(args=[3], on_duplicate='discard', config={'conninfo': CONNECTION_STRING})
     print('demo of submitting waiting tasks')
     for i in range(10):
-        publish_message(channel, json.dumps(
-            {'task': 'lambda: __import__("time").sleep(10)', 'on_duplicate': 'serial', 'uuid': f'wait-{i}'}
-            ), config={'conninfo': CONNECTION_STRING})
+        publish_message(
+            channel,
+            json.dumps({'task': 'lambda: __import__("time").sleep(10)', 'on_duplicate': 'serial', 'uuid': f'wait-{i}'}),
+            config={'conninfo': CONNECTION_STRING},
+        )
     print('demo of submitting queue-once tasks')
     for i in range(10):
-        publish_message(channel, json.dumps(
-            {'task': 'lambda: __import__("time").sleep(8)', 'on_duplicate': 'queue_one', 'uuid': f'queue_one-{i}'}
-        ), config={'conninfo': CONNECTION_STRING})
+        publish_message(
+            channel,
+            json.dumps({'task': 'lambda: __import__("time").sleep(8)', 'on_duplicate': 'queue_one', 'uuid': f'queue_one-{i}'}),
+            config={'conninfo': CONNECTION_STRING},
+        )
+
 
 if __name__ == "__main__":
     logging.basicConfig(level='ERROR', stream=sys.stdout)

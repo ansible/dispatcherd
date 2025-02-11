@@ -5,7 +5,7 @@ import time
 import uuid
 from types import SimpleNamespace
 
-from dispatcher.producers.brokered import BrokeredProducer
+from ansible_dispatcher.producers.brokered import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -139,7 +139,7 @@ class Control(object):
 
     # NOTE: this is the synchronous version, only to be used for no-reply
     def control(self, command, data=None):
-        from dispatcher.brokers.pg_notify import publish_message
+        from ansible_dispatcher.brokers.pg_notify import publish_message
 
         send_data = {'control': command}
         if data:

@@ -8,10 +8,10 @@ import pytest
 
 import pytest_asyncio
 
-from dispatcher.main import DispatcherMain
-from dispatcher.control import Control
+from ansible_dispatcher.main import DispatcherMain
+from ansible_dispatcher.control import Control
 
-from dispatcher.brokers.pg_notify import apublish_message, aget_connection, get_connection
+from ansible_dispatcher.brokers.pg_notify import apublish_message, aget_connection, get_connection
 
 
 # List of channels to listen on
@@ -47,6 +47,7 @@ async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
 async def pg_message(psycopg_conn) -> Callable:
     async def _rf(message, channel='test_channel'):
         await apublish_message(psycopg_conn, channel, message)
+
     return _rf
 
 

@@ -6,7 +6,7 @@ import time
 from typing import Callable, Optional, Set, Tuple
 from uuid import uuid4
 
-from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
+from ansible_dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class DispatcherMethod:
         obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
 
         # TODO: before sending, consult an app-specific callback if configured
-        from dispatcher.brokers.pg_notify import publish_message
+        from ansible_dispatcher.brokers.pg_notify import publish_message
 
         # NOTE: the kw will communicate things in the database connection data
         publish_message(queue, json.dumps(obj), connection=connection, config=config)

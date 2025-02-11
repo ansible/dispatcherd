@@ -1,6 +1,6 @@
 import time
 
-from dispatcher.publish import task
+from ansible_dispatcher.publish import task
 
 
 @task(queue='test_channel')

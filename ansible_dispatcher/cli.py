@@ -6,7 +6,7 @@ import sys
 
 import yaml
 
-from dispatcher.main import DispatcherMain
+from ansible_dispatcher.main import DispatcherMain
 
 logger = logging.getLogger(__name__)
 

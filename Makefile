@@ -13,10 +13,10 @@ stop-postgres:
 clean:
 	find . -type f -regex ".*\.py[co]$$" -delete
 	find . -type d -name "__pycache__" -delete
-	rm -rf dispatcher.egg-info/
+	rm -rf ansible_dispatcher.egg-info/
 
 linters:
-	black dispatcher/
-	isort dispatcher/
-	flake8 dispatcher/
-	mypy --ignore-missing-imports dispatcher
+	black ansible_dispatcher/
+	isort ansible_dispatcher/
+	flake8 ansible_dispatcher/
+	mypy --ignore-missing-imports ansible_dispatcher

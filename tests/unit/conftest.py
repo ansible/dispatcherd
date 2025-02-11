@@ -1,6 +1,6 @@
 import pytest
 
-from dispatcher.registry import DispatcherMethodRegistry
+from ansible_dispatcher.registry import DispatcherMethodRegistry
 
 
 @pytest.fixture

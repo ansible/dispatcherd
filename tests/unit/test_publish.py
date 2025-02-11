@@ -1,14 +1,14 @@
 from unittest import mock
 
-from dispatcher.publish import task
-from dispatcher.utils import serialize_task
+from ansible_dispatcher.publish import task
+from ansible_dispatcher.utils import serialize_task
 
 import pytest
 
 
 @pytest.fixture
 def mock_apply_async():
-    with mock.patch('dispatcher.registry.DispatcherMethod.apply_async') as apply_async:
+    with mock.patch('ansible_dispatcher.registry.DispatcherMethod.apply_async') as apply_async:
         yield apply_async
 
 
@@ -90,7 +90,7 @@ def test_apply_async_with_no_queue(registry):
         dmethod.apply_async()
 
     # But providing a queue at time of submission works
-    with mock.patch('dispatcher.brokers.pg_notify.publish_message') as mock_publish_method:
+    with mock.patch('ansible_dispatcher.brokers.pg_notify.publish_message') as mock_publish_method:
         dmethod.apply_async(queue='fooqueue')
 
     mock_publish_method.assert_called_once()

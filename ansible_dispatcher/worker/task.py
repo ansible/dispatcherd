@@ -8,7 +8,7 @@ import time
 import traceback
 from queue import Empty as QueueEmpty
 
-from dispatcher.registry import registry
+from ansible_dispatcher.registry import registry
 
 logger = logging.getLogger(__name__)
 

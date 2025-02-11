@@ -7,7 +7,7 @@ You can contribute in many ways:
 
 ## Report Bugs or Request Features
 
-Report bugs or request new features at <https://github.com/ansible/dispatcher/issues>
+Report bugs or request new features at <https://github.com/ansible/ansible-dispatcher/issues>
 
 If you are reporting a bug, please fill the form and try to include:
 

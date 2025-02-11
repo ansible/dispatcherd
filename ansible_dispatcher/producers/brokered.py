@@ -2,8 +2,8 @@ import asyncio
 import logging
 from typing import Optional
 
-from dispatcher.brokers.pg_notify import aget_connection, aprocess_notify, apublish_message
-from dispatcher.producers.base import BaseProducer
+from ansible_dispatcher.brokers.pg_notify import aget_connection, aprocess_notify, apublish_message
+from ansible_dispatcher.producers.base import BaseProducer
 
 logger = logging.getLogger(__name__)
 

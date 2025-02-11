@@ -1,18 +1,25 @@
 [project.urls]
-Repository = "https://github.com/ansible/dispatcher"
+Repository = "https://github.com/ansible/ansible-dispatcher"
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dispatcher"
+name = "ansible-dispatcher"
 version = "0.1.0"
 description = "An asyncio-based dispatcher for tasks in a worker pool."
 readme = "README.md"
 authors = [{ name = "Alan Rominger", email = "arominge@redhat.com.com" }]
 license = { text = "MIT" }
-keywords = ["asyncio", "multiprocessing", "dispatcher", "pg_notify", "python"]
+keywords = [
+    "asyncio",
+    "multiprocessing",
+    "dispatcher",
+    "ansible-dispatcher",
+    "pg_notify",
+    "python",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -25,10 +32,10 @@ classifiers = [
 dependencies = ["pyyaml"]
 
 [project.scripts]
-dispatcher-standalone = "dispatcher.cli:standalone"
+dispatcher-standalone = "ansible_dispatcher.cli:standalone"
 
 [tool.setuptools.packages.find]
-include = ["dispatcher*"]
+include = ["ansible_dispatcher*"]
 
 [tool.setuptools]
 include-package-data = true # Ensures package data is included

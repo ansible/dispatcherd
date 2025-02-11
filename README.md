@@ -1,7 +1,7 @@
 <!-- License Badge -->
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/ansible-dispatcher/blob/main/LICENSE)
 
-Working space for dispatcher prototyping
+Working space for ansible-dispatcher prototyping
 
 This is firstly intended to be a code split of:
 
@@ -15,7 +15,7 @@ Licensed under [Apache Software License 2.0](LICENSE)
 ### Usage
 
 You have a postgres server configured and a python project.
-You will use dispatcher to trigger a background task over pg_notify.
+You will use ansible_dispatcher to trigger a background task over pg_notify.
 
 Both your *background dispatcher service* and your *task publisher* process must have
 python configured so that your task is importable.
@@ -28,7 +28,7 @@ See the `tools/test_methods.py` module.
 This defines a dispatcher task and the pg_notify channel it will be sent over.
 
 ```python
-from dispatcher.publish import task
+from ansible_dispatcher.publish import task
 
 @task(queue='test_channel')
 def print_hello():
@@ -47,7 +47,7 @@ There are 2 ways to run the dispatcher service:
 - A CLI entrypoint `dispatcher-standalone` for demo purposes
 
 ```python
-from dispatcher.main import DispatcherMain
+from ansible_dispatcher.main import DispatcherMain
 import asyncio
 
 config = {
@@ -142,7 +142,7 @@ Refer to the [Contributing guide](docs/contributing.md) for further information.
 
 ## Communication
 
-See the [Communication](https://github.com/ansible/dispatcher/blob/main/docs/contributing.md#communication) section of the
+See the [Communication](https://github.com/ansible/ansible-dispatcher/blob/main/docs/contributing.md#communication) section of the
 Contributing guide to find out how to get help and contact us.
 
 For more information about getting in touch, see the
@@ -150,4 +150,4 @@ For more information about getting in touch, see the
 
 ## Credits
 
-Dispatcher is sponsored by [Red Hat, Inc](https://www.redhat.com).
+Ansible Dispatcher is sponsored by [Red Hat, Inc](https://www.redhat.com).

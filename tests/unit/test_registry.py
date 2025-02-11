@@ -1,11 +1,12 @@
 import pytest
 
-from dispatcher.registry import InvalidMethod
+from ansible_dispatcher.registry import InvalidMethod
 
 
 def test_registry_ordinary_method(registry):
     def test_method():
         return
+
     registry.register(test_method)
     assert test_method in set(dmethod.fn for dmethod in registry.registry)
     assert 'test_registry.test_registry_ordinary_method.<locals>.test_method' in registry.lookup_dict

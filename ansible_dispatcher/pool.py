@@ -7,8 +7,8 @@ from asyncio import Task
 from types import SimpleNamespace
 from typing import Iterator, Optional
 
-from dispatcher.utils import DuplicateBehavior, MessageAction
-from dispatcher.worker.task import work_loop
+from ansible_dispatcher.utils import DuplicateBehavior, MessageAction
+from ansible_dispatcher.worker.task import work_loop
 
 logger = logging.getLogger(__name__)
 
