@@ -4,8 +4,8 @@ import time
 from asyncio import Task
 from typing import Iterator, Optional
 
+from dispatcher.process import ProcessManager, ProcessProxy
 from dispatcher.utils import DuplicateBehavior, MessageAction
-from dispatcher.process import ProcessProxy, ProcessManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class PoolWorker:
 
     async def start_task(self, message: dict) -> None:
         self.current_task = message  # NOTE: this marks this worker as busy
-        self.message_queue.put(message)
+        self.process.message_queue.put(message)
         self.started_at = time.monotonic_ns()
 
     async def join(self) -> None:
@@ -186,7 +186,7 @@ class WorkerPool:
             self.events.timeout_event.clear()
 
     async def up(self) -> None:
-        process = self.process_manager.create_process()
+        process = self.process_manager.create_process((self.next_worker_id,))
         worker = PoolWorker(self.next_worker_id, process)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1
@@ -214,7 +214,7 @@ class WorkerPool:
         self.events.management_event.set()
         self.events.timeout_event.set()
         await self.stop_workers()
-        self.finished_queue.put('stop')
+        self.process_manager.finished_queue.put('stop')
 
         if self.read_results_task:
             logger.info('Waiting for the finished watcher to return')
@@ -378,7 +378,7 @@ class WorkerPool:
         """Perpetual task that continuously waits for task completions."""
         while True:
             # Wait for a result from the finished queue
-            message = self.process_manager.read_finished()
+            message = await self.process_manager.read_finished()
 
             if message == 'stop':
                 if self.shutting_down:
@@ -389,7 +389,7 @@ class WorkerPool:
                     logger.error('Results queue got stop message even through not shutting down')
                     continue
 
-            worker_id = message["worker"]
+            worker_id = int(message["worker"])
             event = message["event"]
             worker = self.workers[worker_id]
 
