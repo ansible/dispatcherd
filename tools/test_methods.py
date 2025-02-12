@@ -18,6 +18,12 @@ def sleep_serial(seconds=1):
     time.sleep(seconds)
 
 
+@task(queue='test_channel', bind=True)
+def hello_world_binder(binder):
+    print(f'Values in binder {vars(binder)}')
+    print(f'Hello world, from worker {binder.worker_id} running task {binder.uuid}')
+
+
 @task(queue='test_channel')
 def print_hello():
     print('hello world!!')

@@ -10,9 +10,16 @@ logger = logging.getLogger('awx.main.dispatch')
 
 class DispatcherDecorator:
     def __init__(
-        self, registry: DispatcherMethodRegistry, *, queue: Optional[str] = None, on_duplicate: Optional[str] = None, timeout: Optional[float] = None
+        self,
+        registry: DispatcherMethodRegistry,
+        *,
+        bind: bool = False,
+        queue: Optional[str] = None,
+        on_duplicate: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         self.registry = registry
+        self.bind = bind
         self.queue = queue
         self.on_duplicate = on_duplicate
         self.timeout = timeout
@@ -20,7 +27,7 @@ class DispatcherDecorator:
     def __call__(self, fn: DispatcherCallable, /) -> DispatcherCallable:
         "Concrete task decorator, registers method and glues on some methods from the registry"
 
-        dmethod = self.registry.register(fn, queue=self.queue, on_duplicate=self.on_duplicate, timeout=self.timeout)
+        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, on_duplicate=self.on_duplicate, timeout=self.timeout)
 
         setattr(fn, 'apply_async', dmethod.apply_async)
         setattr(fn, 'delay', dmethod.delay)
@@ -30,6 +37,7 @@ class DispatcherDecorator:
 
 def task(
     *,
+    bind: bool = False,
     queue: Optional[str] = None,
     on_duplicate: Optional[str] = None,
     timeout: Optional[float] = None,
@@ -72,4 +80,4 @@ def task(
     # The on_duplicate kwarg controls behavior when multiple instances of the task running
     # options are documented in dispatcher.utils.DuplicateBehavior
     """
-    return DispatcherDecorator(registry, queue=queue, on_duplicate=on_duplicate, timeout=timeout)
+    return DispatcherDecorator(registry, bind=bind, queue=queue, on_duplicate=on_duplicate, timeout=timeout)

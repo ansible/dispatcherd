@@ -54,7 +54,9 @@ class DispatcherMethod:
     def delay(self, *args, **kwargs) -> Tuple[dict, str]:
         return self.apply_async(args, kwargs)
 
-    def get_async_body(self, args=None, kwargs=None, uuid=None, on_duplicate: Optional[str] = None, timeout: Optional[float] = 0.0, delay: float = 0.0) -> dict:
+    def get_async_body(
+        self, args=None, kwargs=None, uuid=None, bind: bool = False, on_duplicate: Optional[str] = None, timeout: Optional[float] = 0.0, delay: float = 0.0
+    ) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
         This same message gets passed over the dispatcher IPC queue to workers
@@ -66,6 +68,8 @@ class DispatcherMethod:
 
         # TODO: callback to add other things, guid in case of AWX
 
+        if bind:
+            body['bind'] = bind
         if on_duplicate:
             body['on_duplicate'] = on_duplicate
         if delay:

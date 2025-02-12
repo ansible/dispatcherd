@@ -20,6 +20,8 @@ You will use dispatcher to trigger a background task over pg_notify.
 Both your *background dispatcher service* and your *task publisher* process must have
 python configured so that your task is importable.
 
+For more options, see `docs/usage.md`.
+
 #### Library
 
 The dispatcher `@task()` decorator is used to register tasks.
