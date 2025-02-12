@@ -3,14 +3,14 @@ import logging
 from typing import Optional
 
 from dispatcher.brokers.pg_notify import aget_connection, aprocess_notify, apublish_message
-from dispatcher.producers.base import BaseProducer
+from dispatcher.producers.base import BaseProducer, ProducerEvents
 
 logger = logging.getLogger(__name__)
 
 
 class BrokeredProducer(BaseProducer):
     def __init__(self, broker: str = 'pg_notify', config: Optional[dict] = None, channels: tuple = (), connection=None) -> None:
-        self.events = self._create_events()
+        self.events = ProducerEvents()
         self.production_task: Optional[asyncio.Task] = None
         self.broker = broker
         self.config = config
