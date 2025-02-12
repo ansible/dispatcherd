@@ -1,7 +1,10 @@
 import asyncio
-from types import SimpleNamespace
+
+
+class ProducerEvents:
+    def __init__(self):
+        self.ready_event = asyncio.Event()
 
 
 class BaseProducer:
-    def _create_events(self):
-        return SimpleNamespace(ready_event=asyncio.Event())
+    pass

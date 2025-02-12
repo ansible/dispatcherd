@@ -43,7 +43,10 @@ class DispatcherMethod:
         return self.fn
 
     def publication_defaults(self) -> dict:
-        defaults = self.submission_defaults.copy()
+        defaults = {}
+        for k, v in self.submission_defaults.items():
+            if v:  # all None or falsy values have no effect
+                defaults[k] = v
         defaults['task'] = self.serialize_task()
         defaults['time_pub'] = time.time()
         return defaults
@@ -51,7 +54,7 @@ class DispatcherMethod:
     def delay(self, *args, **kwargs) -> Tuple[dict, str]:
         return self.apply_async(args, kwargs)
 
-    def get_async_body(self, args=None, kwargs=None, uuid=None, on_duplicate: Optional[str] = None, delay: float = 0.0) -> dict:
+    def get_async_body(self, args=None, kwargs=None, uuid=None, on_duplicate: Optional[str] = None, timeout: Optional[float] = 0.0, delay: float = 0.0) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
         This same message gets passed over the dispatcher IPC queue to workers
@@ -67,6 +70,8 @@ class DispatcherMethod:
             body['on_duplicate'] = on_duplicate
         if delay:
             body['delay'] = delay
+        if timeout:
+            body['timeout'] = timeout
 
         return body
 
