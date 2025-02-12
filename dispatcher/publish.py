@@ -10,7 +10,13 @@ logger = logging.getLogger('awx.main.dispatch')
 
 class DispatcherDecorator:
     def __init__(
-        self, registry: DispatcherMethodRegistry, *, bind: bool = False, queue: Optional[str] = None, on_duplicate: Optional[str] = None, timeout: Optional[float] = None
+        self,
+        registry: DispatcherMethodRegistry,
+        *,
+        bind: bool = False,
+        queue: Optional[str] = None,
+        on_duplicate: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         self.registry = registry
         self.bind = bind
