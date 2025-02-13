@@ -1,14 +1,14 @@
 import asyncio
 import multiprocessing
-from typing import Iterable, Optional, Union
+from typing import Callable, Iterable, Optional, Union
 
 from dispatcher.worker.task import work_loop
 
 
 class ProcessProxy:
-    def __init__(self, args: Iterable, finished_queue: multiprocessing.Queue) -> None:
+    def __init__(self, args: Iterable, finished_queue: multiprocessing.Queue, target: Callable = work_loop) -> None:
         self.message_queue: multiprocessing.Queue = multiprocessing.Queue()
-        self._process = multiprocessing.Process(target=work_loop, args=tuple(args) + (self.message_queue, finished_queue))
+        self._process = multiprocessing.Process(target=target, args=tuple(args) + (self.message_queue, finished_queue))
 
     def start(self) -> None:
         self._process.start()
@@ -46,8 +46,8 @@ class ProcessManager:
             self._loop = asyncio.get_event_loop()
         return self._loop
 
-    def create_process(self, args: Iterable) -> ProcessProxy:
-        return ProcessProxy(args, self.finished_queue)
+    def create_process(self, args: Iterable[int | str], **kwargs) -> ProcessProxy:
+        return ProcessProxy(args, self.finished_queue, **kwargs)
 
     async def read_finished(self) -> dict[str, Union[str, int]]:
         message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
