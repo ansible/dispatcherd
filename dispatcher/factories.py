@@ -53,7 +53,7 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     between the service, publisher, and any other interacting processes.
     """
     producers = producers_from_settings(settings=settings)
-    return DispatcherMain(settings.service, producers)
+    return DispatcherMain(settings.service, producers, settings=settings)
 
 
 # ---- Publisher objects ----

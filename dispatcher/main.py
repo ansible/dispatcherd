@@ -7,6 +7,7 @@ from typing import Iterable, Optional
 
 from dispatcher.pool import WorkerPool
 from dispatcher.producers import BaseProducer
+from dispatcher.config import settings as global_settings, LazySettings
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class DispatcherEvents:
 
 
 class DispatcherMain:
-    def __init__(self, service_config: dict, producers: Iterable[BaseProducer]):
+    def __init__(self, service_config: dict, producers: Iterable[BaseProducer], settings: LazySettings = global_settings):
         self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
@@ -85,7 +86,7 @@ class DispatcherMain:
         # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
         # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
         self.fd_lock = asyncio.Lock()
-        self.pool = WorkerPool(fd_lock=self.fd_lock, **service_config)
+        self.pool = WorkerPool(fd_lock=self.fd_lock, settings=settings, **service_config)
 
         # Set all the producers, this should still not start anything, just establishes objects
         self.producers = producers

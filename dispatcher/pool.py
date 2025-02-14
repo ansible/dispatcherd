@@ -12,13 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class PoolWorker:
-    def __init__(self, worker_id: int, process: ProcessProxy, settings: LazySettings = global_settings) -> None:
+    def __init__(self, worker_id: int, process: ProcessProxy) -> None:
         self.worker_id = worker_id
         self.process = process
         self.current_task: Optional[dict] = None
         self.started_at: Optional[int] = None
         self.is_active_cancel: bool = False
-        self.settings_stash: dict = settings.serialize()
 
         # Tracking information for worker
         self.finished_count = 0
@@ -96,9 +95,10 @@ class PoolEvents:
 
 
 class WorkerPool:
-    def __init__(self, max_workers: int, fd_lock: Optional[asyncio.Lock] = None):
+    def __init__(self, max_workers: int, fd_lock: Optional[asyncio.Lock] = None, settings: LazySettings = global_settings):
         self.max_workers = max_workers
         self.workers: dict[int, PoolWorker] = {}
+        self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
         self.next_worker_id = 0
         self.process_manager = ProcessManager()
         self.queued_messages: list[dict] = []  # TODO: use deque, invent new kinds of logging anxiety

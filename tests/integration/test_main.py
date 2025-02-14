@@ -45,7 +45,7 @@ async def test_run_decorated_function(apg_dispatcher, test_settings):
 @pytest.mark.asyncio
 async def test_submit_with_global_settings(apg_dispatcher, test_settings):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    with temporary_settings(test_settings):
+    with temporary_settings(test_settings.serialize()):
         test_methods.print_hello.delay()  # settings are inferred from global context
     await asyncio.wait_for(clearing_task, timeout=3)
 
