@@ -3,13 +3,17 @@ import json
 import logging
 import time
 import uuid
-from types import SimpleNamespace
 from typing import Optional
 
 from dispatcher.factories import get_async_broker, get_sync_broker
 from dispatcher.producers import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
+
+
+class ControlEvents:
+    def __init__(self) -> None:
+        self.exit_event = asyncio.Event()
 
 
 class ControlCallbacks:
@@ -24,11 +28,8 @@ class ControlCallbacks:
         self.expected_replies = expected_replies
 
         self.received_replies = []
-        self.events = self._create_events()
+        self.events = ControlEvents()
         self.shutting_down = False
-
-    def _create_events(self):
-        return SimpleNamespace(exit_event=asyncio.Event())
 
     async def process_message(self, payload, producer=None, channel=None):
         self.received_replies.append(payload)

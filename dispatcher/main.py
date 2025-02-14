@@ -94,10 +94,6 @@ class DispatcherMain:
 
         self.events: DispatcherEvents = DispatcherEvents()
 
-    def _create_events(self):
-        "Benchmark tests have to re-create this because they use same object in different event loops"
-        return SimpleNamespace(exit_event=asyncio.Event())
-
     def fatal_error_callback(self, *args) -> None:
         """Method to connect to error callbacks of other tasks, will kick out of main loop"""
         if self.shutting_down:
