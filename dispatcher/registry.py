@@ -6,8 +6,9 @@ import time
 from typing import Callable, Optional, Set, Tuple
 from uuid import uuid4
 
+from dispatcher.config import LazySettings
+from dispatcher.config import settings as global_settings
 from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
-from dispatcher.config import settings as global_settings, DispatcherSettings
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class DispatcherMethod:
 
         return body
 
-    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, settings: DispatcherSettings = global_settings, **kw) -> Tuple[dict, str]:
+    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, settings: LazySettings = global_settings, **kw) -> Tuple[dict, str]:
         queue = queue or self.submission_defaults.get('queue')
 
         if callable(queue):

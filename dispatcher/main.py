@@ -5,9 +5,10 @@ import signal
 from types import SimpleNamespace
 from typing import Iterable, Optional
 
+from dispatcher.config import LazySettings
+from dispatcher.config import settings as global_settings
 from dispatcher.pool import WorkerPool
 from dispatcher.producers import BaseProducer
-from dispatcher.config import settings as global_settings, LazySettings
 
 logger = logging.getLogger(__name__)
 

@@ -46,7 +46,7 @@ class ProcessManager:
             self._loop = asyncio.get_event_loop()
         return self._loop
 
-    def create_process(self, args: Iterable[int | str], **kwargs) -> ProcessProxy:
+    def create_process(self, args: Iterable[int | str | dict], **kwargs) -> ProcessProxy:
         return ProcessProxy(args, self.finished_queue, **kwargs)
 
     async def read_finished(self) -> dict[str, Union[str, int]]:

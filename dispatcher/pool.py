@@ -4,9 +4,10 @@ import time
 from asyncio import Task
 from typing import Iterator, Optional
 
+from dispatcher.config import LazySettings
+from dispatcher.config import settings as global_settings
 from dispatcher.process import ProcessManager, ProcessProxy
 from dispatcher.utils import DuplicateBehavior, MessageAction
-from dispatcher.config import settings as global_settings, LazySettings
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,12 @@ class WorkerPool:
             self.events.timeout_event.clear()
 
     async def up(self) -> None:
-        process = self.process_manager.create_process((self.settings_stash, self.next_worker_id,))
+        process = self.process_manager.create_process(
+            (
+                self.settings_stash,
+                self.next_worker_id,
+            )
+        )
         worker = PoolWorker(self.next_worker_id, process)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1
