@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional, Union
 
 import psycopg
 
@@ -22,7 +22,7 @@ class PGNotifyBase(BaseBroker):
     def __init__(
         self,
         config: Optional[dict] = None,
-        channels: Iterable[str] = (),
+        channels: Union[tuple, list] = (),
         default_publish_channel: Optional[str] = None,
     ) -> None:
         """
