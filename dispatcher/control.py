@@ -4,8 +4,9 @@ import logging
 import time
 import uuid
 from types import SimpleNamespace
+from typing import Optional
 
-from dispatcher.factories import get_async_publisher_from_settings, get_sync_publisher_from_settings
+from dispatcher.factories import get_async_broker, get_sync_broker
 from dispatcher.producers import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
@@ -36,7 +37,7 @@ class ControlCallbacks:
 
     async def connected_callback(self, producer) -> None:
         payload = json.dumps(self.send_data)
-        await producer.notify(self.queuename, payload)
+        await producer.notify(channel=self.queuename, message=payload)
         logger.info('Sent control message, expecting replies soon')
 
     def fatal_error_callback(self, *args):
@@ -56,9 +57,10 @@ class ControlCallbacks:
 
 
 class Control(object):
-    def __init__(self, queue, config=None):
+    def __init__(self, broker_name: str, broker_config: dict, queue: Optional[str] = None) -> None:
         self.queuename = queue
-        self.config = config
+        self.broker_name = broker_name
+        self.broker_config = broker_config
 
     def running(self, *args, **kwargs):
         return self.control_with_reply('running', *args, **kwargs)
@@ -90,7 +92,7 @@ class Control(object):
         return [json.loads(payload) for payload in control_callbacks.received_replies]
 
     def make_producer(self, reply_queue):
-        broker = get_async_publisher_from_settings(channels=[reply_queue])
+        broker = get_async_broker(self.broker_name, self.broker_config, channels=[reply_queue])
         return BrokeredProducer(broker, close_on_exit=True)
 
     async def acontrol_with_reply(self, command, expected_replies=1, timeout=1, data=None):
@@ -114,7 +116,6 @@ class Control(object):
         logger.info('control-and-reply {} to {}'.format(command, self.queuename))
         start = time.time()
         reply_queue = Control.generate_reply_queue_name()
-
         send_data = {'control': command, 'reply_to': reply_queue}
         if data:
             send_data['control_data'] = data
@@ -131,12 +132,12 @@ class Control(object):
         logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
         return replies
 
-    # NOTE: this is the synchronous version, only to be used for no-reply
     def control(self, command, data=None):
+        "Send message in fire-and-forget mode, as synchronous code. Only for no-reply control."
         send_data = {'control': command}
         if data:
             send_data['control_data'] = data
 
         payload = json.dumps(send_data)
-        broker = get_sync_publisher_from_settings()
+        broker = get_sync_broker(self.broker_name, self.broker_config)
         broker.publish_message(channel=self.queuename, message=payload)

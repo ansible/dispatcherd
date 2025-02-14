@@ -1,11 +1,11 @@
-import importlib
-from types import ModuleType
 from typing import Iterable, Optional
 
 from dispatcher import producers
+from dispatcher.brokers import get_async_broker, get_sync_broker
 from dispatcher.brokers.base import BaseBroker
 from dispatcher.config import LazySettings
 from dispatcher.config import settings as global_settings
+from dispatcher.control import Control
 from dispatcher.main import DispatcherMain
 
 """
@@ -15,22 +15,6 @@ which is to avoid import dependencies.
 """
 
 # ---- Service objects ----
-
-
-def get_broker_module(broker_name) -> ModuleType:
-    "Static method to alias import_module so we use a consistent import path"
-    return importlib.import_module(f'dispatcher.brokers.{broker_name}')
-
-
-def get_async_broker(broker_name: str, broker_config: dict, **overrides) -> BaseBroker:
-    """
-    Given the name of the broker in the settings, and the data under that entry in settings,
-    return the asyncio broker object.
-    """
-    broker_module = get_broker_module(broker_name)
-    kwargs = broker_config.copy()
-    kwargs.update(overrides)
-    return broker_module.AsyncBroker(**kwargs)
 
 
 def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[producers.BaseProducer]:
@@ -57,15 +41,6 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
 
 
 # ---- Publisher objects ----
-
-
-def get_sync_broker(broker_name, broker_config) -> BaseBroker:
-    """
-    Given the name of the broker in the settings, and the data under that entry in settings,
-    return the synchronous broker object.
-    """
-    broker_module = get_broker_module(broker_name)
-    return broker_module.SyncBroker(**broker_config)
 
 
 def _get_publisher_broker_name(publish_broker: Optional[str] = None, settings: LazySettings = global_settings) -> str:
@@ -96,3 +71,10 @@ def get_async_publisher_from_settings(publish_broker: Optional[str] = None, sett
     """
     publish_broker = _get_publisher_broker_name(publish_broker=publish_broker, settings=settings)
     return get_async_broker(publish_broker, settings.brokers[publish_broker], **overrides)
+
+
+def get_control_from_settings(publish_broker: Optional[str] = None, settings: LazySettings = global_settings, **overrides):
+    publish_broker = _get_publisher_broker_name(publish_broker=publish_broker, settings=settings)
+    broker_options = settings.brokers[publish_broker].copy()
+    broker_options.update(overrides)
+    return Control(publish_broker, broker_options)

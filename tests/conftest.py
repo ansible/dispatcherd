@@ -1,5 +1,3 @@
-import asyncio
-
 import contextlib
 
 from typing import Callable, AsyncIterator
@@ -11,10 +9,10 @@ import pytest_asyncio
 from dispatcher.main import DispatcherMain
 from dispatcher.control import Control
 
-from dispatcher.brokers.pg_notify import SyncBroker, AsyncBroker
+from dispatcher.brokers.pg_notify import AsyncBroker
 from dispatcher.registry import DispatcherMethodRegistry
-from dispatcher.config import temporary_settings, DispatcherSettings
-from dispatcher.factories import from_settings
+from dispatcher.config import DispatcherSettings
+from dispatcher.factories import from_settings, get_control_from_settings
 
 
 # List of channels to listen on
@@ -30,6 +28,7 @@ BASIC_CONFIG = {
             "config": {'conninfo': CONNECTION_STRING},
             "sync_connection_factory": "dispatcher.brokers.pg_notify.connection_saver",
             # "async_connection_factory": "dispatcher.brokers.pg_notify.async_connection_saver",
+            "default_publish_channel": "test_channel"
         }
     },
     "pool": {
@@ -74,12 +73,6 @@ def test_settings():
     return DispatcherSettings(BASIC_CONFIG)
 
 
-@pytest.fixture
-def test_setup():
-    with temporary_settings(BASIC_CONFIG):
-        yield
-
-
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def apg_dispatcher(test_settings) -> AsyncIterator[DispatcherMain]:
     dispatcher = None
@@ -101,15 +94,15 @@ async def apg_dispatcher(test_settings) -> AsyncIterator[DispatcherMain]:
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def pg_message(psycopg_conn) -> Callable:
-    async def _rf(message, channel='test_channel'):
-        broker = AsyncBroker(connection=psycopg_conn)
+    async def _rf(message, channel=None):
+        broker = AsyncBroker(connection=psycopg_conn, default_publish_channel='test_channel')
         await broker.apublish_message(channel=channel, message=message)
     return _rf
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def pg_control(test_setup) -> AsyncIterator[Control]:
-    yield Control(queue='test_channel')
+async def pg_control(test_settings) -> AsyncIterator[Control]:
+    return get_control_from_settings(settings=test_settings)
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")

@@ -22,7 +22,7 @@ class PGNotifyBase(BaseBroker):
     def __init__(
         self,
         config: Optional[dict] = None,
-        channels: Iterable[str] = ('dispatcher_default',),
+        channels: Iterable[str] = (),
         default_publish_channel: Optional[str] = None,
     ) -> None:
         """
@@ -44,9 +44,13 @@ class PGNotifyBase(BaseBroker):
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
         if channel is not None:
             return channel
-        if self.default_publish_channel is None:
-            raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
-        return self.default_publish_channel
+        elif self.default_publish_channel is not None:
+            return self.default_publish_channel
+        elif len(self.channels) == 1:
+            # de-facto default channel, because there is only 1
+            return self.channels[0]
+
+        raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
 
     def get_connection_method(self, factory_path: Optional[str] = None) -> Callable:
         "Handles settings, returns a method (async or sync) for getting a new connection"
