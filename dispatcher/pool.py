@@ -1,26 +1,19 @@
 import asyncio
 import logging
-import multiprocessing
-import os
-import signal
 import time
 from asyncio import Task
 from typing import Iterator, Optional
 
+from dispatcher.process import ProcessManager, ProcessProxy
 from dispatcher.utils import DuplicateBehavior, MessageAction
-from dispatcher.worker.task import work_loop
 
 logger = logging.getLogger(__name__)
 
 
 class PoolWorker:
-    def __init__(self, worker_id: int, finished_queue: multiprocessing.Queue):
+    def __init__(self, worker_id: int, process: ProcessProxy) -> None:
         self.worker_id = worker_id
-        # TODO: rename message_queue to call_queue, because this is what cpython ProcessPoolExecutor calls them
-        self.message_queue: multiprocessing.Queue = multiprocessing.Queue()
-        self.process = multiprocessing.Process(target=work_loop, args=(self.worker_id, self.message_queue, finished_queue))
-
-        # Info specific to the current task being ran
+        self.process = process
         self.current_task: Optional[dict] = None
         self.started_at: Optional[int] = None
         self.is_active_cancel: bool = False
@@ -38,7 +31,7 @@ class PoolWorker:
 
     async def start_task(self, message: dict) -> None:
         self.current_task = message  # NOTE: this marks this worker as busy
-        self.message_queue.put(message)
+        self.process.message_queue.put(message)
         self.started_at = time.monotonic_ns()
 
     async def join(self) -> None:
@@ -46,7 +39,7 @@ class PoolWorker:
         self.process.join()
 
     async def stop(self) -> None:
-        self.message_queue.put("stop")
+        self.process.message_queue.put("stop")
         if self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
             logger.warning(f'Worker {self.worker_id} is currently running task (uuid={uuid}), canceling for shutdown')
@@ -105,7 +98,7 @@ class WorkerPool:
         self.num_workers = num_workers
         self.workers: dict[int, PoolWorker] = {}
         self.next_worker_id = 0
-        self.finished_queue: multiprocessing.Queue = multiprocessing.Queue()
+        self.process_manager = ProcessManager()
         self.queued_messages: list[dict] = []  # TODO: use deque, invent new kinds of logging anxiety
         self.read_results_task: Optional[Task] = None
         self.start_worker_task: Optional[Task] = None
@@ -193,7 +186,8 @@ class WorkerPool:
             self.events.timeout_event.clear()
 
     async def up(self) -> None:
-        worker = PoolWorker(worker_id=self.next_worker_id, finished_queue=self.finished_queue)
+        process = self.process_manager.create_process((self.next_worker_id,))
+        worker = PoolWorker(self.next_worker_id, process)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1
 
@@ -205,7 +199,7 @@ class WorkerPool:
         for worker in self.workers.values():
             if worker.process.pid and worker.process.is_alive():
                 logger.warning(f'Force killing worker {worker.worker_id} pid={worker.process.pid}')
-                os.kill(worker.process.pid, signal.SIGKILL)
+                worker.process.kill()
 
         if self.read_results_task:
             self.read_results_task.cancel()
@@ -220,7 +214,7 @@ class WorkerPool:
         self.events.management_event.set()
         self.events.timeout_event.set()
         await self.stop_workers()
-        self.finished_queue.put('stop')
+        self.process_manager.finished_queue.put('stop')
 
         if self.read_results_task:
             logger.info('Waiting for the finished watcher to return')
@@ -382,10 +376,9 @@ class WorkerPool:
 
     async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""
-        loop = asyncio.get_event_loop()
         while True:
             # Wait for a result from the finished queue
-            message = await loop.run_in_executor(None, self.finished_queue.get)
+            message = await self.process_manager.read_finished()
 
             if message == 'stop':
                 if self.shutting_down:
@@ -396,7 +389,7 @@ class WorkerPool:
                     logger.error('Results queue got stop message even through not shutting down')
                     continue
 
-            worker_id = message["worker"]
+            worker_id = int(message["worker"])
             event = message["event"]
             worker = self.workers[worker_id]
 
