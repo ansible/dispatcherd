@@ -25,7 +25,7 @@ class InvalidMethod(DispatcherError):
     pass
 
 
-class DispatcherMethod:
+class DispatcherMethodBase:
     def __init__(self, fn: DispatcherCallable, **submission_defaults) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
@@ -43,6 +43,9 @@ class DispatcherMethod:
             return self.fn().run
 
         return self.fn
+
+
+class DispatcherMethod(DispatcherMethodBase):
 
     def publication_defaults(self) -> dict:
         defaults = {}
@@ -108,24 +111,26 @@ class UnregisteredMethod(DispatcherMethod):
 
 
 class DispatcherMethodRegistry:
+    method_cls = DispatcherMethod
+
     def __init__(self) -> None:
-        self.registry: Set[DispatcherMethod] = set()
+        self.registry: Set[DispatcherMethodBase] = set()
         self.lock = threading.Lock()
-        self._lookup_dict: dict[str, DispatcherMethod] = {}
+        self._lookup_dict: dict[str, DispatcherMethodBase] = {}
         self._registration_closed: bool = False
 
-    def register(self, fn, **kwargs) -> DispatcherMethod:
+    def register(self, fn, **kwargs) -> DispatcherMethodBase:
         if self._registration_closed:
             self._lookup_dict = {}
             self._registration_closed = False
 
         with self.lock:
-            dmethod = DispatcherMethod(fn, **kwargs)
+            dmethod = self.method_cls(fn, **kwargs)
             self.registry.add(dmethod)
         return dmethod
 
     @property
-    def lookup_dict(self) -> dict[str, DispatcherMethod]:
+    def lookup_dict(self) -> dict[str, DispatcherMethodBase]:
         "Any reference to the lookup_dict will close registration"
         if not self._registration_closed:
             self._registration_closed = True
@@ -133,7 +138,7 @@ class DispatcherMethodRegistry:
                 self._lookup_dict[dmethod.serialize_task()] = dmethod
         return self._lookup_dict
 
-    def get_method(self, task: str, allow_unregistered: bool = True) -> DispatcherMethod:
+    def get_method(self, task: str, allow_unregistered: bool = True) -> DispatcherMethodBase:
         if task in self.lookup_dict:
             return self.lookup_dict[task]
 
@@ -142,7 +147,7 @@ class DispatcherMethodRegistry:
 
         raise NotRegistered(f'Provided method {task} is unregistered and this is not allowed')
 
-    def get_from_callable(self, fn: DispatcherCallable) -> DispatcherMethod:
+    def get_from_callable(self, fn: DispatcherCallable) -> DispatcherMethodBase:
         for dmethod in self.registry:
             if dmethod.fn is fn:
                 return dmethod
@@ -150,3 +155,10 @@ class DispatcherMethodRegistry:
 
 
 registry = DispatcherMethodRegistry()
+
+
+class DispatcherControlRegistry(DispatcherMethodRegistry):
+    method_cls = DispatcherMethodBase
+
+
+control_registry = DispatcherControlRegistry()

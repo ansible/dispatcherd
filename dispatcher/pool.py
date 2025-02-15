@@ -40,6 +40,17 @@ class PoolWorker:
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join()
 
+    def get_data(self):
+        return {
+            'worker_id': self.worker_id,
+            'pid': self.process.pid,
+            'status': self.status,
+            'finished_count': 0,
+            'current_task': self.current_task.get('task') if self.current_task else None,
+            'current_task_uuid': self.current_task.get('uuid', '<unknown>') if self.current_task else None,
+            'active_cancel': self.is_active_cancel
+        }
+
     async def stop(self) -> None:
         self.process.message_queue.put("stop")
         if self.current_task:

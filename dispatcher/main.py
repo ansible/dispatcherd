@@ -7,65 +7,9 @@ from typing import Iterable, Optional
 
 from dispatcher.pool import WorkerPool
 from dispatcher.producers import BaseProducer
+from dispatcher.registry import control_registry
 
 logger = logging.getLogger(__name__)
-
-
-def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
-    """The two messages are functionally the same or not"""
-    filterables = ('task', 'args', 'kwargs', 'uuid')
-    for key in filterables:
-        expected_value = msg_data.get(key)
-        if expected_value:
-            if pool_task.get(key, None) != expected_value:
-                return False
-    return True
-
-
-async def _find_tasks(dispatcher, cancel: bool = False, **data) -> list[tuple[Optional[str], dict]]:
-    "Utility method used for both running and cancel control methods"
-    ret = []
-    for worker in dispatcher.pool.workers.values():
-        if worker.current_task:
-            if task_filter_match(worker.current_task, data):
-                if cancel:
-                    logger.warning(f'Canceling task in worker {worker.worker_id}, task: {worker.current_task}')
-                    worker.cancel()
-                ret.append((worker.worker_id, worker.current_task))
-    for message in dispatcher.pool.queued_messages:
-        if task_filter_match(message, data):
-            if cancel:
-                logger.warning(f'Canceling task in pool queue: {message}')
-                dispatcher.pool.queued_messages.remove(message)
-            ret.append((None, message))
-    for capsule in dispatcher.delayed_messages.copy():
-        if task_filter_match(capsule.message, data):
-            if cancel:
-                logger.warning(f'Canceling delayed task (uuid={capsule.uuid})')
-                capsule.task.cancel()
-                try:
-                    await capsule.task
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    logger.error(f'Error canceling delayed task (uuid={capsule.uuid})')
-                dispatcher.delayed_messages.remove(capsule)
-            ret.append(('<delayed>', capsule.message))
-    return ret
-
-
-class ControlTasks:
-    # TODO: hold pool management lock for these things
-    async def running(self, dispatcher, **data) -> list[tuple[Optional[str], dict]]:
-        # TODO: include delayed tasks in results
-        return await _find_tasks(dispatcher, **data)
-
-    async def cancel(self, dispatcher, **data) -> list[tuple[Optional[str], dict]]:
-        # TODO: include delayed tasks in results
-        return await _find_tasks(dispatcher, cancel=True, **data)
-
-    async def alive(self, dispatcher, **data):
-        return
 
 
 class DispatcherEvents:
@@ -80,7 +24,6 @@ class DispatcherMain:
         self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
-        self.ctl_tasks = ControlTasks()
         self.shutting_down = False
         # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
         # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
@@ -199,9 +142,13 @@ class DispatcherMain:
 
     async def process_message_internal(self, message: dict, producer=None) -> None:
         if 'control' in message:
-            method = getattr(self.ctl_tasks, message['control'])
-            control_data = message.get('control_data', {})
-            returned = await method(self, **control_data)
+            try:
+                dmethod = control_registry.get_method(message['control'])
+                control_data = message.get('control_data', {})
+                returned = await dmethod.fn(self, **control_data)
+            except Exception as exc:
+                returned = f'No control method {message["control"]}, error: {str(exc)}'
+
             if 'reply_to' in message:
                 logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
                 self.control_count += 1

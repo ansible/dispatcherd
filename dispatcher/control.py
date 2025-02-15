@@ -7,6 +7,7 @@ from typing import Optional
 
 from dispatcher.factories import get_broker
 from dispatcher.producers import BrokeredProducer
+from dispatcher.utils import MODULE_METHOD_DELIMITER
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -96,16 +97,21 @@ class Control(object):
         broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
         return BrokeredProducer(broker, close_on_exit=True)
 
+    def sanitize_command(self, command: str) -> str:
+        if MODULE_METHOD_DELIMITER not in command:
+            return f'dispatcher.tasks.{command}'
+        return command
+
     async def acontrol_with_reply(self, command, expected_replies=1, timeout=1, data=None):
         reply_queue = Control.generate_reply_queue_name()
-        send_data = {'control': command, 'reply_to': reply_queue}
+        send_data = {'control': self.sanitize_command(command), 'reply_to': reply_queue}
         if data:
             send_data['control_data'] = data
 
         return await self.acontrol_with_reply_internal(self.make_producer(reply_queue), send_data, expected_replies, timeout)
 
     async def acontrol(self, command, data=None):
-        send_data = {'control': command}
+        send_data = {'control': self.sanitize_command(command)}
         if data:
             send_data['control_data'] = data
 
@@ -117,7 +123,7 @@ class Control(object):
         logger.info('control-and-reply {} to {}'.format(command, self.queuename))
         start = time.time()
         reply_queue = Control.generate_reply_queue_name()
-        send_data = {'control': command, 'reply_to': reply_queue}
+        send_data = {'control': self.sanitize_command(command), 'reply_to': reply_queue}
         if data:
             send_data['control_data'] = data
 
@@ -135,7 +141,7 @@ class Control(object):
 
     def control(self, command, data=None):
         "Send message in fire-and-forget mode, as synchronous code. Only for no-reply control."
-        send_data = {'control': command}
+        send_data = {'control': self.sanitize_command(command)}
         if data:
             send_data['control_data'] = data
 

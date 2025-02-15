@@ -54,6 +54,12 @@ def main():
     print(json.dumps(canceled_jobs, indent=2))
 
     print('')
+    print('getting worker status')
+    ctl = Control('test_channel', config={'conninfo': CONNECTION_STRING})
+    worker_data = ctl.control_with_reply('workers')
+    print(json.dumps(worker_data, indent=2))
+
+    print('')
     print('finding a running task by its task name')
     broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar2'}))
     running_data = ctl.control_with_reply('running', data={'task': 'lambda: __import__("time").sleep(3.1415)'})
