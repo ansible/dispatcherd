@@ -93,6 +93,7 @@ class PoolEvents:
         self.work_cleared: asyncio.Event = asyncio.Event()  # Totally quiet, no blocked or queued messages, no busy workers
         self.management_event: asyncio.Event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
         self.timeout_event: asyncio.Event = asyncio.Event()  # Anything that might affect the timeout watcher task
+        self.workers_ready: asyncio.Event = asyncio.Event()  # min workers have started and sent ready message
 
 
 class WorkerPool:
@@ -399,6 +400,8 @@ class WorkerPool:
 
             if event == 'ready':
                 worker.status = 'ready'
+                if all(worker.status == 'ready' for worker in self.workers.values()):
+                    self.events.workers_ready.set()
                 await self.drain_queue()
 
             elif event == 'shutdown':

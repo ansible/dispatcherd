@@ -9,7 +9,7 @@ import pytest_asyncio
 from dispatcher.service.main import DispatcherMain
 from dispatcher.control import Control
 
-from dispatcher.brokers.pg_notify import Broker, create_connection, acreate_connection
+from dispatcher.brokers.pg_notify import Broker, acreate_connection, connection_save
 from dispatcher.registry import DispatcherMethodRegistry
 from dispatcher.config import DispatcherSettings
 from dispatcher.factories import from_settings, get_control_from_settings
@@ -56,6 +56,21 @@ async def aconnection_for_test():
             await conn.close()
 
 
+@pytest.fixture(autouse=True)
+def clear_connection():
+    """Always close connections between tests
+
+    Tests will do a lot of unthoughtful forking, and connections can not
+    be shared accross processes.
+    """
+    if connection_save._connection:
+        connection_save._connection.close()
+        connection_save._connection = None
+    if connection_save._async_connection:
+        connection_save._async_connection.close()
+        connection_save._async_connection = None
+
+
 @pytest.fixture
 def conn_config():
     return {'conninfo': CONNECTION_STRING}
@@ -73,18 +88,28 @@ def pg_dispatcher() -> DispatcherMain:
 def test_settings():
     return DispatcherSettings(BASIC_CONFIG)
 
-
-@pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def apg_dispatcher(test_settings) -> AsyncIterator[DispatcherMain]:
+@pytest_asyncio.fixture(
+    loop_scope="function",
+    scope="function",
+    params=['ProcessManager', 'ForkServerManager'],
+    ids=["fork", "forkserver"],
+)
+async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
     dispatcher = None
     try:
-        dispatcher = from_settings(settings=test_settings)
+        this_test_config = BASIC_CONFIG.copy()
+        this_test_config.setdefault('service', {})
+        this_test_config['service']['process_manager_cls'] = request.param
+        this_settings = DispatcherSettings(this_test_config)
+        dispatcher = from_settings(settings=this_settings)
 
         await dispatcher.connect_signals()
         await dispatcher.start_working()
         await dispatcher.wait_for_producers_ready()
+        await dispatcher.pool.events.workers_ready.wait()
 
         assert dispatcher.pool.finished_count == 0  # sanity
+        assert dispatcher.control_count == 0
 
         yield dispatcher
     finally:
