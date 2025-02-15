@@ -33,7 +33,10 @@ BASIC_CONFIG = {
         }
     },
     "pool": {
-        "max_workers": 3
+        "pool_kwargs": {
+            "min_workers": 1,
+            "max_workers": 6
+        }
     }
 }
 

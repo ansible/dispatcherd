@@ -234,3 +234,17 @@ async def test_tasks_queue_one(apg_dispatcher, test_settings):
 
     pool = apg_dispatcher.pool
     assert [pool.finished_count, sum(1 for w in pool.workers.values() if w.current_task), len(pool.queued_messages), pool.discard_count] == [0, 1, 1, 8]
+
+
+@pytest.mark.asyncio
+async def test_scale_up(apg_dispatcher, test_settings):
+    assert len(apg_dispatcher.pool.workers) == 1  # from conftest.py, 1 min, 6 max
+    for _ in range(6):
+        test_methods.sleep_function.apply_async(args=[1], settings=test_settings)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if len(apg_dispatcher.pool.workers) == 6:
+            break
+    else:
+        assert f'Never scaled up to expected 6 workers, have: {apg_dispatcher.pool.workers}'

@@ -3,7 +3,9 @@
 version: 2
 service:
   pool_kwargs:
-    max_workers: 4
+    min_workers: 2  # subprocesses
+    max_workers: 12
+    scaledown_wait: 15  # seconds
   main_kwargs:
     node_id: demo-server-a
 brokers:
@@ -11,6 +13,7 @@ brokers:
     config:
       conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777
     sync_connection_factory: dispatcher.brokers.pg_notify.connection_saver
+    # List of channels to listen on
     channels:
     - test_channel
     - test_channel2
