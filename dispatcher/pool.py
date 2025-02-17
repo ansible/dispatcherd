@@ -96,12 +96,12 @@ class PoolEvents:
 
 
 class WorkerPool:
-    def __init__(self, max_workers: int, fd_lock: Optional[asyncio.Lock] = None, settings: LazySettings = global_settings):
+    def __init__(self, max_workers: int, process_manager: ProcessManager, settings: LazySettings = global_settings):
         self.max_workers = max_workers
         self.workers: dict[int, PoolWorker] = {}
         self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
         self.next_worker_id = 0
-        self.process_manager = ProcessManager()
+        self.process_manager = process_manager
         self.queued_messages: list[dict] = []  # TODO: use deque, invent new kinds of logging anxiety
         self.read_results_task: Optional[Task] = None
         self.start_worker_task: Optional[Task] = None
@@ -112,7 +112,6 @@ class WorkerPool:
         self.discard_count: int = 0
         self.shutdown_timeout = 3
         self.management_lock = asyncio.Lock()
-        self.fd_lock = fd_lock or asyncio.Lock()
 
         self.events: PoolEvents = PoolEvents()
 
@@ -127,12 +126,12 @@ class WorkerPool:
     async def start_working(self, dispatcher) -> None:
         self.read_results_task = asyncio.create_task(self.read_results_forever(), name='results_task')
         self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
-        self.management_task = asyncio.create_task(self.manage_workers(), name='management_task')
+        self.management_task = asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task')
         self.management_task.add_done_callback(dispatcher.fatal_error_callback)
         self.timeout_task = asyncio.create_task(self.manage_timeout(), name='timeout_task')
         self.timeout_task.add_done_callback(dispatcher.fatal_error_callback)
 
-    async def manage_workers(self) -> None:
+    async def manage_workers(self, forking_lock: asyncio.Lock) -> None:
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shutting_down:
             while len(self.workers) < self.max_workers:
@@ -144,7 +143,7 @@ class WorkerPool:
             for worker in self.workers.values():
                 if worker.status == 'initialized':
                     logger.debug(f'Starting subprocess for worker {worker.worker_id}')
-                    async with self.fd_lock:  # never fork while connecting
+                    async with forking_lock:  # never fork while connecting
                         await worker.start()
 
             await self.events.management_event.wait()

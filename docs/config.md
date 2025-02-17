@@ -43,15 +43,21 @@ the file-based config.
 
 ### Configuration Contents
 
-The config is broken down by either the process that uses that section,
-or shared resources used by multiple processes.
+At the top-level, config is broken down by either the process that uses that section,
+or brokers, which is a shared resources used by multiple processes.
+
+At the level below that, the config gives instructions for creating python objects.
+The module `dispatcher.factories` has the task of creating those objects from settings.
+The design goal is to have a little possible divergence from the settings structure
+and the class structure in the code.
 
 The general structure is:
 
 ```yaml
 ---
 service:
-  # options
+  pool_kwargs:
+    # options
 brokers:
   pg_notify:
     # options
@@ -61,6 +67,8 @@ producers:
 publish:
   # options
 ```
+
+When providing `pool_kwargs`, those are the kwargs passed to `WorkerPool`, for example.
 
 #### Brokers
 
@@ -80,11 +88,11 @@ and reading messages.
 
 This configures the background task service.
 
-The options will correspond to the `DispatcherMain` class
-in [dispatcher.main](dispatcher/main.py), or its related
+The `pool_kwargs` options will correspond to the `WorkerPool` class
 [dispatcher.pool](dispatcher/pool.py).
+Process management options will be added to this section later.
 
-Service-specific options are mainly concerned with worker
+These options are mainly concerned with worker
 management. For instance, auto-scaling options will be here,
 like worker count, etc.
 

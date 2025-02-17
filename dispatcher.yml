@@ -1,7 +1,8 @@
 # Demo config
 ---
 service:
-  max_workers: 4
+  pool_kwargs:
+    max_workers: 4
 brokers:
   pg_notify:
     config:

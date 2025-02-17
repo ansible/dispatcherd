@@ -7,6 +7,8 @@ from dispatcher.config import LazySettings
 from dispatcher.config import settings as global_settings
 from dispatcher.control import Control
 from dispatcher.main import DispatcherMain
+from dispatcher.pool import WorkerPool
+from dispatcher.process import ProcessManager
 
 """
 Creates objects from settings,
@@ -15,6 +17,13 @@ which is to avoid import dependencies.
 """
 
 # ---- Service objects ----
+
+
+def pool_from_settings(settings: LazySettings = global_settings):
+    kwargs = settings.service.get('pool_kwargs', {}).copy()
+    kwargs['settings'] = settings
+    kwargs['process_manager'] = ProcessManager()  # TODO: use process_manager_cls from settings
+    return WorkerPool(**kwargs)
 
 
 def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[producers.BaseProducer]:
@@ -37,7 +46,8 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     between the service, publisher, and any other interacting processes.
     """
     producers = producers_from_settings(settings=settings)
-    return DispatcherMain(settings.service, producers, settings=settings)
+    pool = pool_from_settings(settings=settings)
+    return DispatcherMain(producers, pool)
 
 
 # ---- Publisher objects ----

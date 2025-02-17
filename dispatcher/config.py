@@ -9,8 +9,15 @@ class DispatcherSettings:
     def __init__(self, config: dict) -> None:
         self.brokers: dict = config.get('brokers', {})
         self.producers: dict = config.get('producers', {})
-        self.service: dict = config.get('service', {'max_workers': 3})
+        self.service: dict = config.get('service', {})
         self.publish: dict = config.get('publish', {})
+
+        # Automatic defaults
+        if 'pool_kwargs' not in self.service:
+            self.service['pool_kwargs'] = {}
+        if 'max_workers' not in self.service['pool_kwargs']:
+            self.service['pool_kwargs']['max_workers'] = 3
+
         # TODO: firmly planned sections of config for later
         # self.callbacks: dict = config.get('callbacks', {})
         # self.options: dict = config.get('options', {})
