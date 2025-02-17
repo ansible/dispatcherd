@@ -3,7 +3,6 @@ from typing import Callable, Optional, Union
 
 import psycopg
 
-from dispatcher.brokers.base import BaseBroker
 from dispatcher.utils import resolve_callable
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ Thus, all psycopg-lib-specific actions must happen here.
 """
 
 
-class PGNotifyBase(BaseBroker):
+class PGNotifyBase:
 
     def __init__(
         self,
