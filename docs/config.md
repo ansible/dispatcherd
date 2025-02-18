@@ -74,7 +74,7 @@ When providing `pool_kwargs`, those are the kwargs passed to `WorkerPool`, for e
 #### Version
 
 The version field is mandatory and must match the current config in the library.
-This is validated against current code and saved in the [schema.json](schema.json) file.
+This is validated against current code and saved in the [schema.json](../schema.json) file.
 
 The version will be bumped when any breaking change happens.
 
