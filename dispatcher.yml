@@ -1,5 +1,6 @@
 # Demo config
 ---
+version: 2
 service:
   pool_kwargs:
     max_workers: 4

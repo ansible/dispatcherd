@@ -7,6 +7,9 @@ import yaml
 
 class DispatcherSettings:
     def __init__(self, config: dict) -> None:
+        self.version = 2
+        if config.get('version') != self.version:
+            raise RuntimeError(f'Current config version is {self.version}, config version must match this')
         self.brokers: dict = config.get('brokers', {})
         self.producers: dict = config.get('producers', {})
         self.service: dict = config.get('service', {})
@@ -23,7 +26,7 @@ class DispatcherSettings:
         # self.options: dict = config.get('options', {})
 
     def serialize(self):
-        return dict(brokers=self.brokers, producers=self.producers, service=self.service, publish=self.publish)
+        return dict(version=self.version, brokers=self.brokers, producers=self.producers, service=self.service, publish=self.publish)
 
 
 def settings_from_file(path: str) -> DispatcherSettings:

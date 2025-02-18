@@ -22,6 +22,7 @@ CHANNELS = ['test_channel', 'test_channel2', 'test_channel3']
 CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777"
 
 BASIC_CONFIG = {
+    "version": 2,
     "brokers": {
         "pg_notify": {
             "channels": CHANNELS,

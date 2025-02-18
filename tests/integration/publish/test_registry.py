@@ -14,7 +14,7 @@ def test_apply_async_with_no_queue(registry, conn_config):
     dmethod = registry.get_from_callable(test_method)
 
     # These settings do not specify a default channel, that is the main point
-    with temporary_settings({'brokers': {'pg_notify': {'config': conn_config}}}):
+    with temporary_settings({'version': 2, 'brokers': {'pg_notify': {'config': conn_config}}}):
 
         # Can not run a method if we do not have a queue
         with pytest.raises(ValueError):

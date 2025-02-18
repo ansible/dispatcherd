@@ -1,4 +1,6 @@
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Type, get_origin, get_args
+import inspect
+from copy import deepcopy
 
 from dispatcher import producers
 from dispatcher.brokers import get_broker
@@ -26,10 +28,13 @@ def pool_from_settings(settings: LazySettings = global_settings):
     return WorkerPool(**kwargs)
 
 
+def brokers_from_settings(settings: LazySettings = global_settings) -> BaseBroker:
+    return [get_broker(broker_name, broker_kwargs) for broker_name, broker_kwargs in settings.brokers.items()]
+
+
 def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[producers.BaseProducer]:
     producer_objects = []
-    for broker_name, broker_kwargs in settings.brokers.items():
-        broker = get_broker(broker_name, broker_kwargs)
+    for broker in brokers_from_settings(settings=settings):
         producer = producers.BrokeredProducer(broker=broker)
         producer_objects.append(producer)
 
@@ -82,3 +87,46 @@ def get_control_from_settings(publish_broker: Optional[str] = None, settings: La
     broker_options = settings.brokers[publish_broker].copy()
     broker_options.update(overrides)
     return Control(publish_broker, broker_options)
+
+
+# ---- Schema generation ----
+
+SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list)
+
+
+def is_valid_annotation(annotation):
+    if get_origin(annotation):
+        for arg in get_args(annotation):
+            if not is_valid_annotation(arg):
+                return False
+    else:
+        if annotation not in SERIALIZED_TYPES:
+            return False
+    return True
+
+
+def schema_for_cls(cls: Type) -> dict[str,str]:
+    signature = inspect.signature(cls.__init__)
+    parameters = signature.parameters
+    spec = {}
+    for k, p in parameters.items():
+        if is_valid_annotation(p.annotation):
+            spec[k] = str(p.annotation)
+    return spec
+
+
+def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
+    ret = deepcopy(settings.serialize())
+
+    ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
+
+    for broker_name, broker_kwargs in settings.brokers.items():
+        broker = get_broker(broker_name, broker_kwargs)
+        ret['brokers'][broker_name] = schema_for_cls(type(broker))
+
+    for producer_cls, producer_kwargs in settings.producers.items():
+        ret['producers'][producer_cls] = schema_for_cls(getattr(producers, producer_cls))
+
+    ret['publish'] = {'default_broker': 'str'}
+
+    return ret

@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScheduledProducer(BaseProducer):
-    def __init__(self, task_schedule: dict):
+    def __init__(self, task_schedule: dict[str,dict[str,int]]):
         self.task_schedule = task_schedule
         self.scheduled_tasks: list[asyncio.Task] = []
         super().__init__()

@@ -55,6 +55,7 @@ The general structure is:
 
 ```yaml
 ---
+version: # number
 service:
   pool_kwargs:
     # options
@@ -69,6 +70,13 @@ publish:
 ```
 
 When providing `pool_kwargs`, those are the kwargs passed to `WorkerPool`, for example.
+
+#### Version
+
+The version field is mandatory and must match the current config in the library.
+This is validated against current code and saved in the [schema.json](schema.json) file.
+
+The version will be bumped when any breaking change happens.
 
 #### Brokers
 
