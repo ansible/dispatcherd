@@ -1,6 +1,6 @@
-from typing import Iterable, Optional, Type, get_origin, get_args
 import inspect
 from copy import deepcopy
+from typing import Iterable, Optional, Type, get_args, get_origin
 
 from dispatcher import producers
 from dispatcher.brokers import get_broker
@@ -28,7 +28,7 @@ def pool_from_settings(settings: LazySettings = global_settings):
     return WorkerPool(**kwargs)
 
 
-def brokers_from_settings(settings: LazySettings = global_settings) -> BaseBroker:
+def brokers_from_settings(settings: LazySettings = global_settings) -> Iterable[BaseBroker]:
     return [get_broker(broker_name, broker_kwargs) for broker_name, broker_kwargs in settings.brokers.items()]
 
 
@@ -105,7 +105,7 @@ def is_valid_annotation(annotation):
     return True
 
 
-def schema_for_cls(cls: Type) -> dict[str,str]:
+def schema_for_cls(cls: Type) -> dict[str, str]:
     signature = inspect.signature(cls.__init__)
     parameters = signature.parameters
     spec = {}
