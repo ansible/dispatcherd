@@ -89,9 +89,9 @@ class DispatcherMethod:
 
         obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
 
-        from dispatcher.factories import get_sync_publisher_from_settings
+        from dispatcher.factories import get_publisher_from_settings
 
-        broker = get_sync_publisher_from_settings(settings=settings)
+        broker = get_publisher_from_settings(settings=settings)
 
         # TODO: exit if a setting is applied to disable publishing
 

@@ -9,7 +9,7 @@ import pytest_asyncio
 from dispatcher.main import DispatcherMain
 from dispatcher.control import Control
 
-from dispatcher.brokers.pg_notify import AsyncBroker
+from dispatcher.brokers.pg_notify import Broker, create_connection, acreate_connection
 from dispatcher.registry import DispatcherMethodRegistry
 from dispatcher.config import DispatcherSettings
 from dispatcher.factories import from_settings, get_control_from_settings
@@ -41,7 +41,7 @@ BASIC_CONFIG = {
 async def aconnection_for_test():
     conn = None
     try:
-        conn = await AsyncBroker.create_connection(conninfo=CONNECTION_STRING, autocommit=True)
+        conn = await acreate_connection(conninfo=CONNECTION_STRING, autocommit=True)
 
         # Make sure database is running to avoid deadlocks which can come
         # from using the loop provided by pytest asyncio
@@ -93,14 +93,6 @@ async def apg_dispatcher(test_settings) -> AsyncIterator[DispatcherMain]:
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def pg_message(psycopg_conn) -> Callable:
-    async def _rf(message, channel=None):
-        broker = AsyncBroker(connection=psycopg_conn, default_publish_channel='test_channel')
-        await broker.apublish_message(channel=channel, message=message)
-    return _rf
-
-
-@pytest_asyncio.fixture(loop_scope="function", scope="function")
 async def pg_control(test_settings) -> AsyncIterator[Control]:
     return get_control_from_settings(settings=test_settings)
 
@@ -109,6 +101,15 @@ async def pg_control(test_settings) -> AsyncIterator[Control]:
 async def psycopg_conn():
     async with aconnection_for_test() as conn:
         yield conn
+
+
+@pytest_asyncio.fixture(loop_scope="function", scope="function")
+async def pg_message(psycopg_conn) -> Callable:
+    async def _rf(message, channel=None):
+        # Note on weirdness here, this broker will only be used for async publishing, so we give junk for synchronous connection
+        broker = Broker(async_connection=psycopg_conn, default_publish_channel='test_channel', sync_connection_factory='tests.data.methods.something')
+        await broker.apublish_message(channel=channel, message=message)
+    return _rf
 
 
 @pytest.fixture

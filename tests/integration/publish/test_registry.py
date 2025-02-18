@@ -21,7 +21,7 @@ def test_apply_async_with_no_queue(registry, conn_config):
             dmethod.apply_async()
 
         # But providing a queue at time of submission works
-        with mock.patch('dispatcher.brokers.pg_notify.SyncBroker.publish_message') as mock_publish_method:
+        with mock.patch('dispatcher.brokers.pg_notify.Broker.publish_message') as mock_publish_method:
             dmethod.apply_async(queue='fooqueue')
         mock_publish_method.assert_called_once_with(channel='fooqueue', message=mock.ANY)
 

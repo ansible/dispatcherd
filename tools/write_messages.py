@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-from dispatcher.factories import get_sync_publisher_from_settings
+from dispatcher.factories import get_publisher_from_settings
 from dispatcher.control import Control
 from dispatcher.utils import MODULE_METHOD_DELIMITER
 from dispatcher.config import setup
@@ -23,7 +23,7 @@ from test_methods import sleep_function, sleep_discard, task_has_timeout, hello_
 setup(file_path='dispatcher.yml')
 
 
-broker = get_sync_publisher_from_settings()
+broker = get_publisher_from_settings()
 
 
 TEST_MSGS = [

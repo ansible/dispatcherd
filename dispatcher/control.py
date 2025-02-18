@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Optional
 
-from dispatcher.factories import get_async_broker, get_sync_broker
+from dispatcher.factories import get_broker
 from dispatcher.producers import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
@@ -93,7 +93,7 @@ class Control(object):
         return [json.loads(payload) for payload in control_callbacks.received_replies]
 
     def make_producer(self, reply_queue):
-        broker = get_async_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
         return BrokeredProducer(broker, close_on_exit=True)
 
     async def acontrol_with_reply(self, command, expected_replies=1, timeout=1, data=None):
@@ -140,5 +140,5 @@ class Control(object):
             send_data['control_data'] = data
 
         payload = json.dumps(send_data)
-        broker = get_sync_broker(self.broker_name, self.broker_config)
+        broker = get_broker(self.broker_name, self.broker_config)
         broker.publish_message(channel=self.queuename, message=payload)

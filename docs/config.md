@@ -75,9 +75,7 @@ When providing `pool_kwargs`, those are the kwargs passed to `WorkerPool`, for e
 Brokers relay messages which give instructions about code to run.
 Right now the only broker available is pg_notify.
 
-The sub-options become python `kwargs` passed to the broker classes
-`AsyncBroker` and `SyncBroker`, for the sychronous and asyncio versions
-of the broker.
+The sub-options become python `kwargs` passed to the broker class `Broker`.
 For now, you will just have to read the code to see what those options are
 at [dispatcher.brokers.pg_notify](dispatcher/brokers/pg_notify.py).
 
