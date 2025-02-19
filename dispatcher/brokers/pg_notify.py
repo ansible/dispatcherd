@@ -116,6 +116,11 @@ class Broker:
                     yield notify.channel, notify.payload
 
     async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:  # public
+        """asyncio way to publish a message, used to send control in control-and-reply
+
+        Not strictly necessary for the service itself if it sends replies in the workers,
+        but this may change in the future.
+        """
         connection = await self.aget_connection()
         channel = self.get_publish_channel(channel)
 
