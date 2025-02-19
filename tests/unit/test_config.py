@@ -18,7 +18,7 @@ def test_settings_reference_unconfigured():
 def test_configured_settings():
     settings = LazySettings()
     settings._wrapped = DispatcherSettings({'version': 2, 'brokers': {'pg_notify': {'config': {}}}})
-    'pg_notify' in settings.brokers
+    assert 'pg_notify' in settings.brokers
 
 
 def test_serialize_settings(test_settings):
