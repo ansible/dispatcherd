@@ -78,6 +78,12 @@ This is validated against current code and saved in the [schema.json](../schema.
 
 The version will be bumped when any breaking change happens.
 
+You can re-generate the schema after making changes by running:
+
+```
+python tools/gen_schema.py > schema.json
+```
+
 #### Brokers
 
 Brokers relay messages which give instructions about code to run.
