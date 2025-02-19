@@ -1,8 +1,9 @@
-from typing import Optional, Protocol
+from typing import AsyncGenerator, Optional, Protocol
 
 
 class BaseBroker(Protocol):
-    async def aprocess_notify(self, connected_callback=None): ...
+    # NOTE: should be async def, but conflicts with lack of yield statement, which implementers would have
+    def aprocess_notify(self, connected_callback=None) -> AsyncGenerator[tuple[str, str], None]: ...
 
     async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None: ...
 

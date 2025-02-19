@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Optional, Union
+from typing import AsyncGenerator, Callable, Optional, Union
 
 import psycopg
 
@@ -100,7 +100,7 @@ class Broker:
             return connection  # slightly weird due to MyPY
         return self._async_connection
 
-    async def aprocess_notify(self, connected_callback: Optional[Callable] = None):  # public
+    async def aprocess_notify(self, connected_callback: Optional[Callable] = None) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
         async with connection.cursor() as cur:
             for channel in self.channels:
