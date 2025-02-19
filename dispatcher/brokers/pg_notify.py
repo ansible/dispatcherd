@@ -70,7 +70,7 @@ class Broker:
         self.channels = channels
         self.default_publish_channel = default_publish_channel
 
-    def get_publish_channel(self, channel: Optional[str] = None):
+    def get_publish_channel(self, channel: Optional[str] = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
         if channel is not None:
             return channel
