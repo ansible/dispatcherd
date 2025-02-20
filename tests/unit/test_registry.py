@@ -2,7 +2,8 @@ import time
 
 import pytest
 
-from dispatcher.registry import InvalidMethod
+from dispatcher.registry import InvalidMethod, DispatcherMethodRegistry, DispatcherMethod, UnregisteredMethod
+from tests.data.nested.nested_registry import surprised_registry
 
 
 def test_registry_ordinary_method(registry):
@@ -42,3 +43,18 @@ def test_register_with_timeout(registry):
     dmethod = registry.register(test_method, timeout=0.2)
     submit_data = dmethod.get_async_body()
     assert submit_data['timeout'] == 0.2
+
+
+def test_surprise_registration():
+    """Finds a registered method in registry
+
+    where the method is not registered until the lookup happens
+    this is important so that if the user does not pre-load the registry
+    at import time, the parameters of registered methods are still respected
+    """
+    assert len(surprised_registry.lookup_dict) == 0
+    dmethod = surprised_registry.get_method('tests.data.nested.methods.print_hello')
+    assert len(surprised_registry.registry) == 1  # we grew!
+    assert len(surprised_registry.lookup_dict) == 1
+    assert isinstance(dmethod, DispatcherMethod)
+    assert not isinstance(dmethod, UnregisteredMethod)

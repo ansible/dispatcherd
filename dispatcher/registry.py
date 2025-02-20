@@ -47,6 +47,8 @@ class DispatcherMethod:
     def publication_defaults(self) -> dict:
         defaults = {}
         for k, v in self.submission_defaults.items():
+            if k == 'bind':
+                continue  # applied by worker, not publisher
             if v:  # all None or falsy values have no effect
                 defaults[k] = v
         defaults['task'] = self.serialize_task()
@@ -115,11 +117,10 @@ class DispatcherMethodRegistry:
         self._registration_closed: bool = False
 
     def register(self, fn, **kwargs) -> DispatcherMethod:
-        if self._registration_closed:
-            self._lookup_dict = {}
-            self._registration_closed = False
-
         with self.lock:
+            if self._registration_closed:
+                self._lookup_dict = {}
+                self._registration_closed = False
             dmethod = DispatcherMethod(fn, **kwargs)
             self.registry.add(dmethod)
         return dmethod
@@ -137,8 +138,15 @@ class DispatcherMethodRegistry:
         if task in self.lookup_dict:
             return self.lookup_dict[task]
 
+        # Creating UnregisteredMethod will import the method
+        unregistered_candidate = UnregisteredMethod(task)
+
+        # If this import had a side effect of registering the method, then update ourselves
+        if task in self.lookup_dict:
+            return self.lookup_dict[task]
+
         if allow_unregistered:
-            return UnregisteredMethod(task)
+            return unregistered_candidate
 
         raise NotRegistered(f'Provided method {task} is unregistered and this is not allowed')
 

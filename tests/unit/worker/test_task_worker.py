@@ -1,0 +1,20 @@
+from dispatcher.worker.task import TaskWorker
+from dispatcher.publish import task
+
+
+# Must define here to be importable
+def my_bound_task(dispatcher):
+    assert dispatcher.uuid == '12345'
+
+
+def test_run_method_with_bind(registry):
+
+    task(bind=True, registry=registry)(my_bound_task)
+
+    dmethod = registry.get_from_callable(my_bound_task)
+
+    worker = TaskWorker(1, registry=registry)
+    worker.run_callable({
+        "task": dmethod.serialize_task(),
+        "uuid": "12345"
+    })
