@@ -1,5 +1,5 @@
-from dispatcher.factories import get_publisher_from_settings
-from dispatcher.publish import task
+from ..factories import get_publisher_from_settings
+from ..publish import task
 
 
 @task()

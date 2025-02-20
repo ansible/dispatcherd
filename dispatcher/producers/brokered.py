@@ -2,8 +2,8 @@ import asyncio
 import logging
 from typing import Optional
 
-from dispatcher.brokers.base import BaseBroker
-from dispatcher.producers.base import BaseProducer
+from ..brokers.base import BaseBroker
+from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
 
