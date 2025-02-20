@@ -1,12 +1,10 @@
 import argparse
-import asyncio
 import logging
 import os
 import sys
 
-import yaml
-
-from dispatcher.main import DispatcherMain
+from dispatcher import run_service
+from dispatcher.config import setup
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +30,6 @@ def standalone() -> None:
 
     logger.debug(f"Configured standard out logging at {args.log_level} level")
 
-    with open(args.config, 'r') as f:
-        config_content = f.read()
+    setup(file_path=args.config)
 
-    config = yaml.safe_load(config_content)
-
-    loop = asyncio.get_event_loop()
-    dispatcher = DispatcherMain(config)
-    try:
-        loop.run_until_complete(dispatcher.main())
-    except KeyboardInterrupt:
-        logger.info('CLI entry point leaving')
-    finally:
-        loop.close()
+    run_service()

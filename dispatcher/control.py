@@ -3,11 +3,17 @@ import json
 import logging
 import time
 import uuid
-from types import SimpleNamespace
+from typing import Optional
 
-from dispatcher.producers.brokered import BrokeredProducer
+from dispatcher.factories import get_broker
+from dispatcher.producers import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
+
+
+class ControlEvents:
+    def __init__(self) -> None:
+        self.exit_event = asyncio.Event()
 
 
 class ControlCallbacks:
@@ -22,20 +28,17 @@ class ControlCallbacks:
         self.expected_replies = expected_replies
 
         self.received_replies = []
-        self.events = self._create_events()
+        self.events = ControlEvents()
         self.shutting_down = False
 
-    def _create_events(self):
-        return SimpleNamespace(exit_event=asyncio.Event())
-
-    async def process_message(self, payload, broker=None, channel=None):
+    async def process_message(self, payload, producer=None, channel=None):
         self.received_replies.append(payload)
         if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
             self.events.exit_event.set()
 
     async def connected_callback(self, producer) -> None:
         payload = json.dumps(self.send_data)
-        await producer.notify(self.queuename, payload)
+        await producer.notify(channel=self.queuename, message=payload)
         logger.info('Sent control message, expecting replies soon')
 
     def fatal_error_callback(self, *args):
@@ -55,10 +58,10 @@ class ControlCallbacks:
 
 
 class Control(object):
-    def __init__(self, queue, config=None, async_connection=None):
+    def __init__(self, broker_name: str, broker_config: dict, queue: Optional[str] = None) -> None:
         self.queuename = queue
-        self.config = config
-        self.async_connection = async_connection
+        self.broker_name = broker_name
+        self.broker_config = broker_config
 
     def running(self, *args, **kwargs):
         return self.control_with_reply('running', *args, **kwargs)
@@ -90,11 +93,8 @@ class Control(object):
         return [json.loads(payload) for payload in control_callbacks.received_replies]
 
     def make_producer(self, reply_queue):
-        if self.async_connection:
-            conn_kwargs = {'connection': self.async_connection}
-        else:
-            conn_kwargs = {'config': self.config}
-        return BrokeredProducer(broker='pg_notify', channels=[reply_queue], **conn_kwargs)
+        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        return BrokeredProducer(broker, close_on_exit=True)
 
     async def acontrol_with_reply(self, command, expected_replies=1, timeout=1, data=None):
         reply_queue = Control.generate_reply_queue_name()
@@ -117,10 +117,6 @@ class Control(object):
         logger.info('control-and-reply {} to {}'.format(command, self.queuename))
         start = time.time()
         reply_queue = Control.generate_reply_queue_name()
-
-        if (not self.config) and (not self.async_connection):
-            raise RuntimeError('Must use a new psycopg connection to do control-and-reply')
-
         send_data = {'control': command, 'reply_to': reply_queue}
         if data:
             send_data['control_data'] = data
@@ -137,13 +133,12 @@ class Control(object):
         logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
         return replies
 
-    # NOTE: this is the synchronous version, only to be used for no-reply
     def control(self, command, data=None):
-        from dispatcher.brokers.pg_notify import publish_message
-
+        "Send message in fire-and-forget mode, as synchronous code. Only for no-reply control."
         send_data = {'control': command}
         if data:
             send_data['control_data'] = data
 
         payload = json.dumps(send_data)
-        publish_message(self.queuename, payload, config=self.config)
+        broker = get_broker(self.broker_name, self.broker_config)
+        broker.publish_message(channel=self.queuename, message=payload)

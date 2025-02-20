@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "brokers": {
+    "pg_notify": {
+      "config": "typing.Optional[dict]",
+      "async_connection_factory": "typing.Optional[str]",
+      "sync_connection_factory": "typing.Optional[str]",
+      "channels": "typing.Union[tuple, list]",
+      "default_publish_channel": "typing.Optional[str]"
+    }
+  },
+  "producers": {
+    "ScheduledProducer": {
+      "task_schedule": "dict[str, dict[str, int]]"
+    }
+  },
+  "service": {
+    "pool_kwargs": {
+      "max_workers": "<class 'int'>"
+    }
+  },
+  "publish": {
+    "default_broker": "str"
+  }
+}

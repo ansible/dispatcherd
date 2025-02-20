@@ -1,14 +1,17 @@
 <!-- License Badge -->
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
 
-Working space for dispatcher prototyping
-
-This is firstly intended to be a code split of:
+This is intended to be a working space for prototyping a code split of:
 
 <https://github.com/ansible/awx/tree/devel/awx/main/dispatch>
 
 As a part of doing the split, we also want to resolve a number of
 long-standing design and sustainability issues, thus, asyncio.
+
+The philosophy of the dispatcher is to have a limited scope
+as a "local" runner of background tasks, but to be composable
+so that it can be "wrapped" easily to enable clustering and
+distributed task management by apps using it.
 
 Licensed under [Apache Software License 2.0](LICENSE)
 
@@ -37,20 +40,11 @@ def print_hello():
     print('hello world!!')
 ```
 
-#### Dispatcher service
-
-The dispatcher service needs to be running before you submit tasks.
-This does not make any attempts at message durability or confirmation.
-If you submit a task in an outage of the service, it will be dropped.
-
-There are 2 ways to run the dispatcher service:
-
-- Importing and running (code snippet below)
-- A CLI entrypoint `dispatcher-standalone` for demo purposes
+Additionally, you need to configure dispatcher somewhere in your import path.
+This tells dispatcher how to submit tasks to be ran.
 
 ```python
-from dispatcher.main import DispatcherMain
-import asyncio
+from dispatcher.config import setup
 
 config = {
     "producers": {
@@ -63,13 +57,29 @@ config = {
     },
     "pool": {"max_workers": 4},
 }
-loop = asyncio.get_event_loop()
-dispatcher = DispatcherMain(config)
+setup(config)
+```
 
-try:
-    loop.run_until_complete(dispatcher.main())
-finally:
-    loop.close()
+For more on how to set up and the allowed options in the config,
+see the section [config](docs/config.md) docs.
+
+#### Dispatcher service
+
+The dispatcher service needs to be running before you submit tasks.
+This does not make any attempts at message durability or confirmation.
+If you submit a task in an outage of the service, it will be dropped.
+
+There are 2 ways to run the dispatcher service:
+
+- Importing and running (code snippet below)
+- A CLI entrypoint `dispatcher-standalone` for demo purposes
+
+```python
+from dispatcher import run_service
+
+# After the setup() method has been called
+
+run_service()
 ```
 
 Configuration tells how to connect to postgres, and what channel(s) to listen to.
@@ -88,6 +98,8 @@ The following code will submit `print_hello` to run in the background dispatcher
 ```python
 from test_methods import print_hello
 
+# After the setup() method has been called
+
 print_hello.delay()
 ```
 
@@ -95,6 +107,8 @@ Also valid:
 
 ```python
 from test_methods import print_hello
+
+# After the setup() method has been called
 
 print_hello.apply_async(args=[], kwargs={})
 ```

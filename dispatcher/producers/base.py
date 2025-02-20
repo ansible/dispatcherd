@@ -7,4 +7,11 @@ class ProducerEvents:
 
 
 class BaseProducer:
-    pass
+
+    def __init__(self) -> None:
+        self.events = ProducerEvents()
+        self.produced_count = 0
+
+    async def start_producing(self, dispatcher) -> None: ...
+
+    async def shutdown(self): ...

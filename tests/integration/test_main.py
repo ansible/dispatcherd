@@ -6,6 +6,8 @@ import pytest
 
 from tests.data import methods as test_methods
 
+from dispatcher.config import temporary_settings
+
 SLEEP_METHOD = 'lambda: __import__("time").sleep(0.1)'
 
 
@@ -24,7 +26,7 @@ async def wait_to_receive(dispatcher, ct, timeout=5.0, interval=0.05):
 async def test_run_lambda_function(apg_dispatcher, pg_message):
     assert apg_dispatcher.pool.finished_count == 0
 
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait(), name='test_lambda_clear_wait')
     await pg_message('lambda: "This worked!"')
     await asyncio.wait_for(clearing_task, timeout=3)
 
@@ -32,11 +34,19 @@ async def test_run_lambda_function(apg_dispatcher, pg_message):
 
 
 @pytest.mark.asyncio
-async def test_run_decorated_function(apg_dispatcher, conn_config):
-    assert apg_dispatcher.pool.finished_count == 0
-
+async def test_run_decorated_function(apg_dispatcher, test_settings):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    test_methods.print_hello.apply_async(config=conn_config)
+    test_methods.print_hello.apply_async(settings=test_settings)
+    await asyncio.wait_for(clearing_task, timeout=3)
+
+    assert apg_dispatcher.pool.finished_count == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_with_global_settings(apg_dispatcher, test_settings):
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    with temporary_settings(test_settings.serialize()):
+        test_methods.print_hello.delay()  # settings are inferred from global context
     await asyncio.wait_for(clearing_task, timeout=3)
 
     assert apg_dispatcher.pool.finished_count == 1
@@ -95,8 +105,6 @@ async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
 
 @pytest.mark.asyncio
 async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
-    assert apg_dispatcher.pool.finished_count == 0
-
     # Send message to run task with a delay
     msg = json.dumps({'task': 'lambda: print("This task had a delay")', 'uuid': 'delay_task', 'delay': 0.3})
     await pg_message(msg)
@@ -186,11 +194,11 @@ async def test_task_discard(apg_dispatcher, pg_message):
 
 
 @pytest.mark.asyncio
-async def test_task_discard_in_task_definition(apg_dispatcher, conn_config):
+async def test_task_discard_in_task_definition(apg_dispatcher, test_settings):
     assert apg_dispatcher.pool.finished_count == 0
 
     for i in range(10):
-        test_methods.sleep_discard.apply_async(args=[2], config=conn_config)
+        test_methods.sleep_discard.apply_async(args=[2], settings=test_settings)
 
     await wait_to_receive(apg_dispatcher, 10)
 
@@ -199,11 +207,11 @@ async def test_task_discard_in_task_definition(apg_dispatcher, conn_config):
 
 
 @pytest.mark.asyncio
-async def test_tasks_in_serial(apg_dispatcher, conn_config):
+async def test_tasks_in_serial(apg_dispatcher, test_settings):
     assert apg_dispatcher.pool.finished_count == 0
 
     for i in range(10):
-        test_methods.sleep_serial.apply_async(args=[2], config=conn_config)
+        test_methods.sleep_serial.apply_async(args=[2], settings=test_settings)
 
     await wait_to_receive(apg_dispatcher, 10)
 
@@ -212,11 +220,11 @@ async def test_tasks_in_serial(apg_dispatcher, conn_config):
 
 
 @pytest.mark.asyncio
-async def test_tasks_queue_one(apg_dispatcher, conn_config):
+async def test_tasks_queue_one(apg_dispatcher, test_settings):
     assert apg_dispatcher.pool.finished_count == 0
 
     for i in range(10):
-        test_methods.sleep_queue_one.apply_async(args=[2], config=conn_config)
+        test_methods.sleep_queue_one.apply_async(args=[2], settings=test_settings)
 
     await wait_to_receive(apg_dispatcher, 10)
 
