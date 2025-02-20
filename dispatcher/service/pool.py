@@ -6,8 +6,8 @@ from typing import Iterator, Optional
 
 from ..config import LazySettings
 from ..config import settings as global_settings
-from .process import ProcessManager, ProcessProxy
 from ..utils import DuplicateBehavior, MessageAction
+from .process import ProcessManager, ProcessProxy
 
 logger = logging.getLogger(__name__)
 

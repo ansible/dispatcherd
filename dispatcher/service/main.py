@@ -5,8 +5,8 @@ import signal
 from types import SimpleNamespace
 from typing import Iterable, Optional
 
-from .pool import WorkerPool
 from ..producers import BaseProducer
+from .pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
