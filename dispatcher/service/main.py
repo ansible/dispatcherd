@@ -5,7 +5,7 @@ import signal
 from types import SimpleNamespace
 from typing import Iterable, Optional
 
-from dispatcher.pool import WorkerPool
+from dispatcher.service.pool import WorkerPool
 from dispatcher.producers import BaseProducer
 
 logger = logging.getLogger(__name__)
@@ -207,7 +207,7 @@ class DispatcherMain:
                 self.control_count += 1
                 await self.pool.dispatch_task(
                     {
-                        'task': 'dispatcher.tasks.reply_to_control',
+                        'task': 'dispatcher.service.tasks.reply_to_control',
                         'args': [message['reply_to'], json.dumps(returned)],
                         'uuid': f'control-{self.control_count}',
                         'control': 'reply',  # for record keeping

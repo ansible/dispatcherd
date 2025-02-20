@@ -5,8 +5,8 @@ import time
 import uuid
 from typing import Optional
 
-from dispatcher.factories import get_broker
-from dispatcher.producers import BrokeredProducer
+from .factories import get_broker
+from .producers import BrokeredProducer
 
 logger = logging.getLogger('awx.main.dispatch.control')
 

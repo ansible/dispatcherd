@@ -6,7 +6,7 @@ from typing import Iterator, Optional
 
 from dispatcher.config import LazySettings
 from dispatcher.config import settings as global_settings
-from dispatcher.process import ProcessManager, ProcessProxy
+from dispatcher.service.process import ProcessManager, ProcessProxy
 from dispatcher.utils import DuplicateBehavior, MessageAction
 
 logger = logging.getLogger(__name__)

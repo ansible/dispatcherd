@@ -3,8 +3,8 @@ import logging
 import os
 import sys
 
-from dispatcher import run_service
-from dispatcher.config import setup
+from . import run_service
+from .config import setup
 
 logger = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
 import logging
 from typing import Optional
 
-from dispatcher.registry import DispatcherMethodRegistry
-from dispatcher.registry import registry as default_registry
-from dispatcher.utils import DispatcherCallable
+from .registry import DispatcherMethodRegistry
+from .registry import registry as default_registry
+from .utils import DispatcherCallable
 
 logger = logging.getLogger('awx.main.dispatch')
 

@@ -2,15 +2,15 @@ import inspect
 from copy import deepcopy
 from typing import Iterable, Optional, Type, get_args, get_origin
 
-from dispatcher import producers
-from dispatcher.brokers import get_broker
-from dispatcher.brokers.base import BaseBroker
-from dispatcher.config import LazySettings
-from dispatcher.config import settings as global_settings
-from dispatcher.control import Control
-from dispatcher.main import DispatcherMain
-from dispatcher.pool import WorkerPool
-from dispatcher.process import ProcessManager
+from . import producers
+from .brokers import get_broker
+from .brokers.base import BaseBroker
+from .config import LazySettings
+from .config import settings as global_settings
+from .control import Control
+from .service.main import DispatcherMain
+from .service.pool import WorkerPool
+from .service.process import ProcessManager
 
 """
 Creates objects from settings,

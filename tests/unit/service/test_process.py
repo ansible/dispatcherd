@@ -1,6 +1,6 @@
 from multiprocessing import Queue
 
-from dispatcher.process import ProcessManager, ProcessProxy
+from dispatcher.service.process import ProcessManager, ProcessProxy
 
 
 def test_pass_messages_to_worker():
