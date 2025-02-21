@@ -24,6 +24,8 @@ Current plan is to offer a "stock" solution in the form of a django-ansible-base
 
 https://github.com/ansible/django-ansible-base
 
+End-goal features and design proposals have been moved to the issue queue.
+
 ### AWX dispatcher
 
 This is directly taken from the AWX dispatcher.
@@ -86,42 +88,3 @@ https://taskiq-python.github.io/guide/architecture-overview.html#context
 https://python-rq.org/docs/workers/
 
 https://dramatiq.io/
-
-## Alternative Archectures
-
-This are blue-sky ideas, which may not happen anytime soon,
-but they are described to help structure the app today so it can expand
-into these potential future roles.
-
-### Persistent work manager
-
-Years ago, when AWX was having trouble with output processing bottlenecks,
-we stopped using the main dispatcher process to dispatch job events to workers.
-
-Essentially, any performance-sensitive data volumes should not go through the
-pool worker management system where data is passed through IPC queues.
-Doing this causes the main process to be a bottleneck.
-
-The solution was to have workers connect to a socket on their own.
-
-Nothing is wrong with this, it's just weird.
-None of the written facilities for pool management in dispatcher code is useful.
-Because of that, event processing diverged far from the rest of the dispatcher.
-
-Long-term vision here is that:
- - a `@task` decorator may mark a task as persistent
- - additional messages types will need to be send into the finished queue for
-   - analytics tracking, like how many messages were processed
-   - whether a particular resource being monitored has been closed
-
-The idea is that this would integrate what was prototyped in:
-
-https://github.com/AlanCoding/receptor-reporter/tree/devel
-
-That idea involved the main process more than the existing callback receiver.
-Because each job has its own socket that has to be read from, so these will come and go.
-And a worker may manage more than 1 job at the same time, asynchronously.
-
-This also requires forking from what is now `dispatcher.main`.
-We could keep the pool (and add more feature) but this requires
-an entirely different main loop.
