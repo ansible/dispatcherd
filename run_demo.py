@@ -1,21 +1,14 @@
-# send_notifications.py
+#!/usr/bin/env python3
+
 import json
 import logging
-import os
 import sys
 
 from dispatcher.factories import get_publisher_from_settings, get_control_from_settings
 from dispatcher.utils import MODULE_METHOD_DELIMITER
 from dispatcher.config import setup
 
-# Add the test methods to the path so we can use .delay type contracts
-tools_dir = os.path.abspath(
-    os.path.dirname(os.path.abspath(__file__)),
-)
-
-sys.path.append(tools_dir)
-
-from test_methods import sleep_function, sleep_discard, task_has_timeout, hello_world_binder
+from tests.data.methods import sleep_function, sleep_discard, task_has_timeout, hello_world_binder
 
 
 # Setup the global config from the settings file shared with the service

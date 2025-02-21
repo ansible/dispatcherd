@@ -1,14 +1,10 @@
 <!-- License Badge -->
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
 
-This is intended to be a working space for prototyping a code split of:
+## Dispatcher
 
-<https://github.com/ansible/awx/tree/devel/awx/main/dispatch>
-
-As a part of doing the split, we also want to resolve a number of
-long-standing design and sustainability issues, thus, asyncio.
-
-The philosophy of the dispatcher is to have a limited scope
+The dispatcher is a service to run python tasks in subprocesses.
+Its philosophy is to have a limited scope
 as a "local" runner of background tasks, but to be composable
 so that it can be "wrapped" easily to enable clustering and
 distributed task management by apps using it.
@@ -23,14 +19,14 @@ You will use dispatcher to trigger a background task over pg_notify.
 Both your *background dispatcher service* and your *task publisher* process must have
 python configured so that your task is importable.
 
-For more options, see `docs/usage.md`.
+For more options, see [docs/usage](docs/usage.md).
 
 #### Library
 
 The dispatcher `@task()` decorator is used to register tasks.
 
-See the `tools/test_methods.py` module.
-This defines a dispatcher task and the pg_notify channel it will be sent over.
+The [tests/data/methods.py](tests/data/methods.py) module defines some
+dispatcher tasks and the pg_notify channels they will be sent over.
 
 ```python
 from dispatcher.publish import task
@@ -116,9 +112,6 @@ print_hello.apply_async(args=[], kwargs={})
 The difference is that `apply_async` takes both args and kwargs as kwargs themselves,
 and allows for additional configuration parameters to come after those.
 
-As of writing, this only works if you have a Django connection configured.
-You can manually pass configuration info (as in the demo) for non-Django use.
-
 ### Manual Demo
 
 You need to have 2 terminal tabs open to run this.
@@ -126,9 +119,9 @@ You need to have 2 terminal tabs open to run this.
 ```
 # tab 1
 make postgres
-PYTHONPATH=$PYTHONPATH:tools/ dispatcher-standalone
+dispatcher-standalone
 # tab 2
-python tools/write_messages.py
+./run_demo.py
 ```
 
 This will run the dispatcher with schedules, and process a burst of messages
@@ -148,6 +141,15 @@ py.test tests/
 This accomplishes the most basic of starting and shutting down.
 With no tasks submitted, it should record running 0 tasks,
 and with a task submitted, it records running 1 task.
+
+## Background
+
+This is intended to be a working space for prototyping a code split of:
+
+<https://github.com/ansible/awx/tree/devel/awx/main/dispatch>
+
+As a part of doing the split, we also want to resolve a number of
+long-standing design and sustainability issues, thus, asyncio.
 
 ## Contributing
 
