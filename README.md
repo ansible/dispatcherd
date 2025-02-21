@@ -15,11 +15,8 @@ Licensed under [Apache Software License 2.0](LICENSE)
 
 You have a postgres server configured and a python project.
 You will use dispatcher to trigger a background task over pg_notify.
-
 Both your *background dispatcher service* and your *task publisher* process must have
 python configured so that your task is importable.
-
-For more options, see [docs/usage](docs/usage.md).
 
 #### Library
 
@@ -27,6 +24,7 @@ The dispatcher `@task()` decorator is used to register tasks.
 
 The [tests/data/methods.py](tests/data/methods.py) module defines some
 dispatcher tasks and the pg_notify channels they will be sent over.
+For more `@task` options, see [docs/task_options.md](docs/task_options.md).
 
 ```python
 from dispatcher.publish import task
