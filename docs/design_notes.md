@@ -1,4 +1,28 @@
-## Reference Designs
+## Design Notes
+
+Many of the specific choices made in the dispatcher design are to enable pg_notify use.
+The advantage of using pg_notify is that you get an extremely simple topology.
+Imagine a web and a task runner service, invoked separately, using postgres.
+
+```mermaid
+flowchart TD
+
+A(web)
+B(task)
+C(postgres)
+
+A-->C
+B-->C
+```
+
+However, pg_notify is not a true queue, and this drives the design of the dispatcher,
+having its main process listening for messages and farming the work out to worker subprocesses.
+
+This helps with pg_notify use, but still doesn't solve all the problems,
+because those problems ultimately need persistent storage.
+Current plan is to offer a "stock" solution in the form of a django-ansible-base app.
+
+https://github.com/ansible/django-ansible-base
 
 ### AWX dispatcher
 
@@ -55,30 +79,19 @@ In AWX dispatcher, a full queue may put messages into individual worker IPCs.
 This caused bad results, like delaying tasks due to long-running jobs,
 while the pool had many other workers free up in the mean time.
 
+### Notable python tasking systems
+
+https://taskiq-python.github.io/guide/architecture-overview.html#context
+
+https://python-rq.org/docs/workers/
+
+https://dramatiq.io/
+
 ## Alternative Archectures
 
 This are blue-sky ideas, which may not happen anytime soon,
 but they are described to help structure the app today so it can expand
 into these potential future roles.
-
-### Singleton task queue
-
-A major pivot from the AWX dispatcher is that we do not use 1 result queue per worker,
-but a single result queue for all workers, and each meassage includes a worker id.
-
-If you continue this pattern, then we would no longer have a call queue for each worker,
-and workers would just grab messages from the queue as they are available.
-
-The problem you encounter is that you will not know what worker started what task.
-If you do any "management" this is a problem. For instance, if you want a task
-to have a timeout, you need to know which worker to kill if it goes over its limit.
-
-There is a way to still consolidate the call queue while no losing these other features.
-When a worker receives a task, it can submit an ACK to the finished queue telling
-the main process that it has started a task, and which task it started.
-
-This isn't ultimately robust, if there is an error between getting the message and ACK,
-but this probably isn't a reasonable concern. As of now, this looks viable.
 
 ### Persistent work manager
 

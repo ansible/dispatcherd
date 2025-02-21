@@ -114,12 +114,18 @@ and allows for additional configuration parameters to come after those.
 
 ### Manual Demo
 
+General setup:
+
+```
+pip install -e .[pg_notify]
+make postgres
+```
+
 You need to have 2 terminal tabs open to run this.
 
 ```
 # tab 1
-make postgres
-dispatcher-standalone
+PYTHONPATH=$PYTHONPATH:. dispatcher-standalone
 # tab 2
 ./run_demo.py
 ```
@@ -129,20 +135,15 @@ that give instructions to run tasks.
 
 ### Running Tests
 
-A structure has been set up for integration tests.
-The word "integration" only means that postgres must be running.
+Most tests (except for tests/unit/) require postgres to be running.
 
 ```
 pip install -r requirements_dev.txt
 make postgres
-py.test tests/
+pytest tests/
 ```
 
-This accomplishes the most basic of starting and shutting down.
-With no tasks submitted, it should record running 0 tasks,
-and with a task submitted, it records running 1 task.
-
-## Background
+### Background
 
 This is intended to be a working space for prototyping a code split of:
 
@@ -150,6 +151,11 @@ This is intended to be a working space for prototyping a code split of:
 
 As a part of doing the split, we also want to resolve a number of
 long-standing design and sustainability issues, thus, asyncio.
+For a little more background see [docs/design_notes.md](docs/design_notes.md).
+
+There is documentation of the message formats used by the dispatcher
+in [docs/message_formats.md](docs/message_formats.md). Some of these are internal,
+but some messages are what goes over the user-defined brokers (pg_notify).
 
 ## Contributing
 

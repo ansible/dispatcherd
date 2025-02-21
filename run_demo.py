@@ -28,9 +28,8 @@ TEST_MSGS = [
 def main():
     print('writing some basic test messages')
     for channel, message in TEST_MSGS:
-        # Send the notification
         broker.publish_message(channel=channel, message=message)
-        # await send_notification(channel, message)
+
     # send more than number of workers quickly
     print('')
     print('writing 15 messages fast')
@@ -38,10 +37,13 @@ def main():
         broker.publish_message(message=f'lambda: {i}')
 
     print('')
-    print('performing a task cancel')
-    # submit a task we will "find" two different ways
-    broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar'}))
+    print(' -------- Actions involving control-and-reply ---------')
     ctl = get_control_from_settings()
+
+    print('')
+    print('performing a task cancel')
+    # we will "find" a task two different ways here
+    broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar'}))
     canceled_jobs = ctl.control_with_reply('cancel', data={'uuid': 'foobar'})
     print(json.dumps(canceled_jobs, indent=2))
 
@@ -56,6 +58,11 @@ def main():
     broker.publish_message(message=json.dumps({'task': 'lambda: 123421', 'uuid': 'foobar2', 'delay': 4}))
     print('     30 second delay task')
     broker.publish_message(message=json.dumps({'task': 'lambda: 987987234', 'uuid': 'foobar2', 'delay': 30}))
+
+    print('')
+    print(' -------- Using tasks defined with @task() decorator ---------')
+    print('')
+    print('running tests.data.methods.sleep_function with a delay')
     print('     10 second delay task')
     # NOTE: this task will error unless you run the dispatcher itself with it in the PYTHONPATH, which is intended
     sleep_function.apply_async(
@@ -65,14 +72,14 @@ def main():
 
     print('')
     print('showing delayed tasks in running list')
-    running_data = ctl.control_with_reply('running', data={'task': f'test_methods{MODULE_METHOD_DELIMITER}sleep_function'})
+    running_data = ctl.control_with_reply('running', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'})
     print(json.dumps(running_data, indent=2))
 
     print('')
     print('cancel a delayed task with no reply for demonstration')
-    ctl.control('cancel', data={'task': f'test_methods{MODULE_METHOD_DELIMITER}sleep_function'})  # NOTE: no reply
+    ctl.control('cancel', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'})  # NOTE: no reply
     print('confirmation that it has been canceled')
-    running_data = ctl.control_with_reply('running', data={'task': f'test_methods{MODULE_METHOD_DELIMITER}sleep_function'})
+    running_data = ctl.control_with_reply('running', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'})
     print(json.dumps(running_data, indent=2))
 
     print('')
@@ -109,6 +116,7 @@ def main():
 
     print('demo of using bind=True, with hello_world_binder')
     hello_world_binder.delay()
+
 
 if __name__ == "__main__":
     logging.basicConfig(level='ERROR', stream=sys.stdout)
