@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Optional, Set, Tuple
+from typing import Any, Awaitable, Callable, ClassVar, Optional, Set, Tuple
 from uuid import uuid4
 
 from dispatcher.config import LazySettings
@@ -30,11 +30,22 @@ class DispatcherMethodBase:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
+        self.afn: Optional[Awaitable[Any]] = None  # used for control registry subclass
         self.submission_defaults = submission_defaults or {}
 
     def serialize_task(self) -> str:
         """The reverse of resolve_callable, transform callable into dotted notation"""
         return MODULE_METHOD_DELIMITER.join([self.fn.__module__, self.fn.__qualname__])
+
+
+class DispatcherControlMethod(DispatcherMethodBase):
+    def __init__(self, afn: Awaitable[Any]) -> None:
+        if not hasattr(afn, '__qualname__'):
+            raise InvalidMethod('Can only register methods and classes')
+        self.afn = afn
+
+
+class DispatcherMethod(DispatcherMethodBase):
 
     def get_callable(self) -> Callable:
         if inspect.isclass(self.fn):
@@ -43,9 +54,6 @@ class DispatcherMethodBase:
             return self.fn().run
 
         return self.fn
-
-
-class DispatcherMethod(DispatcherMethodBase):
 
     def publication_defaults(self) -> dict:
         defaults = {}
@@ -111,7 +119,7 @@ class UnregisteredMethod(DispatcherMethod):
 
 
 class DispatcherMethodRegistry:
-    method_cls: type = DispatcherMethod
+    method_cls: ClassVar[type] = DispatcherMethod
 
     def __init__(self) -> None:
         self.registry: Set[DispatcherMethodBase] = set()
@@ -158,7 +166,7 @@ registry = DispatcherMethodRegistry()
 
 
 class DispatcherControlRegistry(DispatcherMethodRegistry):
-    method_cls = DispatcherMethodBase
+    method_cls = DispatcherControlMethod
 
 
 control_registry = DispatcherControlRegistry()

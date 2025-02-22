@@ -145,7 +145,7 @@ class DispatcherMain:
             try:
                 dmethod = control_registry.get_method(message['control'])
                 control_data = message.get('control_data', {})
-                returned = await dmethod.fn(self, **control_data)
+                returned = await dmethod.afn(self, **control_data)
             except Exception as exc:
                 returned = f'No control method {message["control"]}, error: {str(exc)}'
 
