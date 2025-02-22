@@ -48,7 +48,7 @@ class PoolWorker:
             'finished_count': 0,
             'current_task': self.current_task.get('task') if self.current_task else None,
             'current_task_uuid': self.current_task.get('uuid', '<unknown>') if self.current_task else None,
-            'active_cancel': self.is_active_cancel
+            'active_cancel': self.is_active_cancel,
         }
 
     async def stop(self) -> None:

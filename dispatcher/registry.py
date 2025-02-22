@@ -111,7 +111,7 @@ class UnregisteredMethod(DispatcherMethod):
 
 
 class DispatcherMethodRegistry:
-    method_cls = DispatcherMethod
+    method_cls: type = DispatcherMethod
 
     def __init__(self) -> None:
         self.registry: Set[DispatcherMethodBase] = set()

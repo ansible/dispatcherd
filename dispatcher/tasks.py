@@ -2,10 +2,9 @@ import asyncio
 import logging
 from typing import Optional
 
-from dispatcher.registry import control_registry
 from dispatcher.factories import get_publisher_from_settings
 from dispatcher.publish import task
-
+from dispatcher.registry import control_registry
 
 logger = logging.getLogger(__name__)
 
