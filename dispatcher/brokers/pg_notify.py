@@ -70,6 +70,12 @@ class Broker:
         self.channels = channels
         self.default_publish_channel = default_publish_channel
 
+        # If we are in the notification loop (receiving messages),
+        # then we have to break out before sending messages
+        # These variables track things so that we can exit, send, and re-enter
+        self.notify_loop_active: bool = False
+        self.notify_queue: list = []
+
     def get_publish_channel(self, channel: Optional[str] = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
         if channel is not None:
@@ -116,8 +122,23 @@ class Broker:
 
             while True:
                 logger.debug('Starting listening for pg_notify notifications')
+                self.notify_loop_active = True
                 async for notify in connection.notifies():
                     yield notify.channel, notify.payload
+                    if self.notify_queue:
+                        break
+                self.notify_loop_active = False
+                for reply_to, reply_message in self.notify_queue:
+                    await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
+                self.notify_queue = []
+
+    async def apublish_message_from_cursor(self, cursor: psycopg.AsyncClientCursor, channel: Optional[str] = None, message: str = '') -> None:
+        """The inner logic of async message publishing where we already have a cursor"""
+        if not message:
+            await cursor.execute(f'NOTIFY {channel};')
+        else:
+            # await cur.execute(f"NOTIFY {channel}, '{message}';")
+            await cursor.execute('SELECT pg_notify(%s, %s);', (channel, message))
 
     async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:  # public
         """asyncio way to publish a message, used to send control in control-and-reply
@@ -125,15 +146,15 @@ class Broker:
         Not strictly necessary for the service itself if it sends replies in the workers,
         but this may change in the future.
         """
+        if self.notify_loop_active:
+            self.notify_queue.append((channel, message))
+            return
+
         connection = await self.aget_connection()
         channel = self.get_publish_channel(channel)
 
         async with connection.cursor() as cur:
-            if not message:
-                await cur.execute(f'NOTIFY {channel};')
-            else:
-                # await cur.execute(f"NOTIFY {channel}, '{message}';")
-                await cur.execute('SELECT pg_notify(%s, %s);', (channel, message))
+            await self.apublish_message_from_cursor(cur, channel=channel, message=message)
 
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
 

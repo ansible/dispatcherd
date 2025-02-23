@@ -35,6 +35,7 @@ class ControlCallbacks:
         self.received_replies.append(payload)
         if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
             self.events.exit_event.set()
+        return (None, None)
 
     async def connected_callback(self, producer) -> None:
         payload = json.dumps(self.send_data)
