@@ -102,6 +102,10 @@ class Broker:
 
     async def aprocess_notify(self, connected_callback: Optional[Callable] = None) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
+
+        if not connection.autocommit:
+            await connection.set_autocommit(True)
+
         async with connection.cursor() as cur:
             for channel in self.channels:
                 await cur.execute(f"LISTEN {channel};")
@@ -128,7 +132,8 @@ class Broker:
             if not message:
                 await cur.execute(f'NOTIFY {channel};')
             else:
-                await cur.execute(f"NOTIFY {channel}, '{message}';")
+                # await cur.execute(f"NOTIFY {channel}, '{message}';")
+                await cur.execute('SELECT pg_notify(%s, %s);', (channel, message))
 
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
 

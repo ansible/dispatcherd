@@ -170,8 +170,14 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload: dict, producer: Optional[BaseProducer] = None, channel: Optional[str] = None) -> None:
-        # Convert payload from client into python dict
+    async def process_message(self, payload: dict, producer: Optional[BaseProducer] = None, channel: Optional[str] = None) -> tuple[Optional[str],Optional[str]]:
+        """Called by producers to trigger a new task
+
+        Convert payload from producer into python dict
+        Process uuid default
+        Delay tasks when applicable
+        Send to next layer of internal processing
+        """
         # TODO: more structured validation of the incoming payload from publishers
         if isinstance(payload, str):
             try:
@@ -182,7 +188,7 @@ class DispatcherMain:
             message = payload
         else:
             logger.error(f'Received unprocessable type {type(payload)}')
-            return
+            return (None, None)
 
         # A client may provide a task uuid (hope they do it correctly), if not add it
         if 'uuid' not in message:
@@ -195,28 +201,24 @@ class DispatcherMain:
             # NOTE: control messages with reply should never be delayed, document this for users
             self.create_delayed_task(message)
         else:
-            await self.process_message_internal(message, producer=producer)
+            return await self.process_message_internal(message, producer=producer)
+        return (None, None)
 
-    async def process_message_internal(self, message: dict, producer=None) -> None:
+    async def process_message_internal(self, message: dict, producer=None) -> tuple[Optional[str],Optional[str]]:
+        """Route message based on needed action - delay for later, return reply, or dispatch to worker"""
         if 'control' in message:
             method = getattr(self.ctl_tasks, message['control'])
             control_data = message.get('control_data', {})
             returned = await method(self, **control_data)
             if 'reply_to' in message:
-                logger.info(f"Control action {message['control']} returned {returned}, sending via worker")
+                logger.info(f"Control action {message['control']} returned {returned}, sending back reply")
                 self.control_count += 1
-                await self.pool.dispatch_task(
-                    {
-                        'task': 'dispatcher.service.tasks.reply_to_control',
-                        'args': [message['reply_to'], json.dumps(returned)],
-                        'uuid': f'control-{self.control_count}',
-                        'control': 'reply',  # for record keeping
-                    }
-                )
+                return (message['reply_to'], json.dumps(returned))
             else:
                 logger.info(f"Control action {message['control']} returned {returned}, done")
         else:
             await self.pool.dispatch_task(message)
+        return (None, None)
 
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')

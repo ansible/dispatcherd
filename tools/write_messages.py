@@ -4,8 +4,7 @@ import logging
 import os
 import sys
 
-from dispatcher.factories import get_publisher_from_settings
-from dispatcher.control import Control
+from dispatcher.factories import get_publisher_from_settings, get_control_from_settings
 from dispatcher.utils import MODULE_METHOD_DELIMITER
 from dispatcher.config import setup
 
@@ -49,7 +48,7 @@ def main():
     print('performing a task cancel')
     # submit a task we will "find" two different ways
     broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar'}))
-    ctl = Control('test_channel')
+    ctl = get_control_from_settings()
     canceled_jobs = ctl.control_with_reply('cancel', data={'uuid': 'foobar'})
     print(json.dumps(canceled_jobs, indent=2))
 
