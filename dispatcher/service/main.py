@@ -170,7 +170,9 @@ class DispatcherMain:
         capsule.task = new_task
         self.delayed_messages.append(capsule)
 
-    async def process_message(self, payload: dict, producer: Optional[BaseProducer] = None, channel: Optional[str] = None) -> tuple[Optional[str],Optional[str]]:
+    async def process_message(
+        self, payload: dict, producer: Optional[BaseProducer] = None, channel: Optional[str] = None
+    ) -> tuple[Optional[str], Optional[str]]:
         """Called by producers to trigger a new task
 
         Convert payload from producer into python dict
@@ -204,7 +206,7 @@ class DispatcherMain:
             return await self.process_message_internal(message, producer=producer)
         return (None, None)
 
-    async def process_message_internal(self, message: dict, producer=None) -> tuple[Optional[str],Optional[str]]:
+    async def process_message_internal(self, message: dict, producer=None) -> tuple[Optional[str], Optional[str]]:
         """Route message based on needed action - delay for later, return reply, or dispatch to worker"""
         if 'control' in message:
             method = getattr(self.ctl_tasks, message['control'])

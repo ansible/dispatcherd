@@ -132,7 +132,7 @@ class Broker:
                     await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
                 self.notify_queue = []
 
-    async def apublish_message_from_cursor(self, cursor: psycopg.AsyncClientCursor, channel: Optional[str] = None, message: str = '') -> None:
+    async def apublish_message_from_cursor(self, cursor: psycopg.AsyncCursor, channel: Optional[str] = None, message: str = '') -> None:
         """The inner logic of async message publishing where we already have a cursor"""
         if not message:
             await cursor.execute(f'NOTIFY {channel};')
