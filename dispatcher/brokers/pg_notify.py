@@ -18,11 +18,17 @@ Thus, all psycopg-lib-specific actions must happen here.
 
 async def acreate_connection(**config) -> psycopg.AsyncConnection:
     "Create a new asyncio connection"
-    return await psycopg.AsyncConnection.connect(**config)
+    connection = await psycopg.AsyncConnection.connect(**config)
+    if not connection.autocommit:
+        await connection.set_autocommit(True)
+    return connection
 
 
 def create_connection(**config) -> psycopg.Connection:
-    return psycopg.Connection.connect(**config)
+    connection = psycopg.Connection.connect(**config)
+    if not connection.autocommit:
+        connection.set_autocommit(True)
+    return connection
 
 
 class Broker:
@@ -63,7 +69,6 @@ class Broker:
 
         if config:
             self._config: dict = config.copy()
-            self._config['autocommit'] = True
         else:
             self._config = {}
 
@@ -108,10 +113,6 @@ class Broker:
 
     async def aprocess_notify(self, connected_callback: Optional[Callable] = None) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
-
-        if not connection.autocommit:
-            await connection.set_autocommit(True)
-
         async with connection.cursor() as cur:
             for channel in self.channels:
                 await cur.execute(f"LISTEN {channel};")
@@ -215,7 +216,6 @@ def connection_saver(**config) -> psycopg.Connection:
     Dispatcher does not manage connections, so this a simulation of that.
     """
     if connection_save._connection is None:
-        config['autocommit'] = True
         connection_save._connection = create_connection(**config)
     return connection_save._connection
 
@@ -228,6 +228,5 @@ async def async_connection_saver(**config) -> psycopg.AsyncConnection:
     Dispatcher does not manage connections, so this a simulation of that.
     """
     if connection_save._async_connection is None:
-        config['autocommit'] = True
         connection_save._async_connection = await acreate_connection(**config)
     return connection_save._async_connection
