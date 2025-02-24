@@ -2,7 +2,7 @@ import asyncio
 import multiprocessing
 from typing import Callable, Iterable, Optional, Union
 
-from dispatcher.worker.task import work_loop
+from ..worker.task import work_loop
 
 
 class ProcessProxy:

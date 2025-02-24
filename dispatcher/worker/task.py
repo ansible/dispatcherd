@@ -8,8 +8,8 @@ import time
 import traceback
 from queue import Empty as QueueEmpty
 
-from dispatcher.config import setup
-from dispatcher.registry import registry
+from ..config import setup
+from ..registry import registry
 
 logger = logging.getLogger(__name__)
 

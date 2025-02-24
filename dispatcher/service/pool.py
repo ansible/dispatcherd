@@ -4,10 +4,10 @@ import time
 from asyncio import Task
 from typing import Iterator, Optional
 
-from dispatcher.config import LazySettings
-from dispatcher.config import settings as global_settings
-from dispatcher.process import ProcessManager, ProcessProxy
-from dispatcher.utils import DuplicateBehavior, MessageAction
+from ..config import LazySettings
+from ..config import settings as global_settings
+from ..utils import DuplicateBehavior, MessageAction
+from .process import ProcessManager, ProcessProxy
 
 logger = logging.getLogger(__name__)
 

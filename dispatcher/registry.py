@@ -6,9 +6,9 @@ import time
 from typing import Callable, Optional, Set, Tuple
 from uuid import uuid4
 
-from dispatcher.config import LazySettings
-from dispatcher.config import settings as global_settings
-from dispatcher.utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
+from .config import LazySettings
+from .config import settings as global_settings
+from .utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
 
 logger = logging.getLogger(__name__)
 

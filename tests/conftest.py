@@ -6,7 +6,7 @@ import pytest
 
 import pytest_asyncio
 
-from dispatcher.main import DispatcherMain
+from dispatcher.service.main import DispatcherMain
 from dispatcher.control import Control
 
 from dispatcher.brokers.pg_notify import Broker, create_connection, acreate_connection

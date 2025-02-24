@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from dispatcher.producers.base import BaseProducer
+from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
 
