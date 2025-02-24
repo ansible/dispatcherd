@@ -116,7 +116,7 @@ class Control(object):
         producer = self.make_producer(Control.generate_reply_queue_name())  # reply queue not used
         await control_callbacks.connected_callback(producer)
 
-    def control_with_reply(self, command, expected_replies=1, timeout=1, data=None):
+    def control_with_reply(self, command: str, expected_replies: int = 1, timeout: float = 1.0, data: Optional[dict] = None) -> list[dict]:
         logger.info('control-and-reply {} to {}'.format(command, self.queuename))
         start = time.time()
         reply_queue = Control.generate_reply_queue_name()
@@ -124,14 +124,19 @@ class Control(object):
         if data:
             send_data['control_data'] = data
 
-        producer = self.make_producer(reply_queue)
+        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
 
-        loop = asyncio.new_event_loop()
-        try:
-            replies = loop.run_until_complete(self.acontrol_with_reply_internal(producer, send_data, expected_replies, timeout))
-        finally:
-            loop.close()
-            loop = None
+        def connected_callback():
+            payload = json.dumps(send_data)
+            if self.queuename:
+                broker.publish_message(channel=self.queuename, message=payload)
+            else:
+                broker.publish_message(message=payload)
+
+        replies = []
+        for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=expected_replies, timeout=timeout):
+            reply_data = json.loads(payload)
+            replies.append(reply_data)
 
         logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
         return replies
