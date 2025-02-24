@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Optional, Protocol, Awaitable, Callable
+from typing import AsyncGenerator, Awaitable, Callable, Optional, Protocol
 
 
 class BaseBroker(Protocol):
