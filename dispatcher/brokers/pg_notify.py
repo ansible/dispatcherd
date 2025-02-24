@@ -49,8 +49,9 @@ def current_notifies(conn: psycopg.Connection) -> Generator[psycopg.connection.N
             # later, like 3.2+ versions
             enc = conn.pgconn._encoding
         else:
-            # earlier versions
-            enc = psycopg._encodings.pgconn_encoding(conn.pgconn)
+            # For earlier versions, of course we have to ignore typing
+            # because psycopg.Connection having _encodings is version dependent
+            enc = psycopg._encodings.pgconn_encoding(conn.pgconn)  # type: ignore
         n = psycopg.connection.Notify(pgn.relname.decode(enc), pgn.extra.decode(enc), pgn.be_pid)
         yield n
 
