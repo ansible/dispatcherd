@@ -3,7 +3,9 @@
 
 ## Dispatcher
 
-The dispatcher is a service to run python tasks in subprocesses.
+The dispatcher is a service to run python tasks in subprocesses,
+designed specifically to work well with pg_notify,
+but intended to be extensible to other message delivery means.
 Its philosophy is to have a limited scope
 as a "local" runner of background tasks, but to be composable
 so that it can be "wrapped" easily to enable clustering and
