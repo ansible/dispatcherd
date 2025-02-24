@@ -1,6 +1,5 @@
 import logging
-import select
-from typing import Any, AsyncGenerator, Callable, Coroutine, Generator, Iterator, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 import psycopg
 
@@ -30,30 +29,6 @@ def create_connection(**config) -> psycopg.Connection:
     if not connection.autocommit:
         connection.set_autocommit(True)
     return connection
-
-
-def current_notifies(conn: psycopg.Connection) -> Generator[psycopg.connection.Notify, None, None]:
-    """Altered version of .notifies method from psycopg library
-
-    Taken from AWX, only used for synchronous listening, same notify-or-timeout problem
-    This removes the outer while True loop so that we only process
-    queued notifications
-    """
-    with conn.lock:
-        try:
-            ns = conn.wait(psycopg.generators.notifies(conn.pgconn))
-        except psycopg.errors._NO_TRACEBACK as ex:
-            raise ex.with_traceback(None)
-    for pgn in ns:
-        if hasattr(conn.pgconn, '_encoding'):
-            # later, like 3.2+ versions
-            enc = conn.pgconn._encoding
-        else:
-            # For earlier versions, of course we have to ignore typing
-            # because psycopg.Connection having _encodings is version dependent
-            enc = psycopg._encodings.pgconn_encoding(conn.pgconn)  # type: ignore
-        n = psycopg.connection.Notify(pgn.relname.decode(enc), pgn.extra.decode(enc), pgn.be_pid)
-        yield n
 
 
 class Broker:
@@ -221,7 +196,6 @@ class Broker:
         - taken longer than the specified timeout condition
         """
         connection = self.get_connection()
-        msg_ct: int = 0
 
         with connection.cursor() as cur:
             for channel in self.channels:
@@ -232,18 +206,8 @@ class Broker:
                 connected_callback()
 
             logger.debug('Starting listening for pg_notify notifications')
-            while True:
-                if select.select([connection], [], [], timeout) == ([], [], []):
-                    logger.debug(f'Did not get {max_messages} messages in {timeout} seconds from channels: {self.channels}')
-                    break
-                else:
-                    notification_generator = current_notifies(connection)
-                    for notify in notification_generator:
-                        msg_ct += 1
-                        yield notify.channel, notify.payload
-
-                    if msg_ct >= max_messages:
-                        break
+            for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
+                yield (notify.channel, notify.payload)
 
     def publish_message(self, channel: Optional[str] = None, message: str = '') -> None:
         connection = self.get_connection()
