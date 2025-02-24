@@ -34,9 +34,10 @@ def create_connection(**config) -> psycopg.Connection:
     return connection
 
 
-def current_notifies(conn):
-    """
-    Altered version of .notifies method from psycopg library
+def current_notifies(conn: psycopg.Connection) -> Generator[psycopg.connection.Notify, None, None]:
+    """Altered version of .notifies method from psycopg library
+
+    Taken from AWX
     This removes the outer while True loop so that we only process
     queued notifications
     """
@@ -229,36 +230,17 @@ class Broker:
             if connected_callback:
                 connected_callback()
 
-            sentinel, sentinel_w = os.pipe()
-            os.set_blocking(sentinel, False)
-            os.set_blocking(sentinel_w, False)
-            signal.set_wakeup_fd(sentinel_w)
-
             logger.debug('Starting listening for pg_notify notifications')
-            # gen = self.wait_gen(connection)
             while True:
                 select_data = select.select([connection], [], [], timeout)
                 if select_data == ([], [], []):
                     logger.debug(f'Did not get {max_messages} messages in {timeout} seconds from channels: {self.channels}')
                     break
                 else:
-                    print('select_data')
-                    print(select_data)
-                    # if connection.connection in select_data[0]:
-                    #     connection.connection.execute("SELECT 1")
-                    # if sentinel in r:
-                    #     os.read(self.sentinel, 256)
-
-
-                # if connection.wait(gen, timeout):
                     notification_generator = current_notifies(connection)
                     for notify in notification_generator:
+                        msg_ct += 1
                         yield notify.channel, notify.payload
-
-                    # while connection.notifies:
-                    #     notify = connection.notifies.pop(0)
-                    #     msg_ct += 1
-                    #     yield notify.channel, notify.payload
 
                     if msg_ct >= max_messages:
                         break
