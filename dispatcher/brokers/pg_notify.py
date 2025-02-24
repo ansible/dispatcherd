@@ -1,5 +1,8 @@
 import logging
-from typing import AsyncGenerator, Callable, Optional, Union
+import select
+import os
+import signal
+from typing import AsyncGenerator, Callable, Optional, Union, Iterator, Generator
 
 import psycopg
 
@@ -29,6 +32,28 @@ def create_connection(**config) -> psycopg.Connection:
     if not connection.autocommit:
         connection.set_autocommit(True)
     return connection
+
+
+def current_notifies(conn):
+    """
+    Altered version of .notifies method from psycopg library
+    This removes the outer while True loop so that we only process
+    queued notifications
+    """
+    with conn.lock:
+        try:
+            ns = conn.wait(psycopg.generators.notifies(conn.pgconn))
+        except psycopg.errors._NO_TRACEBACK as ex:
+            raise ex.with_traceback(None)
+    for pgn in ns:
+        if hasattr(conn.pgconn, '_encoding'):
+            # later, like 3.2+ versions
+            enc = conn.pgconn._encoding
+        else:
+            # earlier versions
+            enc = psycopg._encodings.pgconn_encoding(conn.pgconn)
+        n = psycopg.connection.Notify(pgn.relname.decode(enc), pgn.extra.decode(enc), pgn.be_pid)
+        yield n
 
 
 class Broker:
@@ -112,11 +137,19 @@ class Broker:
             return connection  # slightly weird due to MyPY
         return self._async_connection
 
+    def get_listen_query(self, channel: str) -> psycopg.sql.Composed:
+        """Returns SQL command for listening on pg_notify channel
+
+        This uses the psycopg utilities which ensure correct escaping so SQL injection is not possible.
+        Return value is a valid argument for cursor.execute()
+        """
+        return psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel))
+
     async def aprocess_notify(self, connected_callback: Optional[Callable] = None) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
         async with connection.cursor() as cur:
             for channel in self.channels:
-                await cur.execute(f"LISTEN {channel};")
+                await cur.execute(self.get_listen_query(channel))
                 logger.info(f"Set up pg_notify listening on channel '{channel}'")
 
             if connected_callback:
@@ -177,6 +210,59 @@ class Broker:
             self._sync_connection = connection
             return connection
         return self._sync_connection
+
+    # def wait_gen(self, conn: psycopg.Connection) -> Generator[psycopg.waiting.Ready, None, None]:
+    #     """Generator that allows `wait()` to properly function."""
+    #     yield psycopg.waiting.Ready.R
+
+    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: int = 5, max_messages: int = 1) -> Iterator[tuple[str, str]]:
+        """Blocking method that listens for messages on subscribed pg_notify channels until timeout"""
+        connection = self.get_connection()
+        connection.is_non_blocking = True
+        msg_ct: int = 0
+
+        with connection.cursor() as cur:
+            for channel in self.channels:
+                cur.execute(self.get_listen_query(channel))
+                logger.info(f"Set up pg_notify listening on channel '{channel}'")
+
+            if connected_callback:
+                connected_callback()
+
+            sentinel, sentinel_w = os.pipe()
+            os.set_blocking(sentinel, False)
+            os.set_blocking(sentinel_w, False)
+            signal.set_wakeup_fd(sentinel_w)
+
+            logger.debug('Starting listening for pg_notify notifications')
+            # gen = self.wait_gen(connection)
+            while True:
+                select_data = select.select([connection], [], [], timeout)
+                if select_data == ([], [], []):
+                    logger.debug(f'Did not get {max_messages} messages in {timeout} seconds from channels: {self.channels}')
+                    break
+                else:
+                    print('select_data')
+                    print(select_data)
+                    # if connection.connection in select_data[0]:
+                    #     connection.connection.execute("SELECT 1")
+                    # if sentinel in r:
+                    #     os.read(self.sentinel, 256)
+
+
+                # if connection.wait(gen, timeout):
+                    notification_generator = current_notifies(connection)
+                    for notify in notification_generator:
+                        yield notify.channel, notify.payload
+
+                    # while connection.notifies:
+                    #     notify = connection.notifies.pop(0)
+                    #     msg_ct += 1
+                    #     yield notify.channel, notify.payload
+
+                    if msg_ct >= max_messages:
+                        break
+
 
     def publish_message(self, channel: Optional[str] = None, message: str = '') -> None:
         connection = self.get_connection()
