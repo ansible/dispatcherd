@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Awaitable, Callable, Optional, Protocol
+from typing import AsyncGenerator, Awaitable, Callable, Iterator, Optional, Protocol
 
 
 class BaseBroker(Protocol):
@@ -9,7 +9,7 @@ class BaseBroker(Protocol):
 
     async def aclose(self) -> None: ...
 
-    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: int = 5) -> tuple[str, str]: ...
+    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: int = 5, max_messages: int = 1) -> Iterator[tuple[str, str]]: ...
 
     def publish_message(self, channel=None, message=None): ...
 

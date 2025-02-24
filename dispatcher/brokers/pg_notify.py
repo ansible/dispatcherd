@@ -210,12 +210,13 @@ class Broker:
             return connection
         return self._sync_connection
 
-    # def wait_gen(self, conn: psycopg.Connection) -> Generator[psycopg.waiting.Ready, None, None]:
-    #     """Generator that allows `wait()` to properly function."""
-    #     yield psycopg.waiting.Ready.R
-
     def process_notify(self, connected_callback: Optional[Callable] = None, timeout: int = 5, max_messages: int = 1) -> Iterator[tuple[str, str]]:
-        """Blocking method that listens for messages on subscribed pg_notify channels until timeout"""
+        """Blocking method that listens for messages on subscribed pg_notify channels until timeout
+
+        This has two different exit conditions:
+        - received max_messages number of messages or more
+        - taken longer than the specified timeout condition
+        """
         connection = self.get_connection()
         connection.is_non_blocking = True
         msg_ct: int = 0
