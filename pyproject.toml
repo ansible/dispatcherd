@@ -2,7 +2,7 @@
 Repository = "https://github.com/ansible/dispatcher"
 
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
