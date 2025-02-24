@@ -8,9 +8,9 @@ from .brokers.base import BaseBroker
 from .config import LazySettings
 from .config import settings as global_settings
 from .control import Control
+from .service import process
 from .service.main import DispatcherMain
 from .service.pool import WorkerPool
-from .service import process
 
 """
 Creates objects from settings,
