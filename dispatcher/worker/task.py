@@ -9,7 +9,8 @@ import traceback
 from queue import Empty as QueueEmpty
 
 from ..config import setup
-from ..registry import registry
+from ..registry import DispatcherMethodRegistry
+from ..registry import registry as global_registry
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,9 @@ class TaskWorker:
     Previously this initialized pre-fork, making init logic unusable.
     """
 
-    def __init__(self, worker_id: int):
+    def __init__(self, worker_id: int, registry: DispatcherMethodRegistry = global_registry):
         self.worker_id: int = worker_id
+        self.registry = registry
         self.ppid = os.getppid()
         self.pid = os.getpid()
         self.signal_handler = WorkerSignalHandler(worker_id)
@@ -94,12 +96,16 @@ class TaskWorker:
         task = message['task']
         args = message.get('args', []).copy()
         kwargs = message.get('kwargs', {})
-        _call = registry.get_method(task).get_callable()
+        dmethod = self.registry.get_method(task)
+        _call = dmethod.get_callable()
 
         # don't print kwargs, they often contain launch-time secrets
         logger.debug(f'task (uuid={self.get_uuid(message)}) starting {task}(*{args}) on worker {self.worker_id}')
 
-        if message.get('bind') is True:
+        # Any task options used by the worker (here) should come from the registered task, not the message
+        # this is to reduce message size, and also because publisher-worker is a shared python environment.
+        # Meaning, the service, including some producers, may never see the @task() registration
+        if message.get('bind') is True or dmethod.submission_defaults.get('bind') is True:
             args = [self.produce_binder(message)] + args
 
         try:
