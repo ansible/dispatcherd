@@ -1,5 +1,5 @@
 import logging
-from typing import AsyncGenerator, Callable, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 import psycopg
 
@@ -112,11 +112,21 @@ class Broker:
             return connection  # slightly weird due to MyPY
         return self._async_connection
 
-    async def aprocess_notify(self, connected_callback: Optional[Callable] = None) -> AsyncGenerator[tuple[str, str], None]:  # public
+    def get_listen_query(self, channel: str) -> psycopg.sql.Composed:
+        """Returns SQL command for listening on pg_notify channel
+
+        This uses the psycopg utilities which ensure correct escaping so SQL injection is not possible.
+        Return value is a valid argument for cursor.execute()
+        """
+        return psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel))
+
+    async def aprocess_notify(
+        self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
+    ) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
         async with connection.cursor() as cur:
             for channel in self.channels:
-                await cur.execute(f"LISTEN {channel};")
+                await cur.execute(self.get_listen_query(channel))
                 logger.info(f"Set up pg_notify listening on channel '{channel}'")
 
             if connected_callback:
@@ -177,6 +187,27 @@ class Broker:
             self._sync_connection = connection
             return connection
         return self._sync_connection
+
+    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
+        """Blocking method that listens for messages on subscribed pg_notify channels until timeout
+
+        This has two different exit conditions:
+        - received max_messages number of messages or more
+        - taken longer than the specified timeout condition
+        """
+        connection = self.get_connection()
+
+        with connection.cursor() as cur:
+            for channel in self.channels:
+                cur.execute(self.get_listen_query(channel))
+                logger.info(f"Set up pg_notify listening on channel '{channel}'")
+
+            if connected_callback:
+                connected_callback()
+
+            logger.debug('Starting listening for pg_notify notifications')
+            for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
+                yield (notify.channel, notify.payload)
 
     def publish_message(self, channel: Optional[str] = None, message: str = '') -> None:
         connection = self.get_connection()
