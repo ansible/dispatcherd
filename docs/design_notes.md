@@ -1,4 +1,30 @@
-## Reference Designs
+## Design Notes
+
+Many of the specific choices made in the dispatcher design are to enable pg_notify use.
+The advantage of using pg_notify is that you get an extremely simple topology.
+Imagine a web and a task runner service, invoked separately, using postgres.
+
+```mermaid
+flowchart TD
+
+A(web)
+B(task)
+C(postgres)
+
+A-->C
+B-->C
+```
+
+However, pg_notify is not a true queue, and this drives the design of the dispatcher,
+having its main process listening for messages and farming the work out to worker subprocesses.
+
+This helps with pg_notify use, but still doesn't solve all the problems,
+because those problems ultimately need persistent storage.
+Current plan is to offer a "stock" solution in the form of a django-ansible-base app.
+
+https://github.com/ansible/django-ansible-base
+
+End-goal features and design proposals have been moved to the issue queue.
 
 ### AWX dispatcher
 
@@ -12,14 +38,15 @@ https://github.com/ansible/awx/pull/2266
 
 > ...much like the callback receiver implementation in 3.3.0 (on which this code is based), this entry point is a kombu.ConsumerMixin.
 
-### Kombu
+### Kombu (Celery)
 
-Kombu is a sub-package of celery.
+Kombu was used by AWX before its transition to a custom solution. Kombu is a sub-package of celery.
 
 https://github.com/celery/kombu
 
 In messaging module, this has a `Producer` and `Consumer` classes.
-In mixins it has a `ConsumerMixin`, but no methods seem to have made it into AWX dispatch.
+In mixins it has a `ConsumerMixin`. AWX dispatcher has consumer classes,
+but no methods seem to have made it from kombu into AWX dispatch.
 
 This doesn't deal with worker pool management. It does have examples with `Worker` classes.
 These follow a similar contract with `process_task` here.
@@ -55,60 +82,12 @@ In AWX dispatcher, a full queue may put messages into individual worker IPCs.
 This caused bad results, like delaying tasks due to long-running jobs,
 while the pool had many other workers free up in the mean time.
 
-## Alternative Archectures
+### Notable python tasking systems
 
-This are blue-sky ideas, which may not happen anytime soon,
-but they are described to help structure the app today so it can expand
-into these potential future roles.
+https://taskiq-python.github.io/guide/architecture-overview.html#context
 
-### Singleton task queue
+https://python-rq.org/docs/workers/
 
-A major pivot from the AWX dispatcher is that we do not use 1 result queue per worker,
-but a single result queue for all workers, and each meassage includes a worker id.
+https://dramatiq.io/
 
-If you continue this pattern, then we would no longer have a call queue for each worker,
-and workers would just grab messages from the queue as they are available.
-
-The problem you encounter is that you will not know what worker started what task.
-If you do any "management" this is a problem. For instance, if you want a task
-to have a timeout, you need to know which worker to kill if it goes over its limit.
-
-There is a way to still consolidate the call queue while no losing these other features.
-When a worker receives a task, it can submit an ACK to the finished queue telling
-the main process that it has started a task, and which task it started.
-
-This isn't ultimately robust, if there is an error between getting the message and ACK,
-but this probably isn't a reasonable concern. As of now, this looks viable.
-
-### Persistent work manager
-
-Years ago, when AWX was having trouble with output processing bottlenecks,
-we stopped using the main dispatcher process to dispatch job events to workers.
-
-Essentially, any performance-sensitive data volumes should not go through the
-pool worker management system where data is passed through IPC queues.
-Doing this causes the main process to be a bottleneck.
-
-The solution was to have workers connect to a socket on their own.
-
-Nothing is wrong with this, it's just weird.
-None of the written facilities for pool management in dispatcher code is useful.
-Because of that, event processing diverged far from the rest of the dispatcher.
-
-Long-term vision here is that:
- - a `@task` decorator may mark a task as persistent
- - additional messages types will need to be send into the finished queue for
-   - analytics tracking, like how many messages were processed
-   - whether a particular resource being monitored has been closed
-
-The idea is that this would integrate what was prototyped in:
-
-https://github.com/AlanCoding/receptor-reporter/tree/devel
-
-That idea involved the main process more than the existing callback receiver.
-Because each job has its own socket that has to be read from, so these will come and go.
-And a worker may manage more than 1 job at the same time, asynchronously.
-
-This also requires forking from what is now `dispatcher.main`.
-We could keep the pool (and add more feature) but this requires
-an entirely different main loop.
+https://docs.celeryq.dev/

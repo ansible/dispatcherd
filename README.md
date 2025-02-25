@@ -1,17 +1,18 @@
 <!-- License Badge -->
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
 
-This is intended to be a working space for prototyping a code split of:
+## Dispatcher
 
-<https://github.com/ansible/awx/tree/devel/awx/main/dispatch>
-
-As a part of doing the split, we also want to resolve a number of
-long-standing design and sustainability issues, thus, asyncio.
-
-The philosophy of the dispatcher is to have a limited scope
+The dispatcher is a service to run python tasks in subprocesses,
+designed specifically to work well with pg_notify,
+but intended to be extensible to other message delivery means.
+Its philosophy is to have a limited scope
 as a "local" runner of background tasks, but to be composable
 so that it can be "wrapped" easily to enable clustering and
 distributed task management by apps using it.
+
+> [!WARNING]
+> This project is in initial development. Expect many changes, including name, paths, and CLIs.
 
 Licensed under [Apache Software License 2.0](LICENSE)
 
@@ -19,18 +20,22 @@ Licensed under [Apache Software License 2.0](LICENSE)
 
 You have a postgres server configured and a python project.
 You will use dispatcher to trigger a background task over pg_notify.
-
 Both your *background dispatcher service* and your *task publisher* process must have
-python configured so that your task is importable.
+python configured so that your task is importable. Instructions are broken into 3 steps:
 
-For more options, see `docs/usage.md`.
+1. **Library** - Configure dispatcher, mark the python methods you will run with it
+2. **Dispatcher service** - Start your background task service, it will start listening
+3. **Publisher** - From some other script, submit tasks to be ran
+
+In the "Manual Demo" section, an runnable example of this is given.
 
 #### Library
 
 The dispatcher `@task()` decorator is used to register tasks.
 
-See the `tools/test_methods.py` module.
-This defines a dispatcher task and the pg_notify channel it will be sent over.
+The [tests/data/methods.py](tests/data/methods.py) module defines some
+dispatcher tasks and the pg_notify channels they will be sent over.
+For more `@task` options, see [docs/task_options.md](docs/task_options.md).
 
 ```python
 from dispatcher.publish import task
@@ -49,10 +54,12 @@ from dispatcher.config import setup
 config = {
     "producers": {
         "brokers": {
-            "pg_notify": {"conninfo": "dbname=postgres user=postgres"},
-            "channels": [
-                "test_channel",
-            ],
+            "pg_notify": {
+                "conninfo": "dbname=postgres user=postgres"
+                "channels": [
+                    "test_channel",
+                ],
+            },
         },
     },
     "pool": {"max_workers": 4},
@@ -62,6 +69,8 @@ setup(config)
 
 For more on how to set up and the allowed options in the config,
 see the section [config](docs/config.md) docs.
+The `queue` passed to `@task` needs to match a pg_notify channel in the `config`.
+It is often useful to have different workers listen to different sets of channels.
 
 #### Dispatcher service
 
@@ -83,8 +92,8 @@ run_service()
 ```
 
 Configuration tells how to connect to postgres, and what channel(s) to listen to.
-The demo has this in `dispatcher.yml`, which includes listening to `test_channel`.
-That matches the `@task` in the library.
+
+
 
 #### Publisher
 
@@ -116,38 +125,64 @@ print_hello.apply_async(args=[], kwargs={})
 The difference is that `apply_async` takes both args and kwargs as kwargs themselves,
 and allows for additional configuration parameters to come after those.
 
-As of writing, this only works if you have a Django connection configured.
-You can manually pass configuration info (as in the demo) for non-Django use.
-
 ### Manual Demo
+
+For this demo, the [tests/data/methods.py](tests/data/methods.py) will be used
+in place of a real app. Making those importable is why `PYTHONPATH` must be
+modified in some steps. The config for this demo can be found in the
+[dispatcher.yml](dispatcher.yml) file, which is a default location
+the `dispatcher-standalone` entrypoint looks for.
+
+Initial setup:
+
+```
+pip install -e .[pg_notify]
+make postgres
+```
 
 You need to have 2 terminal tabs open to run this.
 
 ```
 # tab 1
-make postgres
-PYTHONPATH=$PYTHONPATH:tools/ dispatcher-standalone
+PYTHONPATH=$PYTHONPATH:. dispatcher-standalone
 # tab 2
-python tools/write_messages.py
+./run_demo.py
 ```
 
-This will run the dispatcher with schedules, and process a burst of messages
-that give instructions to run tasks.
+This will run the dispatcher with schedules, and process bursts of messages
+that give instructions to run tasks. Tab 2 will contain some responses
+from the dispatcher service. Tab 1 will show a large volume of logs
+related to processing tasks.
 
 ### Running Tests
 
-A structure has been set up for integration tests.
-The word "integration" only means that postgres must be running.
+Most tests (except for tests/unit/) require postgres to be running.
 
 ```
 pip install -r requirements_dev.txt
 make postgres
-py.test tests/
+pytest tests/
 ```
 
-This accomplishes the most basic of starting and shutting down.
-With no tasks submitted, it should record running 0 tasks,
-and with a task submitted, it records running 1 task.
+### Background
+
+This is intended to be a working space for prototyping a code split of:
+
+<https://github.com/ansible/awx/tree/devel/awx/main/dispatch>
+
+As a part of doing the split, we also want to resolve a number of
+long-standing design and sustainability issues, thus, asyncio.
+For a little more background see [docs/design_notes.md](docs/design_notes.md).
+
+There is documentation of the message formats used by the dispatcher
+in [docs/message_formats.md](docs/message_formats.md). Some of these are internal,
+but some messages are what goes over the user-defined brokers (pg_notify).
+You can trigger tasks using your own "publisher" code as an alternative
+to attached methods like `.apply_async`. Doing this requires connecting
+to postges and submitting a pg_notify message with JSON data
+that conforms to the expected format.
+The `./run_demo.py` script shows examples of this, but borrows some
+connection and config utilities to help.
 
 ## Contributing
 
