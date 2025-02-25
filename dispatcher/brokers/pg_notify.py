@@ -32,7 +32,7 @@ def create_connection(**config) -> psycopg.Connection:
 
 
 class Broker:
-    NOTIFY_SYNTAX = 'SELECT pg_notify(%s, %s);'
+    NOTIFY_QUERY_TEMPLATE = 'SELECT pg_notify(%s, %s);'
 
     def __init__(
         self,
@@ -136,7 +136,7 @@ class Broker:
 
     async def apublish_message_from_cursor(self, cursor: psycopg.AsyncCursor, channel: Optional[str] = None, message: str = '') -> None:
         """The inner logic of async message publishing where we already have a cursor"""
-        await cursor.execute(self.NOTIFY_SYNTAX, (channel, message))
+        await cursor.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
     async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:  # public
         """asyncio way to publish a message, used to send control in control-and-reply
@@ -183,7 +183,7 @@ class Broker:
         channel = self.get_publish_channel(channel)
 
         with connection.cursor() as cur:
-            cur.execute(self.NOTIFY_SYNTAX, (channel, message))
+            cur.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
 
