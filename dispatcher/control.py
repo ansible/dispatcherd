@@ -22,26 +22,29 @@ class ControlCallbacks:
     it exists to interact with producers, using variables relevant to the particular
     control message being sent"""
 
-    def __init__(self, queuename, send_data, expected_replies):
+    def __init__(self, queuename, send_data, expected_replies) -> None:
         self.queuename = queuename
         self.send_data = send_data
         self.expected_replies = expected_replies
 
-        self.received_replies = []
+        # received_replies only tracks the reply message, not the channel name
+        # because they come via a temporary reply_to channel and that is not user-facing
+        self.received_replies: list[str] = []
         self.events = ControlEvents()
         self.shutting_down = False
 
-    async def process_message(self, payload, producer=None, channel=None):
+    async def process_message(self, payload, producer=None, channel=None) -> tuple[Optional[str], Optional[str]]:
         self.received_replies.append(payload)
         if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
             self.events.exit_event.set()
+        return (None, None)
 
     async def connected_callback(self, producer) -> None:
         payload = json.dumps(self.send_data)
         await producer.notify(channel=self.queuename, message=payload)
         logger.info('Sent control message, expecting replies soon')
 
-    def fatal_error_callback(self, *args):
+    def fatal_error_callback(self, *args) -> None:
         if self.shutting_down:
             return
 

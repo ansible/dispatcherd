@@ -107,7 +107,6 @@ class WorkerPool:
         self.start_worker_task: Optional[Task] = None
         self.shutting_down = False
         self.finished_count: int = 0
-        self.control_count: int = 0
         self.canceled_count: int = 0
         self.discard_count: int = 0
         self.shutdown_timeout = 3
@@ -369,8 +368,6 @@ class WorkerPool:
         async with self.management_lock:
             if worker.is_active_cancel and result == '<cancel>':
                 self.canceled_count += 1
-            elif 'control' in worker.current_task:
-                self.control_count += 1
             else:
                 self.finished_count += 1
             worker.mark_finished_task()

@@ -100,7 +100,7 @@ async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
     await asyncio.wait_for(clearing_task, timeout=3)
 
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [0, 1, 1], 'cts: [finished, canceled, control]'
+    assert [pool.finished_count, pool.canceled_count, apg_dispatcher.control_count] == [0, 1, 1], 'cts: [finished, canceled, control]'
 
 
 @pytest.mark.asyncio
@@ -117,13 +117,10 @@ async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
     assert running_job['uuid'] == 'delay_task'
     await asyncio.wait_for(apg_dispatcher.pool.events.work_cleared.wait(), timeout=3)
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [0, 0, 1], 'cts: [finished, canceled, control]'
-    # Completing the reply itself will be a work_cleared event, so we have to clear the event
-    apg_dispatcher.pool.events.work_cleared.clear()
 
     # Wait for task to finish, assertions after completion
     await asyncio.wait_for(apg_dispatcher.pool.events.work_cleared.wait(), timeout=3)
-    assert [pool.finished_count, pool.canceled_count, pool.control_count] == [1, 0, 1], 'cts: [finished, canceled, control]'
+    assert [pool.finished_count, pool.canceled_count, apg_dispatcher.control_count] == [1, 0, 1], 'cts: [finished, canceled, control]'
 
 
 @pytest.mark.asyncio
