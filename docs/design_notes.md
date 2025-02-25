@@ -38,14 +38,15 @@ https://github.com/ansible/awx/pull/2266
 
 > ...much like the callback receiver implementation in 3.3.0 (on which this code is based), this entry point is a kombu.ConsumerMixin.
 
-### Kombu
+### Kombu (Celery)
 
-Kombu is a sub-package of celery.
+Kombu was used by AWX before its transition to a custom solution. Kombu is a sub-package of celery.
 
 https://github.com/celery/kombu
 
 In messaging module, this has a `Producer` and `Consumer` classes.
-In mixins it has a `ConsumerMixin`, but no methods seem to have made it into AWX dispatch.
+In mixins it has a `ConsumerMixin`. AWX dispatcher has consumer classes,
+but no methods seem to have made it from kombu into AWX dispatch.
 
 This doesn't deal with worker pool management. It does have examples with `Worker` classes.
 These follow a similar contract with `process_task` here.
@@ -88,3 +89,5 @@ https://taskiq-python.github.io/guide/architecture-overview.html#context
 https://python-rq.org/docs/workers/
 
 https://dramatiq.io/
+
+https://docs.celeryq.dev/
