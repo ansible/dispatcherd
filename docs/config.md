@@ -116,8 +116,9 @@ For every listed broker, a `BrokeredProducer` is automatically
 created. That means that tasks may be produced from the messaging
 system that the dispatcher service is listening to.
 
-The other current use case is `ScheduledProducer`,
-which submits tasks every certain number of seconds.
+The others are:
+ - `ScheduledProducer` - submits tasks every certain number of seconds
+ - `OnStartProducer` - runs tasks once after starting
 
 #### Publish
 

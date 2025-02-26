@@ -21,5 +21,8 @@ producers:
         schedule: 3
       'lambda: __import__("time").sleep(2)':
         schedule: 3
+  OnStartProducer:
+    task_list:
+      'lambda: print("This task runs on startup")': {}
 publish:
   default_broker: pg_notify
