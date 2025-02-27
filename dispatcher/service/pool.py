@@ -4,8 +4,6 @@ import time
 from asyncio import Task
 from typing import Any, Iterator, Optional
 
-from ..config import LazySettings
-from ..config import settings as global_settings
 from ..utils import DuplicateBehavior, MessageAction
 from .process import ProcessManager, ProcessProxy
 
@@ -110,10 +108,9 @@ class PoolEvents:
 
 
 class WorkerPool:
-    def __init__(self, max_workers: int, process_manager: ProcessManager, settings: LazySettings = global_settings):
+    def __init__(self, max_workers: int, process_manager: ProcessManager):
         self.max_workers = max_workers
         self.workers: dict[int, PoolWorker] = {}
-        self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
         self.next_worker_id = 0
         self.process_manager = process_manager
         self.queued_messages: list[dict] = []  # TODO: use deque, invent new kinds of logging anxiety
@@ -201,12 +198,7 @@ class WorkerPool:
             self.events.timeout_event.clear()
 
     async def up(self) -> None:
-        process = self.process_manager.create_process(
-            (
-                self.settings_stash,
-                self.next_worker_id,
-            )
-        )
+        process = self.process_manager.create_process(kwargs={'worker_id': self.next_worker_id})
         worker = PoolWorker(self.next_worker_id, process)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1

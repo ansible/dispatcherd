@@ -4,16 +4,27 @@ from multiprocessing.context import BaseContext
 from types import ModuleType
 from typing import Callable, Iterable, Optional, Union
 
+from ..config import LazySettings
+from ..config import settings as global_settings
 from ..worker.task import work_loop
 
 
 class ProcessProxy:
     def __init__(
-        self, args: Iterable, finished_queue: multiprocessing.Queue, target: Callable = work_loop, ctx: Union[BaseContext, ModuleType] = multiprocessing
+        self,
+        args: Optional[Iterable] = None,
+        kwargs: Optional[dict] = None,
+        target: Callable = work_loop,
+        ctx: Union[BaseContext, ModuleType] = multiprocessing,
     ) -> None:
         self.message_queue: multiprocessing.Queue = ctx.Queue()
         # This is intended use of multiprocessing context, but not available on BaseContext
-        self._process = ctx.Process(target=target, args=tuple(args) + (self.message_queue, finished_queue))  # type: ignore
+        if kwargs is None:
+            kwargs = {}
+        kwargs['message_queue'] = self.message_queue
+        if args is None:
+            args = ()
+        self._process = ctx.Process(target=target, args=args, kwargs=kwargs)  # type: ignore
 
     def start(self) -> None:
         self._process.start()
@@ -44,9 +55,10 @@ class ProcessProxy:
 class ProcessManager:
     mp_context = 'fork'
 
-    def __init__(self) -> None:
+    def __init__(self, settings: LazySettings = global_settings) -> None:
         self.ctx = multiprocessing.get_context(self.mp_context)
         self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
+        self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
         self._loop = None
 
     def get_event_loop(self):
@@ -54,8 +66,14 @@ class ProcessManager:
             self._loop = asyncio.get_event_loop()
         return self._loop
 
-    def create_process(self, args: Iterable[int | str | dict], **kwargs) -> ProcessProxy:
-        return ProcessProxy(args, self.finished_queue, ctx=self.ctx, **kwargs)
+    def create_process(self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs) -> ProcessProxy:
+        "Returns a ProcessProxy object, which itself contains a Process object, but actual subprocess is not yet started"
+        # kwargs allow passing target for substituting the work_loop for testing
+        if kwargs is None:
+            kwargs = {}
+        kwargs['settings'] = self.settings_stash
+        kwargs['finished_queue'] = self.finished_queue
+        return ProcessProxy(args=args, kwargs=kwargs, ctx=self.ctx, **proxy_kwargs)
 
     async def read_finished(self) -> dict[str, Union[str, int]]:
         message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
@@ -65,6 +83,6 @@ class ProcessManager:
 class ForkServerManager(ProcessManager):
     mp_context = 'forkserver'
 
-    def __init__(self, preload_modules: Optional[list[str]] = None):
-        super().__init__()
+    def __init__(self, preload_modules: Optional[list[str]] = None, settings: LazySettings = global_settings):
+        super().__init__(settings=settings)
         self.ctx.set_forkserver_preload(preload_modules if preload_modules else [])

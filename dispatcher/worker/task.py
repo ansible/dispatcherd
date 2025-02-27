@@ -204,7 +204,7 @@ class TaskWorker:
         return {"worker": self.worker_id, "event": "shutdown"}
 
 
-def work_loop(settings: dict, worker_id: int, queue: multiprocessing.Queue, finished_queue):
+def work_loop(worker_id: int, settings: dict, finished_queue: multiprocessing.Queue, message_queue: multiprocessing.Queue) -> None:
     """
     Worker function that processes messages from the queue and sends confirmation
     to the finished_queue once done.
@@ -222,7 +222,7 @@ def work_loop(settings: dict, worker_id: int, queue: multiprocessing.Queue, fini
             break
 
         try:
-            message = queue.get()
+            message = message_queue.get()
         except DispatcherCancel:
             logger.info(f'Worker {worker_id} received a task cancel signal in main loop, ignoring')
             continue
