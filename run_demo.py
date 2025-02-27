@@ -53,6 +53,16 @@ def main():
     running_data = ctl.control_with_reply('running', data={'task': 'lambda: __import__("time").sleep(3.1415)'})
     print(json.dumps(running_data, indent=2))
 
+    print('')
+    print('getting worker status')
+    worker_data = ctl.control_with_reply('workers')
+    print(json.dumps(worker_data, indent=2))
+
+    print('')
+    print('run bogus control command')
+    worker_data = ctl.control_with_reply('not-a-command')
+    print(json.dumps(worker_data, indent=2))
+
     print('writing a message with a delay')
     print('     4 second delay task')
     broker.publish_message(message=json.dumps({'task': 'lambda: 123421', 'uuid': 'foobar2', 'delay': 4}))

@@ -4,68 +4,13 @@ import logging
 import signal
 from types import SimpleNamespace
 from typing import Iterable, Optional
+from uuid import uuid4
 
 from ..producers import BaseProducer
+from . import control_tasks
 from .pool import WorkerPool
 
 logger = logging.getLogger(__name__)
-
-
-def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
-    """The two messages are functionally the same or not"""
-    filterables = ('task', 'args', 'kwargs', 'uuid')
-    for key in filterables:
-        expected_value = msg_data.get(key)
-        if expected_value:
-            if pool_task.get(key, None) != expected_value:
-                return False
-    return True
-
-
-async def _find_tasks(dispatcher, cancel: bool = False, **data) -> list[tuple[Optional[str], dict]]:
-    "Utility method used for both running and cancel control methods"
-    ret = []
-    for worker in dispatcher.pool.workers.values():
-        if worker.current_task:
-            if task_filter_match(worker.current_task, data):
-                if cancel:
-                    logger.warning(f'Canceling task in worker {worker.worker_id}, task: {worker.current_task}')
-                    worker.cancel()
-                ret.append((worker.worker_id, worker.current_task))
-    for message in dispatcher.pool.queued_messages:
-        if task_filter_match(message, data):
-            if cancel:
-                logger.warning(f'Canceling task in pool queue: {message}')
-                dispatcher.pool.queued_messages.remove(message)
-            ret.append((None, message))
-    for capsule in dispatcher.delayed_messages.copy():
-        if task_filter_match(capsule.message, data):
-            if cancel:
-                logger.warning(f'Canceling delayed task (uuid={capsule.uuid})')
-                capsule.task.cancel()
-                try:
-                    await capsule.task
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    logger.error(f'Error canceling delayed task (uuid={capsule.uuid})')
-                dispatcher.delayed_messages.remove(capsule)
-            ret.append(('<delayed>', capsule.message))
-    return ret
-
-
-class ControlTasks:
-    # TODO: hold pool management lock for these things
-    async def running(self, dispatcher, **data) -> list[tuple[Optional[str], dict]]:
-        # TODO: include delayed tasks in results
-        return await _find_tasks(dispatcher, **data)
-
-    async def cancel(self, dispatcher, **data) -> list[tuple[Optional[str], dict]]:
-        # TODO: include delayed tasks in results
-        return await _find_tasks(dispatcher, cancel=True, **data)
-
-    async def alive(self, dispatcher, **data):
-        return
 
 
 class DispatcherEvents:
@@ -76,11 +21,10 @@ class DispatcherEvents:
 
 
 class DispatcherMain:
-    def __init__(self, producers: Iterable[BaseProducer], pool: WorkerPool):
+    def __init__(self, producers: Iterable[BaseProducer], pool: WorkerPool, node_id: Optional[str] = None):
         self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
-        self.ctl_tasks = ControlTasks()
         self.shutting_down = False
         # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
         # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
@@ -90,6 +34,12 @@ class DispatcherMain:
         # expected that these are not yet running any tasks
         self.pool = pool
         self.producers = producers
+
+        # Identifer for this instance of the dispatcher service, sent in reply messages
+        if node_id:
+            self.node_id = node_id
+        else:
+            self.node_id = str(uuid4())
 
         self.events: DispatcherEvents = DispatcherEvents()
 
@@ -206,18 +156,36 @@ class DispatcherMain:
             return await self.process_message_internal(message, producer=producer)
         return (None, None)
 
+    async def run_control_action(self, action: str, control_data: Optional[dict] = None, reply_to: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+        return_data = {}
+
+        # Get the result
+        if (not hasattr(control_tasks, action)) or action.startswith('_'):
+            logger.warning(f'Got invalid control request {action}, control_data: {control_data}, reply_to: {reply_to}')
+            if reply_to:
+                return_data = {'error': f'No control method {action}'}
+        else:
+            method = getattr(control_tasks, action)
+            if control_data is None:
+                control_data = {}
+            return_data = await method(self, **control_data)
+
+        # Identify the current node in the response
+        return_data['node_id'] = self.node_id
+        self.control_count += 1
+
+        # Give Nones for no reply, or the reply
+        if reply_to:
+            logger.info(f"Control action {action} returned {return_data}, sending back reply")
+            return (reply_to, json.dumps(return_data))
+        else:
+            logger.info(f"Control action {action} returned {return_data}, done")
+            return (None, None)
+
     async def process_message_internal(self, message: dict, producer=None) -> tuple[Optional[str], Optional[str]]:
         """Route message based on needed action - delay for later, return reply, or dispatch to worker"""
         if 'control' in message:
-            method = getattr(self.ctl_tasks, message['control'])
-            control_data = message.get('control_data', {})
-            returned = await method(self, **control_data)
-            if 'reply_to' in message:
-                logger.info(f"Control action {message['control']} returned {returned}, sending back reply")
-                self.control_count += 1
-                return (message['reply_to'], json.dumps(returned))
-            else:
-                logger.info(f"Control action {message['control']} returned {returned}, done")
+            return await self.run_control_action(message['control'], control_data=message.get('control_data'), reply_to=message.get('reply_to'))
         else:
             await self.pool.dispatch_task(message)
         return (None, None)
@@ -252,12 +220,11 @@ class DispatcherMain:
                     pass
 
     async def main(self) -> None:
-        logger.info('Connecting dispatcher signal handling')
         await self.connect_signals()
 
         await self.start_working()
 
-        logger.info('Dispatcher running forever, or until shutdown command')
+        logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
         await self.events.exit_event.wait()
 
         await self.shutdown()

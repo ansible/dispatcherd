@@ -4,6 +4,8 @@ version: 2
 service:
   pool_kwargs:
     max_workers: 4
+  main_kwargs:
+    node_id: demo-server-a
 brokers:
   pg_notify:
     config:
