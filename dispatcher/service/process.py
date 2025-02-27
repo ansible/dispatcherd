@@ -8,7 +8,6 @@ from ..worker.task import work_loop
 from ..config import LazySettings
 from ..config import settings as global_settings
 
-# def work_loop(worker_id: int, queue: multiprocessing.Queue, settings: dict, finished_queue: multiprocessing.Queue) -> None:
 
 class ProcessProxy:
     def __init__(
