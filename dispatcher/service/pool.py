@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from asyncio import Task
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Any
 
 from ..config import LazySettings
 from ..config import settings as global_settings
@@ -17,6 +17,7 @@ class PoolWorker:
         self.worker_id = worker_id
         self.process = process
         self.current_task: Optional[dict] = None
+        self.created_at: float = time.monotonic()
         self.started_at: Optional[int] = None
         self.is_active_cancel: bool = False
 
@@ -72,6 +73,18 @@ class PoolWorker:
     def cancel(self) -> None:
         self.is_active_cancel = True  # signal for result callback
         self.process.terminate()  # SIGTERM
+
+    def get_data(self) -> dict[str, Any]:
+        return {
+            'worker_id': self.worker_id,
+            'pid': self.process.pid,
+            'status': self.status,
+            'finished_count': 0,
+            'current_task': self.current_task.get('task') if self.current_task else None,
+            'current_task_uuid': self.current_task.get('uuid', '<unknown>') if self.current_task else None,
+            'active_cancel': self.is_active_cancel,
+            'age': time.monotonic() - self.created_at
+        }
 
     def mark_finished_task(self) -> None:
         self.is_active_cancel = False

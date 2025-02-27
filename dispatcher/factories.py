@@ -125,6 +125,7 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     ret = deepcopy(settings.serialize())
 
     ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
+    ret['service']['main_kwargs'] = schema_for_cls(DispatcherMain)
     ret['service']['process_manager_kwargs'] = {}
     pm_classes = (process.ProcessManager, process.ForkServerManager)
     for pm_cls in pm_classes:

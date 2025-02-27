@@ -24,7 +24,10 @@
     "process_manager_kwargs": {
       "preload_modules": "typing.Optional[list[str]]"
     },
-    "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager']"
+    "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager']",
+    "main_kwargs": {
+      "node_id": "typing.Optional[str]"
+    }
   },
   "publish": {
     "default_broker": "str"
