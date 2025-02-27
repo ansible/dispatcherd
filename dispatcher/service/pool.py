@@ -274,7 +274,7 @@ class WorkerPool:
             elif worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
                 remove_ids.append(worker.worker_id)
 
-        # Last ditch cleanup of workers that never sent a fairwell message
+        # Remove workers from memory, done as separate loop due to locking concerns
         for worker_id in remove_ids:
             async with self.management_lock:
                 if worker_id in self.workers:
