@@ -37,3 +37,18 @@ def hello_world_binder(binder):
 @task(queue='test_channel', timeout=1)
 def task_has_timeout():
     time.sleep(5)
+
+
+def get_queue_name():
+    return 'test_channel'
+
+
+@task(queue=get_queue_name)
+def use_callable_queue():
+    print('sucessful run using callable queue')
+
+
+@task(queue=get_queue_name)
+class RunJob:
+    def run(self):
+        print('successful run using callable queue with class')

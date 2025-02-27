@@ -37,8 +37,23 @@ async def test_run_decorated_function(apg_dispatcher, test_settings):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     test_methods.print_hello.apply_async(settings=test_settings)
     await asyncio.wait_for(clearing_task, timeout=3)
-
     assert apg_dispatcher.pool.finished_count == 1
+
+    # piggyback test for method with callable queue, not static
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    with temporary_settings(test_settings.serialize()):
+        test_methods.use_callable_queue.delay()
+    await asyncio.wait_for(clearing_task, timeout=3)
+    assert apg_dispatcher.pool.finished_count == 2
+
+    # piggyback again to test class method with callable queue
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    with temporary_settings(test_settings.serialize()):
+        test_methods.RunJob.delay()
+    await asyncio.wait_for(clearing_task, timeout=3)
+    assert apg_dispatcher.pool.finished_count == 3
 
 
 @pytest.mark.asyncio
@@ -47,7 +62,6 @@ async def test_submit_with_global_settings(apg_dispatcher, test_settings):
     with temporary_settings(test_settings.serialize()):
         test_methods.print_hello.delay()  # settings are inferred from global context
     await asyncio.wait_for(clearing_task, timeout=3)
-
     assert apg_dispatcher.pool.finished_count == 1
 
 

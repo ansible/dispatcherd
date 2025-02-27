@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Optional, Set, Tuple
+from typing import Callable, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 from .config import LazySettings
@@ -26,11 +26,14 @@ class InvalidMethod(DispatcherError):
 
 
 class DispatcherMethod:
-    def __init__(self, fn: DispatcherCallable, **submission_defaults) -> None:
+
+    def __init__(self, fn: DispatcherCallable, queue: Optional[Union[Callable, str]] = None, bind: bool = False, **submission_defaults) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
         self.submission_defaults = submission_defaults or {}
+        self.queue = queue  # applied by worker, not publisher
+        self.bind = bind  # only needed to submit, do not need to pass in message
 
     def serialize_task(self) -> str:
         """The reverse of resolve_callable, transform callable into dotted notation"""
@@ -47,8 +50,6 @@ class DispatcherMethod:
     def publication_defaults(self) -> dict:
         defaults = {}
         for k, v in self.submission_defaults.items():
-            if k == 'bind':
-                continue  # applied by worker, not publisher
             if v:  # all None or falsy values have no effect
                 defaults[k] = v
         defaults['task'] = self.serialize_task()
@@ -72,7 +73,7 @@ class DispatcherMethod:
 
         # TODO: callback to add other things, guid in case of AWX
 
-        if bind:
+        if bind:  # only needed for testing
             body['bind'] = bind
         if on_duplicate:
             body['on_duplicate'] = on_duplicate
@@ -84,7 +85,7 @@ class DispatcherMethod:
         return body
 
     def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, settings: LazySettings = global_settings, **kw) -> Tuple[dict, str]:
-        queue = queue or self.submission_defaults.get('queue')
+        queue = queue or self.queue
 
         if callable(queue):
             queue = queue()
