@@ -58,7 +58,8 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     """
     producers = producers_from_settings(settings=settings)
     pool = pool_from_settings(settings=settings)
-    return DispatcherMain(producers, pool)
+    extra_kwargs = settings.service.get('main_kwargs', {})
+    return DispatcherMain(producers, pool, **extra_kwargs)
 
 
 # ---- Publisher objects ----
