@@ -9,6 +9,7 @@ from dispatcher.config import DispatcherSettings
 
 @pytest.mark.asyncio
 async def test_on_start_tasks(caplog):
+    dispatcher = None
     try:
         settings = DispatcherSettings({
             'version': 2,
@@ -35,5 +36,6 @@ async def test_on_start_tasks(caplog):
         assert dispatcher.pool.finished_count == 1
         assert 'result: confirmation_of_run' not in caplog.text
     finally:
-        await dispatcher.shutdown()
-        await dispatcher.cancel_tasks()
+        if dispatcher:
+            await dispatcher.shutdown()
+            await dispatcher.cancel_tasks()

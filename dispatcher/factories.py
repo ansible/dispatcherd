@@ -1,6 +1,6 @@
 import inspect
 from copy import deepcopy
-from typing import Iterable, Optional, Type, get_args, get_origin
+from typing import Iterable, Literal, Optional, Type, get_args, get_origin
 
 from . import producers
 from .brokers import get_broker
@@ -8,9 +8,9 @@ from .brokers.base import BaseBroker
 from .config import LazySettings
 from .config import settings as global_settings
 from .control import Control
+from .service import process
 from .service.main import DispatcherMain
 from .service.pool import WorkerPool
-from .service.process import ProcessManager
 
 """
 Creates objects from settings,
@@ -21,10 +21,16 @@ which is to avoid import dependencies.
 # ---- Service objects ----
 
 
+def process_manager_from_settings(settings: LazySettings = global_settings):
+    cls_name = settings.service.get('process_manager_cls', 'ForkServerManager')
+    process_manager_cls = getattr(process, cls_name)
+    return process_manager_cls()
+
+
 def pool_from_settings(settings: LazySettings = global_settings):
     kwargs = settings.service.get('pool_kwargs', {}).copy()
     kwargs['settings'] = settings
-    kwargs['process_manager'] = ProcessManager()  # TODO: use process_manager_cls from settings
+    kwargs['process_manager'] = process_manager_from_settings(settings=settings)
     return WorkerPool(**kwargs)
 
 
@@ -119,6 +125,11 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     ret = deepcopy(settings.serialize())
 
     ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
+    ret['service']['process_manager_kwargs'] = {}
+    pm_classes = (process.ProcessManager, process.ForkServerManager)
+    for pm_cls in pm_classes:
+        ret['service']['process_manager_kwargs'].update(schema_for_cls(pm_cls))
+    ret['service']['process_manager_cls'] = str(Literal[tuple(pm_cls.__name__ for pm_cls in pm_classes)])
 
     for broker_name, broker_kwargs in settings.brokers.items():
         broker = get_broker(broker_name, broker_kwargs)
