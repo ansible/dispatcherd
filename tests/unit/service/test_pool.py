@@ -9,8 +9,8 @@ from dispatcher.service.process import ProcessManager
 @pytest.mark.asyncio
 async def test_scale_to_min(test_settings):
     "Create 5 workers to fill up to the minimum"
-    pm = ProcessManager()
-    pool = WorkerPool(pm, min_workers=5, max_workers=5, settings=test_settings)
+    pm = ProcessManager(settings=test_settings)
+    pool = WorkerPool(pm, min_workers=5, max_workers=5)
     assert len(pool.workers) == 0
     await pool.scale_workers()
     assert len(pool.workers) == 5
@@ -20,8 +20,8 @@ async def test_scale_to_min(test_settings):
 @pytest.mark.asyncio
 async def test_scale_due_to_queue_pressure(test_settings):
     "Given 5 busy workers and 1 task in the queue, the scaler should add 1 more worker"
-    pm = ProcessManager()
-    pool = WorkerPool(pm, min_workers=5, max_workers=10, settings=test_settings)
+    pm = ProcessManager(settings=test_settings)
+    pool = WorkerPool(pm, min_workers=5, max_workers=10)
     await pool.scale_workers()
     for worker in pool.workers.values():
         worker.status = 'ready'  # a lie, for test
@@ -42,8 +42,8 @@ async def test_initialized_workers_count_for_scaling(test_settings):
     because the workers have not yet started up.
     With tasks < worker_ct, we should not scale additional workers right after startup.
     """
-    pm = ProcessManager()
-    pool = WorkerPool(pm, min_workers=5, max_workers=10, settings=test_settings)
+    pm = ProcessManager(settings=test_settings)
+    pool = WorkerPool(pm, min_workers=5, max_workers=10)
     await pool.scale_workers()
     assert len(pool.workers) == 5
     assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}
@@ -56,8 +56,8 @@ async def test_initialized_workers_count_for_scaling(test_settings):
 @pytest.mark.asyncio
 async def test_initialized_and_ready_but_scale(test_settings):
     """Consider you have 3 OnStart tasks but 2 min workers, you should scale up in this case"""
-    pm = ProcessManager()
-    pool = WorkerPool(pm, min_workers=2, max_workers=10, settings=test_settings)
+    pm = ProcessManager(settings=test_settings)
+    pool = WorkerPool(pm, min_workers=2, max_workers=10)
     await pool.scale_workers()
     assert len(pool.workers) == 2
 
@@ -70,8 +70,8 @@ async def test_initialized_and_ready_but_scale(test_settings):
 @pytest.mark.asyncio
 async def test_scale_down_condition(test_settings):
     """Consider you have 3 OnStart tasks but 2 min workers, you should scale up in this case"""
-    pm = ProcessManager()
-    pool = WorkerPool(pm, min_workers=1, max_workers=3, settings=test_settings)
+    pm = ProcessManager(settings=test_settings)
+    pool = WorkerPool(pm, min_workers=1, max_workers=3)
     pool.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 3 workers
     for i in range(3):
         await pool.scale_workers()
