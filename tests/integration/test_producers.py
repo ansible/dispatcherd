@@ -19,7 +19,7 @@ async def test_on_start_tasks(caplog):
             'brokers': {},  # do not need them for this test
             'producers': {
                 'OnStartProducer': {
-                    'task_list': {'lambda: return "confirmation_of_run"': {}}
+                    'task_list': {'lambda: "confirmation_of_run"': {}}
                 }
             }
         })
@@ -34,7 +34,7 @@ async def test_on_start_tasks(caplog):
             await asyncio.sleep(0.02)  # still may be some time between clearing event and desired log
 
         assert dispatcher.pool.finished_count == 1
-        assert 'result: confirmation_of_run' not in caplog.text
+        assert 'result: confirmation_of_run' in caplog.text
     finally:
         if dispatcher:
             await dispatcher.shutdown()
