@@ -18,7 +18,7 @@ class Dispatcher:
         assert 'schedule' not in message
         raise ItWorked
 
-    async def fatal_error_callback(self, *args, **kwargs):
+    def fatal_error_callback(self, *args, **kwargs):
         raise Exception('task error')
 
 
