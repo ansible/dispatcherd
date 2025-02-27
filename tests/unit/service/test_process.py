@@ -7,12 +7,12 @@ from dispatcher.service.process import ProcessManager, ForkServerManager, Proces
 
 
 def test_pass_messages_to_worker():
-    def work_loop(a, b, c, in_q, out_q):
+    def work_loop(a, b, c, out_q, in_q):
         has_read = in_q.get()
         out_q.put(f'done {a} {b} {c} {has_read}')
 
     finished_q = Queue()
-    process = ProcessProxy((1, 2, 3), finished_q, target=work_loop)
+    process = ProcessProxy((1, 2, 3, finished_q), target=work_loop)
     process.start()
 
     process.message_queue.put('start')
@@ -20,7 +20,7 @@ def test_pass_messages_to_worker():
     assert msg == 'done 1 2 3 start'
 
 
-def work_loop2(var, in_q, out_q):
+def work_loop2(var, settings, out_q, in_q):
     """
     Due to the mechanics of forkserver, this can not be defined in local variables,
     it has to be importable, but this _is_ importable from the test module.
@@ -30,8 +30,8 @@ def work_loop2(var, in_q, out_q):
 
 
 @pytest.mark.parametrize('manager_cls', [ProcessManager, ForkServerManager])
-def test_pass_messages_via_process_manager(manager_cls):
-    process_manager = manager_cls()
+def test_pass_messages_via_process_manager(manager_cls, test_settings):
+    process_manager = manager_cls(settings=test_settings)
     process = process_manager.create_process(('value',), target=work_loop2)
     process.start()
 
@@ -41,8 +41,8 @@ def test_pass_messages_via_process_manager(manager_cls):
 
 
 @pytest.mark.parametrize('manager_cls', [ProcessManager, ForkServerManager])
-def test_workers_have_different_pid(manager_cls):
-    process_manager = manager_cls()
+def test_workers_have_different_pid(manager_cls, test_settings):
+    process_manager = manager_cls(settings=test_settings)
     processes = [process_manager.create_process((f'value{i}',), target=work_loop2) for i in range(2)]
 
     for i in range(2):
@@ -58,13 +58,13 @@ def test_workers_have_different_pid(manager_cls):
 
 
 
-def return_pid(in_q, out_q):
+def return_pid(settings, out_q, in_q):
     out_q.put(f'{os.getpid()}')
 
 
 @pytest.mark.parametrize('manager_cls', [ProcessManager, ForkServerManager])
-def test_pid_is_correct(manager_cls):
-    process_manager = manager_cls()
+def test_pid_is_correct(manager_cls, test_settings):
+    process_manager = manager_cls(settings=test_settings)
     process = process_manager.create_process((), target=return_pid)
     process.start()
 
