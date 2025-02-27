@@ -79,7 +79,7 @@ class PoolWorker:
             'worker_id': self.worker_id,
             'pid': self.process.pid,
             'status': self.status,
-            'finished_count': 0,
+            'finished_count': self.finished_count,
             'current_task': self.current_task.get('task') if self.current_task else None,
             'current_task_uuid': self.current_task.get('uuid', '<unknown>') if self.current_task else None,
             'active_cancel': self.is_active_cancel,
