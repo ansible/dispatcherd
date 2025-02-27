@@ -105,7 +105,7 @@ class TaskWorker:
         # Any task options used by the worker (here) should come from the registered task, not the message
         # this is to reduce message size, and also because publisher-worker is a shared python environment.
         # Meaning, the service, including some producers, may never see the @task() registration
-        if message.get('bind') is True or dmethod.submission_defaults.get('bind') is True:
+        if message.get('bind') is True or dmethod.bind:
             args = [self.produce_binder(message)] + args
 
         try:
