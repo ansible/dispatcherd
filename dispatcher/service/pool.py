@@ -198,7 +198,7 @@ class WorkerPool:
             self.events.timeout_event.clear()
 
     async def up(self) -> None:
-        process = self.process_manager.create_process((self.next_worker_id,))
+        process = self.process_manager.create_process(kwargs={'worker_id': self.next_worker_id})
         worker = PoolWorker(self.next_worker_id, process)
         self.workers[self.next_worker_id] = worker
         self.next_worker_id += 1

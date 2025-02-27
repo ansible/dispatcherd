@@ -7,9 +7,9 @@ from dispatcher.service.process import ProcessManager, ForkServerManager, Proces
 
 
 def test_pass_messages_to_worker():
-    def work_loop(a, b, c, out_q, in_q):
-        has_read = in_q.get()
-        out_q.put(f'done {a} {b} {c} {has_read}')
+    def work_loop(a, b, c, finished_queue, message_queue):
+        has_read = message_queue.get()
+        finished_queue.put(f'done {a} {b} {c} {has_read}')
 
     finished_q = Queue()
     process = ProcessProxy((1, 2, 3, finished_q), target=work_loop)
@@ -20,13 +20,13 @@ def test_pass_messages_to_worker():
     assert msg == 'done 1 2 3 start'
 
 
-def work_loop2(var, settings, out_q, in_q):
+def work_loop2(var, settings, finished_queue, message_queue):
     """
     Due to the mechanics of forkserver, this can not be defined in local variables,
     it has to be importable, but this _is_ importable from the test module.
     """
-    has_read = in_q.get()
-    out_q.put(f'done {var} {has_read}')
+    has_read = message_queue.get()
+    finished_queue.put(f'done {var} {has_read}')
 
 
 @pytest.mark.parametrize('manager_cls', [ProcessManager, ForkServerManager])
@@ -58,8 +58,8 @@ def test_workers_have_different_pid(manager_cls, test_settings):
 
 
 
-def return_pid(settings, out_q, in_q):
-    out_q.put(f'{os.getpid()}')
+def return_pid(settings, finished_queue, message_queue):
+    finished_queue.put(f'{os.getpid()}')
 
 
 @pytest.mark.parametrize('manager_cls', [ProcessManager, ForkServerManager])

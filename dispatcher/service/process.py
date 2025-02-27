@@ -10,10 +10,21 @@ from ..worker.task import work_loop
 
 
 class ProcessProxy:
-    def __init__(self, args: Iterable, target: Callable = work_loop, ctx: Union[BaseContext, ModuleType] = multiprocessing) -> None:
+    def __init__(
+        self,
+        args: Optional[Iterable] = None,
+        kwargs: Optional[dict] = None,
+        target: Callable = work_loop,
+        ctx: Union[BaseContext, ModuleType] = multiprocessing,
+    ) -> None:
         self.message_queue: multiprocessing.Queue = ctx.Queue()
         # This is intended use of multiprocessing context, but not available on BaseContext
-        self._process = ctx.Process(target=target, args=tuple(args) + (self.message_queue,))  # type: ignore
+        if kwargs is None:
+            kwargs = {}
+        kwargs['message_queue'] = self.message_queue
+        if args is None:
+            args = ()
+        self._process = ctx.Process(target=target, args=args, kwargs=kwargs)  # type: ignore
 
     def start(self) -> None:
         self._process.start()
@@ -55,8 +66,14 @@ class ProcessManager:
             self._loop = asyncio.get_event_loop()
         return self._loop
 
-    def create_process(self, args: Iterable[int | str | dict], **kwargs) -> ProcessProxy:
-        return ProcessProxy(tuple(args) + (self.settings_stash, self.finished_queue), ctx=self.ctx, **kwargs)
+    def create_process(self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs) -> ProcessProxy:
+        "Returns a ProcessProxy object, which itself contains a Process object, but actual subprocess is not yet started"
+        # kwargs allow passing target for substituting the work_loop for testing
+        if kwargs is None:
+            kwargs = {}
+        kwargs['settings'] = self.settings_stash
+        kwargs['finished_queue'] = self.finished_queue
+        return ProcessProxy(args=args, kwargs=kwargs, ctx=self.ctx, **proxy_kwargs)
 
     async def read_finished(self) -> dict[str, Union[str, int]]:
         message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
