@@ -1,7 +1,5 @@
 import asyncio
 import logging
-from typing import Optional
-
 
 __all__ = ['running', 'cancel', 'alive', 'workers']
 
@@ -20,7 +18,7 @@ def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
     return True
 
 
-async def _find_tasks(dispatcher, cancel: bool = False, **data) -> list[tuple[Optional[str], dict]]:
+async def _find_tasks(dispatcher, cancel: bool = False, **data) -> dict[str, dict]:
     "Utility method used for both running and cancel control methods"
     ret = {}
     for worker in dispatcher.pool.workers.values():
