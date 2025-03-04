@@ -40,7 +40,7 @@ async def test_initialized_workers_count_for_scaling(test_settings):
     Scaling more workers would not actually get us to the task any faster, and could slow down the system.
     This occurs for the OnStartProducer, that creates tasks which go directly into the queue,
     because the workers have not yet started up.
-    With tasks < worker_ct, we should not scale additional workers right after startup.
+    With task_ct < worker_ct, we should not scale additional workers right after startup.
     """
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=5, max_workers=10)
@@ -55,7 +55,12 @@ async def test_initialized_workers_count_for_scaling(test_settings):
 
 @pytest.mark.asyncio
 async def test_initialized_and_ready_but_scale(test_settings):
-    """Consider you have 3 OnStart tasks but 2 min workers, you should scale up in this case"""
+    """Consider you have 3 OnStart tasks but 2 min workers, you should scale up in this case
+
+    This is a reversal from test_initialized_workers_count_for_scaling,
+    as it shows a different case where scaling up beyond min_workers on startup is expected.
+    That is, task_ct > worker_ct, on startup.
+    """
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=2, max_workers=10)
     await pool.scale_workers()
@@ -64,14 +69,16 @@ async def test_initialized_and_ready_but_scale(test_settings):
     pool.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 2 workers
     await pool.scale_workers()
     assert len(pool.workers) == 3  # grew, added 1 more initialized worker
-    assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}
+    assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}  # everything still in startup
 
 
 @pytest.mark.asyncio
 async def test_scale_down_condition(test_settings):
-    """Consider you have 3 OnStart tasks but 2 min workers, you should scale up in this case"""
+    """You have 3 workers due to past demand, but work finished long ago. Should scale down."""
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=1, max_workers=3)
+
+    # Prepare for test by scaling up to the 3 max workers by adding demand
     pool.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 3 workers
     for i in range(3):
         await pool.scale_workers()
@@ -81,8 +88,11 @@ async def test_scale_down_condition(test_settings):
         worker.current_task = None
     assert set([worker.status for worker in pool.workers.values()]) == {'ready'}
 
+    # Clear queue and set finished times to long ago
     pool.queued_messages = []  # queue has been fully worked through, no workers are busy
     pool.last_used_by_ct = {i: time.monotonic() - 120. for i in range(30)}  # all work finished 120 seconds ago
+
+    # Outcome of this situation is expected to be a scale-down event
     assert pool.should_scale_down() is True
     await pool.scale_workers()
     # Same number of workers but one worker has been sent a stop signal
