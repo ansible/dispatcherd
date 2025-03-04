@@ -1,4 +1,6 @@
 import time
+import asyncio
+from unittest import mock
 
 import pytest
 
@@ -98,3 +100,20 @@ async def test_scale_down_condition(test_settings):
     # Same number of workers but one worker has been sent a stop signal
     assert len(pool.workers) == 3
     assert set([worker.status for worker in pool.workers.values()]) == {'ready', 'stopping'}
+
+
+@pytest.mark.asyncio
+async def test_error_while_scaling_up(test_settings):
+    """It is always possible that we fail to start workers due to OS errors. This should not error the whole program."""
+    pm = ProcessManager(settings=test_settings)
+    pool = WorkerPool(pm, min_workers=1, max_workers=1)
+
+    pool.queued_messages = [{'task': 'waiting.task'}]
+    for i in range(3):
+        await pool.scale_workers()
+    assert len(pool.workers) == 1
+
+    with mock.patch('dispatcher.service.process.ProcessProxy.start', side_effect=RuntimeError):
+        await pool.manage_new_workers(asyncio.Lock())
+
+    assert set([worker.status for worker in pool.workers.values()]) == {'error'}

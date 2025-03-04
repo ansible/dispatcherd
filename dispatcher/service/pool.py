@@ -27,8 +27,16 @@ class PoolWorker:
         self.exit_msg_event = asyncio.Event()
 
     async def start(self) -> None:
+        if self.status != 'initialized':
+            logger.error(f'Worker {self.worker_id} status is not initialized, can not start, status={self.status}')
+            return
         self.status = 'spawned'
-        self.process.start()
+        try:
+            self.process.start()
+        except Exception:
+            logger.exception(f'Unexpected error starting worker {self.worker_id} subprocess, marking as error')
+            self.status = 'error'
+            return
         logger.debug(f'Worker {self.worker_id} pid={self.process.pid} subprocess has spawned')
         self.status = 'starting'  # Not ready until it sends callback message
 
