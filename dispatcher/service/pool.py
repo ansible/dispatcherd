@@ -6,7 +6,9 @@ import time
 from asyncio import Task
 from typing import Any, Iterator, Literal, Optional
 
+from ..protocols import DispatcherMain
 from ..utils import DuplicateBehavior, MessageAction
+from .asyncio_tasks import ensure_fatal
 from .process import ProcessManager, ProcessProxy
 
 logger = logging.getLogger(__name__)
@@ -192,13 +194,13 @@ class WorkerPool:
     def received_count(self):
         return self.processed_count + len(self.queued_messages) + sum(1 for w in self.workers.values() if w.current_task)
 
-    async def start_working(self, dispatcher) -> None:
+    async def start_working(self, dispatcher: DispatcherMain) -> None:
         self.read_results_task = asyncio.create_task(self.read_results_forever(), name='results_task')
-        self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
+        self.read_results_task.add_done_callback(ensure_fatal)
         self.management_task = asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task')
-        self.management_task.add_done_callback(dispatcher.fatal_error_callback)
+        self.management_task.add_done_callback(ensure_fatal)
         self.timeout_task = asyncio.create_task(self.manage_timeout(), name='timeout_task')
-        self.timeout_task.add_done_callback(dispatcher.fatal_error_callback)
+        self.timeout_task.add_done_callback(ensure_fatal)
 
     def get_running_count(self) -> int:
         ct = 0

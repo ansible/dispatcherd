@@ -4,10 +4,10 @@ from typing import Iterable, Literal, Optional, Type, get_args, get_origin
 
 from . import producers
 from .brokers import get_broker
-from .brokers.base import BaseBroker
 from .config import LazySettings
 from .config import settings as global_settings
 from .control import Control
+from .protocols import Broker, Producer
 from .service import process
 from .service.main import DispatcherMain
 from .service.pool import WorkerPool
@@ -21,7 +21,7 @@ which is to avoid import dependencies.
 # ---- Service objects ----
 
 
-def process_manager_from_settings(settings: LazySettings = global_settings):
+def process_manager_from_settings(settings: LazySettings = global_settings) -> process.ProcessManager:
     cls_name = settings.service.get('process_manager_cls', 'ForkServerManager')
     process_manager_cls = getattr(process, cls_name)
     kwargs = settings.service.get('process_manager_kwargs', {}).copy()
@@ -29,17 +29,17 @@ def process_manager_from_settings(settings: LazySettings = global_settings):
     return process_manager_cls(**kwargs)
 
 
-def pool_from_settings(settings: LazySettings = global_settings):
+def pool_from_settings(settings: LazySettings = global_settings) -> WorkerPool:
     kwargs = settings.service.get('pool_kwargs', {}).copy()
     kwargs['process_manager'] = process_manager_from_settings(settings=settings)
     return WorkerPool(**kwargs)
 
 
-def brokers_from_settings(settings: LazySettings = global_settings) -> Iterable[BaseBroker]:
+def brokers_from_settings(settings: LazySettings = global_settings) -> Iterable[Broker]:
     return [get_broker(broker_name, broker_kwargs) for broker_name, broker_kwargs in settings.brokers.items()]
 
 
-def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[producers.BaseProducer]:
+def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[Producer]:
     producer_objects = []
     for broker in brokers_from_settings(settings=settings):
         producer = producers.BrokeredProducer(broker=broker)
@@ -77,7 +77,7 @@ def _get_publisher_broker_name(publish_broker: Optional[str] = None, settings: L
         raise RuntimeError(f'Could not determine which broker to publish with between options {list(settings.brokers.keys())}')
 
 
-def get_publisher_from_settings(publish_broker: Optional[str] = None, settings: LazySettings = global_settings, **overrides) -> BaseBroker:
+def get_publisher_from_settings(publish_broker: Optional[str] = None, settings: LazySettings = global_settings, **overrides) -> Broker:
     """
     An asynchronous publisher is the ideal choice for submitting control-and-reply actions.
     This returns an asyncio broker of the default publisher type.
