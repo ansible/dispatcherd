@@ -97,7 +97,7 @@ def get_control_from_settings(publish_broker: Optional[str] = None, settings: La
 
 # ---- Schema generation ----
 
-SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list)
+SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list, float)
 
 
 def is_valid_annotation(annotation):

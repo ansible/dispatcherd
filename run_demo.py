@@ -49,7 +49,7 @@ def main():
 
     print('')
     print('finding a running task by its task name')
-    broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar2'}))
+    broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'find_by_name'}))
     running_data = ctl.control_with_reply('running', data={'task': 'lambda: __import__("time").sleep(3.1415)'})
     print(json.dumps(running_data, indent=2))
 
@@ -65,9 +65,9 @@ def main():
 
     print('writing a message with a delay')
     print('     4 second delay task')
-    broker.publish_message(message=json.dumps({'task': 'lambda: 123421', 'uuid': 'foobar2', 'delay': 4}))
+    broker.publish_message(message=json.dumps({'task': 'lambda: 123421', 'uuid': 'delay_4', 'delay': 4}))
     print('     30 second delay task')
-    broker.publish_message(message=json.dumps({'task': 'lambda: 987987234', 'uuid': 'foobar2', 'delay': 30}))
+    broker.publish_message(message=json.dumps({'task': 'lambda: 987987234', 'uuid': 'delay_30', 'delay': 30}))
 
     print('')
     print(' -------- Using tasks defined with @task() decorator ---------')
