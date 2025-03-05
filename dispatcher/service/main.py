@@ -185,7 +185,7 @@ class DispatcherMain:
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         try:
-            await self.pool.start_working(self)
+            await self.pool.start_working(self.fd_lock)
         except Exception:
             logger.exception(f'Pool {self.pool} failed to start working')
             self.events.exit_event.set()

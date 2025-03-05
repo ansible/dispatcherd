@@ -8,4 +8,4 @@ def ensure_fatal(task: asyncio.Task) -> None:
     try:
         task.result()
     except asyncio.CancelledError:
-        logger.info(f'Ack that task {task} was canceled')
+        logger.info(f'Ack that task {task.get_name()} was canceled')
