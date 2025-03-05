@@ -195,11 +195,11 @@ class WorkerPool:
 
     async def start_working(self, forking_lock: asyncio.Lock) -> None:
         self.read_results_task = asyncio.create_task(self.read_results_forever(), name='results_task')
-        self.read_results_task.add_done_callback(ensure_fatal)
+        ensure_fatal(self.read_results_task)
         self.management_task = asyncio.create_task(self.manage_workers(forking_lock=forking_lock), name='management_task')
-        self.management_task.add_done_callback(ensure_fatal)
+        ensure_fatal(self.management_task)
         self.timeout_task = asyncio.create_task(self.manage_timeout(), name='timeout_task')
-        self.timeout_task.add_done_callback(ensure_fatal)
+        ensure_fatal(self.timeout_task)
 
     def get_running_count(self) -> int:
         ct = 0

@@ -199,11 +199,10 @@ class DispatcherMain:
                     logger.exception(f'Producer {producer} failed to start')
                     self.events.exit_event.set()
 
+                # TODO: recycle producer instead of raising up error
+                # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
-                    task.add_done_callback(ensure_fatal)
-                    # in case task errored before callback attached
-                    if task.done():
-                        task.result()
+                    ensure_fatal(task)
 
     async def cancel_tasks(self):
         for task in asyncio.all_tasks():
