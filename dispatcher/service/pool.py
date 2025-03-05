@@ -7,12 +7,13 @@ from typing import Any, Iterator, Literal, Optional
 
 from ..utils import DuplicateBehavior, MessageAction
 from .asyncio_tasks import ensure_fatal
+from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
 
 logger = logging.getLogger(__name__)
 
 
-class PoolWorker:
+class PoolWorker(HasWakeup):
     def __init__(self, worker_id: int, process: ProcessProxy) -> None:
         self.worker_id = worker_id
         self.process = process
@@ -130,6 +131,14 @@ class PoolWorker:
         "Return True if no further shutdown or callback messages are expected from this worker"
         return self.status in ['exited', 'error', 'initialized']
 
+    def next_wakeup(self) -> Optional[float]:
+        """Used by next-run-runner for setting wakeups for task timeouts"""
+        if self.is_active_cancel:
+            return None
+        if self.current_task and self.current_task.get('timeout') and self.started_at:
+            return self.started_at + self.current_task['timeout']
+        return None
+
 
 class PoolEvents:
     "Benchmark tests have to re-create this because they use same object in different event loops"
@@ -138,7 +147,6 @@ class PoolEvents:
         self.queue_cleared: asyncio.Event = asyncio.Event()  # queue is now 0 length
         self.work_cleared: asyncio.Event = asyncio.Event()  # Totally quiet, no blocked or queued messages, no busy workers
         self.management_event: asyncio.Event = asyncio.Event()  # Process spawning is backgrounded, so this is the kicker
-        self.timeout_event: asyncio.Event = asyncio.Event()  # Anything that might affect the timeout watcher task
         self.workers_ready: asyncio.Event = asyncio.Event()  # min workers have started and sent ready message
 
 
@@ -160,7 +168,6 @@ class WorkerPool:
         # internal asyncio tasks
         self.read_results_task: Optional[asyncio.Task] = None
         self.management_task: Optional[asyncio.Task] = None
-        self.timeout_task: Optional[asyncio.Task] = None
         # other internal asyncio objects
         self.management_lock = asyncio.Lock()
         self.events: PoolEvents = PoolEvents()
@@ -174,6 +181,9 @@ class WorkerPool:
         self.canceled_count: int = 0
         self.discard_count: int = 0
         self.shutdown_timeout = 3
+
+        # the timeout runner keeps its own task
+        self.timeout_runner = NextWakeupRunner(self.workers.values(), self.cancel_worker, name='worker_timeout_manager')
 
         # Track the last time we used X number of workers, like
         # {
@@ -200,7 +210,6 @@ class WorkerPool:
     async def start_working(self, forking_lock: asyncio.Lock) -> None:
         self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'))
         self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(forking_lock=forking_lock), name='management_task'))
-        self.timeout_task = ensure_fatal(asyncio.create_task(self.manage_timeout(), name='timeout_task'))
 
     def get_running_count(self) -> int:
         ct = 0
@@ -315,42 +324,17 @@ class WorkerPool:
 
         logger.debug('Pool worker management task exiting')
 
-    async def process_worker_timeouts(self, current_time: float) -> Optional[float]:
-        """
-        Cancels tasks that have exceeded their timeout.
-        Returns the system clock time of the next task timeout, for rescheduling.
-        """
-        next_deadline = None
-        for worker in self.workers.values():
-            if (not worker.is_active_cancel) and worker.current_task and worker.started_at and (worker.current_task.get('timeout')):
-                timeout: float = worker.current_task['timeout']
-                worker_deadline = worker.started_at + timeout
-
-                # Established that worker is running a task that has a timeout
-                if worker_deadline < current_time:
-                    uuid: str = worker.current_task.get('uuid', '<unknown>')
-                    delta: float = current_time - worker.started_at
-                    logger.info(f'Worker {worker.worker_id} runtime {delta:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
-                    worker.cancel()
-                elif next_deadline is None or worker_deadline < next_deadline:
-                    # worker timeout is closer than any yet seen
-                    next_deadline = worker_deadline
-
-        return next_deadline
-
-    async def manage_timeout(self) -> None:
-        while not self.shutting_down:
-            current_time = time.monotonic()
-            pool_deadline = await self.process_worker_timeouts(current_time)
-            if pool_deadline:
-                time_until_deadline = pool_deadline - current_time
-                try:
-                    await asyncio.wait_for(self.events.timeout_event.wait(), timeout=time_until_deadline)
-                except asyncio.TimeoutError:
-                    pass  # will handle in next loop run
-            else:
-                await self.events.timeout_event.wait()
-            self.events.timeout_event.clear()
+    async def cancel_worker(self, worker: PoolWorker) -> None:
+        """Writes a log and sends cancel signal to worker"""
+        if (not worker.current_task) or (not worker.started_at):
+            return  # mostly for typing, should not be the case
+        # typing note - if we are here current_task is not None
+        uuid: str = worker.current_task.get('uuid', '<unknown>')
+        timeout = worker.current_task.get("timeout")
+        logger.info(
+            f'Worker {worker.worker_id} runtime {time.monotonic() - worker.started_at:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling'
+        )
+        worker.cancel()
 
     async def up(self) -> int:
         new_worker_id = self.next_worker_id
@@ -383,7 +367,7 @@ class WorkerPool:
     async def shutdown(self) -> None:
         self.shutting_down = True
         self.events.management_event.set()
-        self.events.timeout_event.set()
+        await self.timeout_runner.shutdown()
         await self.stop_workers()
         self.process_manager.finished_queue.put('stop')
 
@@ -485,7 +469,7 @@ class WorkerPool:
 
     async def post_task_start(self, message):
         if 'timeout' in message:
-            self.events.timeout_event.set()  # kick timeout task to set wakeup
+            self.timeout_runner.kick()  # kick timeout task to set wakeup
         running_ct = self.get_running_count()
         self.last_used_by_ct[running_ct] = None  # block scale down of this amount
 
@@ -557,7 +541,7 @@ class WorkerPool:
             self.events.work_cleared.set()
 
         if 'timeout' in message:
-            self.events.timeout_event.set()
+            self.timeout_runner.kick()
 
     async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""
