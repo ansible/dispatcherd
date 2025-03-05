@@ -51,7 +51,7 @@ class DispatcherMain:
     async def wait_for_producers_ready(self, timeout=3) -> None:
         "Returns when all the producers have hit their ready event"
         for producer in self.producers:
-            existing_tasks = producer.all_tasks()
+            existing_tasks = list(producer.all_tasks())
             wait_task = asyncio.create_task(producer.events.ready_event.wait())
             existing_tasks.append(wait_task)
             await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
