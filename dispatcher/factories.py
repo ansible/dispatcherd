@@ -24,7 +24,9 @@ which is to avoid import dependencies.
 def process_manager_from_settings(settings: LazySettings = global_settings):
     cls_name = settings.service.get('process_manager_cls', 'ForkServerManager')
     process_manager_cls = getattr(process, cls_name)
-    return process_manager_cls(settings=settings)
+    kwargs = settings.service.get('process_manager_kwargs', {}).copy()
+    kwargs['settings'] = settings
+    return process_manager_cls(**kwargs)
 
 
 def pool_from_settings(settings: LazySettings = global_settings):
