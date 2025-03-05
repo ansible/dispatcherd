@@ -42,8 +42,6 @@ class WorkerPool(Protocol):
 class DispatcherMain(Protocol):
     fd_lock: asyncio.Lock
 
-    def __init__(self, producers: Iterable[Producer], pool: WorkerPool, node_id: Optional[str] = None): ...
-
     async def main(self) -> None: ...
 
     async def connected_callback(self, producer: Producer) -> None:
