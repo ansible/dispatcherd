@@ -48,10 +48,7 @@ class BrokeredProducer(BaseProducer):
                 await self.production_task
             except asyncio.CancelledError:
                 logger.info(f'Successfully canceled production from {self.broker}')
-            except Exception:
-                # traceback logged in fatal callback
-                if not hasattr(self.production_task, '_dispatcher_tb_logged'):
-                    logger.exception(f'Broker {self.broker} shutdown saw an unexpected exception from production task')
+
             self.production_task = None
         if self.close_on_exit:
             logger.debug(f'Closing {self.broker} connection')
