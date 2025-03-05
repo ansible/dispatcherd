@@ -1,4 +1,5 @@
 import contextlib
+import logging
 
 from typing import Callable, AsyncIterator
 
@@ -13,6 +14,9 @@ from dispatcher.brokers.pg_notify import Broker, acreate_connection, connection_
 from dispatcher.registry import DispatcherMethodRegistry
 from dispatcher.config import DispatcherSettings
 from dispatcher.factories import from_settings, get_control_from_settings
+
+
+logger = logging.getLogger(__name__)
 
 
 # List of channels to listen on
@@ -117,8 +121,11 @@ async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
         yield dispatcher
     finally:
         if dispatcher:
-            await dispatcher.shutdown()
-            await dispatcher.cancel_tasks()
+            try:
+                await dispatcher.shutdown()
+                await dispatcher.cancel_tasks()
+            except Exception:
+                logger.exception('shutdown had error')
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")

@@ -48,10 +48,15 @@ class DispatcherMain:
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.events.exit_event.set()
 
-    async def wait_for_producers_ready(self) -> None:
+    async def wait_for_producers_ready(self, timeout=3) -> None:
         "Returns when all the producers have hit their ready event"
         for producer in self.producers:
-            await producer.events.ready_event.wait()
+            existing_tasks = producer.all_tasks()
+            wait_task = asyncio.create_task(producer.events.ready_event.wait())
+            existing_tasks.append(wait_task)
+            await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
+            if not wait_task.done():
+                producer.events.ready_event.set()  # exits wait_task, producer had error
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_event_loop()
