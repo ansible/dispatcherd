@@ -45,7 +45,7 @@ class DispatcherMain(Protocol):
     async def main(self) -> None: ...
 
     async def connected_callback(self, producer: Producer) -> None:
-        """ "Called by producers when they are connected"""
+        """Called by producers when they are connected"""
         ...
 
     async def process_message(
