@@ -82,6 +82,31 @@ In AWX dispatcher, a full queue may put messages into individual worker IPCs.
 This caused bad results, like delaying tasks due to long-running jobs,
 while the pool had many other workers free up in the mean time.
 
+
+### Worker Task Cancelation Signals
+
+Originally, the dispatcher library used **SIGTERM** to forcibly cancel a running task. However,
+some user code (or third-party libraries) register custom SIGTERM handlers, which caused
+collisions and made forcible timeouts/cancellations unreliable.
+
+To avoid these conflicts, dispatcher now uses **SIGUSR1** for per-task cancelation. This means:
+
+1. **Task**: When the dispatcher needs to cancel a running task (for example, due to a timeout),
+   it sends SIGUSR1 to that worker subprocess instead of SIGTERM.
+
+2. **Worker**: In the worker code (`WorkerSignalHandler`), the `SIGUSR1` handler raises
+   `DispatcherCancel`, which immediately stops the current task’s execution path.
+
+3. **Shutdown**: In contrast, a full worker shutdown typically uses SIGINT, or the main process can call terminate().
+The SIGTERM signal isn't used by default for per-worker shutdown in current code.
+
+#### Why SIGUSR1
+
+SIGUSR1 is less commonly used by applications, so it’s less likely that user code
+will override it (unlike SIGTERM). This ensures that the dispatcher’s forced cancel
+mechanism remains reliable across a wide variety of user tasks, libraries, or Python
+frameworks that might expect to intercept SIGTERM for graceful shutdown.
+
 ### Notable python tasking systems
 
 https://taskiq-python.github.io/guide/architecture-overview.html#context

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import signal
 import time
 from asyncio import Task
 from typing import Any, Iterator, Literal, Optional
@@ -99,7 +101,11 @@ class PoolWorker:
 
     def cancel(self) -> None:
         self.is_active_cancel = True  # signal for result callback
-        self.process.terminate()  # SIGTERM
+
+        # If the process has never been started or is already gone, its pid may be None
+        if self.process.pid is None:
+            return  # it's effectively already canceled/not running
+        os.kill(self.process.pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
 
     def get_data(self) -> dict[str, Any]:
         return {
