@@ -26,7 +26,9 @@ class WorkerSignalHandler:
     def __init__(self, worker_id):
         self.kill_now = False
         self.worker_id = worker_id
-        signal.signal(signal.SIGTERM, self.task_cancel)
+        # Use SIGUSR1 instead of SIGTERM for task cancellation
+        # This prevents conflicts with tasks that register their own SIGTERM handlers
+        signal.signal(signal.SIGUSR1, self.task_cancel)
         signal.signal(signal.SIGINT, self.exit_gracefully)
 
     def task_cancel(self, *args, **kwargs):
