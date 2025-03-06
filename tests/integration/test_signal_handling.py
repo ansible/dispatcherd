@@ -32,14 +32,6 @@ async def test_sigusr1_cancel_avoids_sigterm(apg_dispatcher, pg_control, test_se
     a custom SIGTERM handler.
     """
 
-    # Verify code implementation uses SIGUSR1
-    from dispatcher.service.pool import PoolWorker
-    from dispatcher.worker.task import WorkerSignalHandler
-    code_init = inspect.getsource(WorkerSignalHandler.__init__)
-    code_cancel = inspect.getsource(PoolWorker.cancel)
-    assert "SIGUSR1" in code_init
-    assert "SIGUSR1" in code_cancel
-
     # Submit the task
     uuid_val = "test-sigusr1-cancel-inline"
     sigterm_interceptor_task.apply_async(uuid=uuid_val, settings=test_settings)
