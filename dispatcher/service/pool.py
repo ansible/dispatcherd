@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import signal
 import time
 from asyncio import Task
 from typing import Any, Iterator, Optional
@@ -70,7 +72,8 @@ class PoolWorker:
 
     def cancel(self) -> None:
         self.is_active_cancel = True  # signal for result callback
-        self.process.terminate()  # SIGTERM
+        # Use SIGUSR1 instead of SIGTERM to avoid conflicts with task signal handlers
+        os.kill(self.process.pid, signal.SIGUSR1)
 
     def get_data(self) -> dict[str, Any]:
         return {
