@@ -45,12 +45,6 @@ def serialize_task(f: Callable) -> str:
     return MODULE_METHOD_DELIMITER.join([f.__module__, f.__name__])
 
 
-class MessageAction(Enum):
-    run = 'run'
-    discard = 'discard'
-    queue = 'queue'
-
-
 class DuplicateBehavior(Enum):
     parallel = 'parallel'  # run multiple versions of same task at same time
     discard = 'discard'  # if task is submitted twice, discard the 2nd one

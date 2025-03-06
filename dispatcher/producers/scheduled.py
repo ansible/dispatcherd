@@ -39,7 +39,7 @@ class ScheduledProducer(BaseProducer):
         if self.dispatcher:
             await self.dispatcher.process_message(message)
 
-    async def start_producing(self, dispatcher: DispatcherMain) -> None:
+    async def start_producing(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
         self.dispatcher = dispatcher
         current_time = time.monotonic()
 

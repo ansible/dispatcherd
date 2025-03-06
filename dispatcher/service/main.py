@@ -194,7 +194,7 @@ class DispatcherMain:
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         try:
-            await self.pool.start_working(self.fd_lock)
+            await self.pool.start_working(self.fd_lock, exit_event=self.events.exit_event)
         except Exception:
             logger.exception(f'Pool {self.pool} failed to start working')
             self.events.exit_event.set()
@@ -211,7 +211,7 @@ class DispatcherMain:
                 # TODO: recycle producer instead of raising up error
                 # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
-                    ensure_fatal(task)
+                    ensure_fatal(task, exit_event=self.events.exit_event)
 
     async def cancel_tasks(self):
         for task in asyncio.all_tasks():
