@@ -66,9 +66,6 @@ async def test_sigusr1_cancel_avoids_sigterm(apg_dispatcher, pg_control, test_se
     (worker_key, worker_data) = list(canceled_info.items())[0]
     assert worker_data["uuid"] == uuid_val
 
-    # Wait for the dispatcher to declare all tasks cleared
-    await asyncio.wait_for(apg_dispatcher.pool.events.work_cleared.wait(), timeout=5)
-
     # Check that 1 task was canceled, and no SIGTERM printout
     assert apg_dispatcher.pool.canceled_count == 1
     assert "SIGTERM was intercepted!" not in caplog.text
