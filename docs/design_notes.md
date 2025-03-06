@@ -97,9 +97,8 @@ To avoid these conflicts, dispatcher now uses **SIGUSR1** for per-task cancelati
 2. **Worker**: In the worker code (`WorkerSignalHandler`), the `SIGUSR1` handler raises
    `DispatcherCancel`, which immediately stops the current task’s execution path.
 
-3. **Shutdown**: In contrast, a full worker shutdown or system-wide stop
-   can still use SIGTERM or SIGINT. That’s typically not per-task, but a broader
-   action telling the entire worker to exit.
+3. **Shutdown**: In contrast, a full worker shutdown typically uses SIGINT, or the main process can call terminate().
+The SIGTERM signal isn't used by default for per-worker shutdown in current code.
 
 #### Why SIGUSR1
 
