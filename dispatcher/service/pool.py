@@ -72,6 +72,13 @@ class PoolWorker:
 
     def cancel(self) -> None:
         self.is_active_cancel = True  # signal for result callback
+
+        # If the process has never been started or is already gone, its pid may be None
+        pid = self.process.pid
+        if pid is None:
+            # it's effectively already canceled/not running
+            return
+
         # Use SIGUSR1 instead of SIGTERM to avoid conflicts with task signal handlers
         os.kill(self.process.pid, signal.SIGUSR1)
 
