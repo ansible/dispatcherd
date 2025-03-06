@@ -7,6 +7,7 @@ from typing import Optional, Union
 
 from .factories import get_broker
 from .producers import BrokeredProducer
+from .protocols import Producer
 from .service.asyncio_tasks import ensure_fatal
 
 logger = logging.getLogger('awx.main.dispatch.control')
@@ -30,22 +31,27 @@ class ControlCallbacks:
 
         # received_replies only tracks the reply message, not the channel name
         # because they come via a temporary reply_to channel and that is not user-facing
-        self.received_replies: list[str] = []
+        self.received_replies: list[Union[dict, str]] = []
         self.events = ControlEvents()
         self.shutting_down = False
 
     async def process_message(
-        self, payload: str, producer: Optional[BrokeredProducer] = None, channel: Optional[str] = None
+        self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
     ) -> tuple[Optional[str], Optional[str]]:
         self.received_replies.append(payload)
         if self.expected_replies and (len(self.received_replies) >= self.expected_replies):
             self.events.exit_event.set()
         return (None, None)
 
-    async def connected_callback(self, producer: BrokeredProducer) -> None:
+    async def connected_callback(self, producer: Producer) -> None:
         payload = json.dumps(self.send_data)
-        await producer.notify(channel=self.queuename, message=payload)
+        # Ignore the type hint here because we know it is a brokered producer
+        await producer.notify(channel=self.queuename, message=payload)  # type: ignore[attr-defined]
         logger.info('Sent control message, expecting replies soon')
+
+    async def main(self) -> None:
+        "Unused"
+        pass
 
 
 class Control(object):
@@ -58,7 +64,17 @@ class Control(object):
     def generate_reply_queue_name(cls) -> str:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
-    async def acontrol_with_reply_internal(self, producer: BrokeredProducer, send_data: dict, expected_replies: int, timeout: float) -> list[dict]:
+    @staticmethod
+    def parse_replies(received_replies: list[Union[str, dict]]) -> list[dict]:
+        ret = []
+        for payload in received_replies:
+            if isinstance(payload, dict):
+                ret.append(payload)
+            else:
+                ret.append(json.loads(payload))
+        return ret
+
+    async def acontrol_with_reply_internal(self, producer: Producer, send_data: dict, expected_replies: int, timeout: float) -> list[dict]:
         control_callbacks = ControlCallbacks(self.queuename, send_data, expected_replies)
 
         await producer.start_producing(control_callbacks)
@@ -76,9 +92,9 @@ class Control(object):
         control_callbacks.shutting_down = True
         await producer.shutdown()
 
-        return [json.loads(payload) for payload in control_callbacks.received_replies]
+        return self.parse_replies(control_callbacks.received_replies)
 
-    def make_producer(self, reply_queue: str) -> BrokeredProducer:
+    def make_producer(self, reply_queue: str) -> Producer:
         broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
         return BrokeredProducer(broker, close_on_exit=True)
 
