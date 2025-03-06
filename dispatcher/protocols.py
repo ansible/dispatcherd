@@ -55,7 +55,7 @@ class Producer(Protocol):
 
 
 class WorkerPool(Protocol):
-    async def start_working(self, forking_lock: asyncio.Lock) -> None:
+    async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
         """Start persistent asyncio tasks, including asychronously starting worker subprocesses"""
         ...
 

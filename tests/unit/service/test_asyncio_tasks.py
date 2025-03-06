@@ -1,5 +1,4 @@
 import asyncio
-import time
 
 import pytest
 
@@ -12,10 +11,13 @@ async def will_fail():
 
 @pytest.mark.asyncio
 async def test_capture_initial_task_failure():
+    event = asyncio.Event()
+    assert not event.is_set()
     aio_task = asyncio.create_task(will_fail())
     with pytest.raises(RuntimeError):
-        ensure_fatal(aio_task)
+        ensure_fatal(aio_task, exit_event=event)
         await aio_task
+    assert event.is_set()
 
 
 async def will_fail_soon():
@@ -25,10 +27,13 @@ async def will_fail_soon():
 
 @pytest.mark.asyncio
 async def test_capture_later_task_failure():
+    event = asyncio.Event()
+    assert not event.is_set()
     aio_task = asyncio.create_task(will_fail_soon())
     with pytest.raises(RuntimeError):
-        ensure_fatal(aio_task)
+        ensure_fatal(aio_task, exit_event=event)
         await aio_task
+    assert event.is_set()
 
 
 async def good_task():
@@ -37,6 +42,9 @@ async def good_task():
 
 @pytest.mark.asyncio
 async def test_task_does_not_fail_so_okay():
+    event = asyncio.Event()
+    assert not event.is_set()
     aio_task = asyncio.create_task(good_task())
-    ensure_fatal(aio_task)
+    ensure_fatal(aio_task, exit_event=event)
     await aio_task
+    assert not event.is_set()
