@@ -1,7 +1,7 @@
 import importlib
 from types import ModuleType
 
-from .base import BaseBroker
+from ..protocols import Broker
 
 
 def get_broker_module(broker_name) -> ModuleType:
@@ -9,7 +9,7 @@ def get_broker_module(broker_name) -> ModuleType:
     return importlib.import_module(f'dispatcher.brokers.{broker_name}')
 
 
-def get_broker(broker_name: str, broker_config: dict, **overrides) -> BaseBroker:
+def get_broker(broker_name: str, broker_config: dict, **overrides) -> Broker:
     """
     Given the name of the broker in the settings, and the data under that entry in settings,
     return the broker object.

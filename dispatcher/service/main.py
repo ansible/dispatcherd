@@ -3,11 +3,12 @@ import json
 import logging
 import signal
 from types import SimpleNamespace
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 from uuid import uuid4
 
-from ..producers import BaseProducer
+from ..protocols import Producer
 from . import control_tasks
+from .asyncio_tasks import ensure_fatal
 from .pool import WorkerPool
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class DispatcherEvents:
 
 
 class DispatcherMain:
-    def __init__(self, producers: Iterable[BaseProducer], pool: WorkerPool, node_id: Optional[str] = None):
+    def __init__(self, producers: Iterable[Producer], pool: WorkerPool, node_id: Optional[str] = None):
         self.delayed_messages: list[SimpleNamespace] = []
         self.received_count = 0
         self.control_count = 0
@@ -43,28 +44,19 @@ class DispatcherMain:
 
         self.events: DispatcherEvents = DispatcherEvents()
 
-    def fatal_error_callback(self, *args) -> None:
-        """Method to connect to error callbacks of other tasks, will kick out of main loop"""
-        if self.shutting_down:
-            return
-
-        for task in args:
-            try:
-                task.result()
-            except Exception:
-                logger.exception(f'Exception from task {task.get_name()}, exit flag set')
-                task._dispatcher_tb_logged = True
-
-        self.events.exit_event.set()
-
     def receive_signal(self, *args, **kwargs) -> None:
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.events.exit_event.set()
 
-    async def wait_for_producers_ready(self) -> None:
+    async def wait_for_producers_ready(self, timeout=3) -> None:
         "Returns when all the producers have hit their ready event"
         for producer in self.producers:
-            await producer.events.ready_event.wait()
+            existing_tasks = list(producer.all_tasks())
+            wait_task = asyncio.create_task(producer.events.ready_event.wait())
+            existing_tasks.append(wait_task)
+            await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
+            if not wait_task.done():
+                producer.events.ready_event.set()  # exits wait_task, producer had error
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_event_loop()
@@ -100,7 +92,7 @@ class DispatcherMain:
         logger.debug('Setting event to exit main loop')
         self.events.exit_event.set()
 
-    async def connected_callback(self, producer: BaseProducer) -> None:
+    async def connected_callback(self, producer: Producer) -> None:
         return
 
     async def sleep_then_process(self, capsule: SimpleNamespace) -> None:
@@ -121,7 +113,7 @@ class DispatcherMain:
         self.delayed_messages.append(capsule)
 
     async def process_message(
-        self, payload: dict, producer: Optional[BaseProducer] = None, channel: Optional[str] = None
+        self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
     ) -> tuple[Optional[str], Optional[str]]:
         """Called by producers to trigger a new task
 
@@ -193,7 +185,7 @@ class DispatcherMain:
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         try:
-            await self.pool.start_working(self)
+            await self.pool.start_working(self.fd_lock)
         except Exception:
             logger.exception(f'Pool {self.pool} failed to start working')
             self.events.exit_event.set()
@@ -206,6 +198,11 @@ class DispatcherMain:
                 except Exception:
                     logger.exception(f'Producer {producer} failed to start')
                     self.events.exit_event.set()
+
+                # TODO: recycle producer instead of raising up error
+                # https://github.com/ansible/dispatcherd/issues/2
+                for task in producer.all_tasks():
+                    ensure_fatal(task)
 
     async def cancel_tasks(self):
         for task in asyncio.all_tasks():
@@ -222,13 +219,14 @@ class DispatcherMain:
     async def main(self) -> None:
         await self.connect_signals()
 
-        await self.start_working()
+        try:
+            await self.start_working()
 
-        logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
-        await self.events.exit_event.wait()
+            logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
+            await self.events.exit_event.wait()
+        finally:
+            await self.shutdown()
 
-        await self.shutdown()
-
-        await self.cancel_tasks()
+            await self.cancel_tasks()
 
         logger.debug('Dispatcher loop fully completed')

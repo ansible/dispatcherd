@@ -3,10 +3,10 @@ import logging
 import os
 import signal
 import time
-from asyncio import Task
 from typing import Any, Iterator, Literal, Optional
 
 from ..utils import DuplicateBehavior, MessageAction
+from .asyncio_tasks import ensure_fatal
 from .process import ProcessManager, ProcessProxy
 
 logger = logging.getLogger(__name__)
@@ -152,23 +152,28 @@ class WorkerPool:
         scaledown_interval: float = 15.0,
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
-    ):
+    ) -> None:
         self.min_workers = min_workers
         self.max_workers = max_workers
-        self.workers: dict[int, PoolWorker] = {}
-        self.next_worker_id = 0
         self.process_manager = process_manager
-        self.queued_messages: list[dict] = []  # TODO: use deque, invent new kinds of logging anxiety
-        self.read_results_task: Optional[Task] = None
-        self.start_worker_task: Optional[Task] = None
+
+        # internal asyncio tasks
+        self.read_results_task: Optional[asyncio.Task] = None
+        self.management_task: Optional[asyncio.Task] = None
+        self.timeout_task: Optional[asyncio.Task] = None
+        # other internal asyncio objects
+        self.management_lock = asyncio.Lock()
+        self.events: PoolEvents = PoolEvents()
+
+        # internal tracking variables
+        self.workers: dict[int, PoolWorker] = {}
+        self.queued_messages: list[dict] = []  # TODO: use deque https://github.com/ansible/dispatcherd/issues/104
+        self.next_worker_id = 0
         self.shutting_down = False
         self.finished_count: int = 0
         self.canceled_count: int = 0
         self.discard_count: int = 0
         self.shutdown_timeout = 3
-        self.management_lock = asyncio.Lock()
-
-        self.events: PoolEvents = PoolEvents()
 
         # Track the last time we used X number of workers, like
         # {
@@ -192,13 +197,10 @@ class WorkerPool:
     def received_count(self):
         return self.processed_count + len(self.queued_messages) + sum(1 for w in self.workers.values() if w.current_task)
 
-    async def start_working(self, dispatcher) -> None:
-        self.read_results_task = asyncio.create_task(self.read_results_forever(), name='results_task')
-        self.read_results_task.add_done_callback(dispatcher.fatal_error_callback)
-        self.management_task = asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task')
-        self.management_task.add_done_callback(dispatcher.fatal_error_callback)
-        self.timeout_task = asyncio.create_task(self.manage_timeout(), name='timeout_task')
-        self.timeout_task.add_done_callback(dispatcher.fatal_error_callback)
+    async def start_working(self, forking_lock: asyncio.Lock) -> None:
+        self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'))
+        self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(forking_lock=forking_lock), name='management_task'))
+        self.timeout_task = ensure_fatal(asyncio.create_task(self.manage_timeout(), name='timeout_task'))
 
     def get_running_count(self) -> int:
         ct = 0
@@ -394,16 +396,12 @@ class WorkerPool:
                 await self.force_shutdown()
             except asyncio.CancelledError:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
-            except Exception:
-                # traceback logged in fatal callback
-                if not hasattr(self.read_results_task, '_dispatcher_tb_logged'):
-                    logger.exception('Pool shutdown saw an unexpected exception from results task')
 
-        if self.start_worker_task:
-            logger.info('Canceling worker spawn task')
-            self.start_worker_task.cancel()
+        if self.management_task:
+            logger.info('Canceling worker management task')
+            self.management_task.cancel()
             try:
-                await asyncio.wait_for(self.start_worker_task, timeout=self.shutdown_timeout)
+                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
             except asyncio.TimeoutError:
                 logger.error('The scaleup task failed to shut down')
             except asyncio.CancelledError:

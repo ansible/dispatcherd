@@ -45,8 +45,5 @@ class ScheduledProducer(BaseProducer):
             await asyncio.gather(*self.scheduled_tasks, return_exceptions=False)
         except asyncio.CancelledError:
             pass
-        except Exception:
-            # traceback logged in fatal callback
-            if not hasattr(task, '_dispatcher_tb_logged'):
-                logger.exception('Pool shutdown saw an unexpected exception from results task')
+
         self.scheduled_tasks = []

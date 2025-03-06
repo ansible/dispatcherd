@@ -7,6 +7,7 @@ from typing import Optional
 
 from .factories import get_broker
 from .producers import BrokeredProducer
+from .service.asyncio_tasks import ensure_fatal
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -44,21 +45,6 @@ class ControlCallbacks:
         await producer.notify(channel=self.queuename, message=payload)
         logger.info('Sent control message, expecting replies soon')
 
-    def fatal_error_callback(self, *args) -> None:
-        if self.shutting_down:
-            return
-
-        for task in args:
-            try:
-                task.result()
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.exception(f'Exception from {task.get_name()}, exit flag set')
-                task._dispatcher_tb_logged = True
-
-        self.events.exit_event.set()
-
 
 class Control(object):
     def __init__(self, broker_name: str, broker_config: dict, queue: Optional[str] = None) -> None:
@@ -83,6 +69,10 @@ class Control(object):
         control_callbacks = ControlCallbacks(self.queuename, send_data, expected_replies)
 
         await producer.start_producing(control_callbacks)
+        for task in producer.all_tasks():
+            # Make sure we catch errors
+            ensure_fatal(task)
+
         await producer.events.ready_event.wait()
 
         try:

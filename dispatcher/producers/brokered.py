@@ -1,27 +1,25 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Iterable, Optional
 
-from ..brokers.base import BaseBroker
+from ..protocols import Broker, DispatcherMain
 from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
 
 
 class BrokeredProducer(BaseProducer):
-    def __init__(self, broker: BaseBroker, close_on_exit: bool = True) -> None:
+    def __init__(self, broker: Broker, close_on_exit: bool = True) -> None:
         self.production_task: Optional[asyncio.Task] = None
         self.broker = broker
         self.close_on_exit = close_on_exit
-        self.dispatcher = None
+        self.dispatcher: Optional[DispatcherMain] = None
         super().__init__()
 
-    async def start_producing(self, dispatcher) -> None:
+    async def start_producing(self, dispatcher: DispatcherMain) -> None:
         self.production_task = asyncio.create_task(self.produce_forever(dispatcher), name=f'{self.broker}_production')
-        # TODO: implement connection retry logic
-        self.production_task.add_done_callback(dispatcher.fatal_error_callback)
 
-    def all_tasks(self) -> list[asyncio.Task]:
+    def all_tasks(self) -> Iterable[asyncio.Task]:
         if self.production_task:
             return [self.production_task]
         return []
@@ -32,12 +30,12 @@ class BrokeredProducer(BaseProducer):
         if self.dispatcher:
             await self.dispatcher.connected_callback(self)
 
-    async def produce_forever(self, dispatcher) -> None:
+    async def produce_forever(self, dispatcher: DispatcherMain) -> None:
         self.dispatcher = dispatcher
         async for channel, payload in self.broker.aprocess_notify(connected_callback=self.connected_callback):
             self.produced_count += 1
             reply_to, reply_payload = await dispatcher.process_message(payload, producer=self, channel=channel)
-            if reply_to:
+            if reply_to and reply_payload:
                 await self.notify(channel=reply_to, message=reply_payload)
 
     async def notify(self, channel: Optional[str] = None, message: str = '') -> None:
@@ -50,10 +48,7 @@ class BrokeredProducer(BaseProducer):
                 await self.production_task
             except asyncio.CancelledError:
                 logger.info(f'Successfully canceled production from {self.broker}')
-            except Exception:
-                # traceback logged in fatal callback
-                if not hasattr(self.production_task, '_dispatcher_tb_logged'):
-                    logger.exception(f'Broker {self.broker} shutdown saw an unexpected exception from production task')
+
             self.production_task = None
         if self.close_on_exit:
             logger.debug(f'Closing {self.broker} connection')
