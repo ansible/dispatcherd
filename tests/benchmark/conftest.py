@@ -37,7 +37,7 @@ class PoolServer:
         this_config['service']['pool_kwargs']['max_workers'] = workers
         dispatcher = from_settings(DispatcherSettings(this_config))
         pool = dispatcher.pool
-        await pool.start_working(dispatcher)
+        await pool.start_working(dispatcher.fd_lock)
         queue_out.put('ready')
 
         print('waiting for message to start test')
