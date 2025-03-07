@@ -31,5 +31,5 @@ def test_clear_math_by_worker_count(benchmark, workers, with_pool_server):
     root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
     sys.path.append(root_dir)
 
-    with with_pool_server(workers, function='lambda: __import__("tests.data.methods").fibonacci(26)') as pool_server:
+    with with_pool_server(workers, function='lambda: __import__("tests.data.methods").fibonacci(35)') as pool_server:
         benchmark(pool_server.run_benchmark_test, pool_server.queue_in, pool_server.queue_out, 100)
