@@ -1,7 +1,9 @@
 import asyncio
 import logging
-from typing import Union
+from typing import Optional, Union
 
+from ..protocols import DispatcherMain
+from ..service.asyncio_tasks import ensure_fatal
 from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
@@ -13,13 +15,15 @@ class ScheduledProducer(BaseProducer):
         self.scheduled_tasks: list[asyncio.Task] = []
         super().__init__()
 
-    async def start_producing(self, dispatcher) -> None:
+    async def start_producing(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
         for task_name, options in self.task_schedule.items():
             submission_options = options.copy()
             per_seconds = submission_options.pop('schedule')
-            schedule_task = asyncio.create_task(self.run_schedule_forever(task_name, per_seconds, dispatcher, submission_options))
+            schedule_task = ensure_fatal(
+                asyncio.create_task(self.run_schedule_forever(task_name, per_seconds, dispatcher, submission_options), name=f'schedule_for_{task_name}'),
+                exit_event=exit_event,
+            )
             self.scheduled_tasks.append(schedule_task)
-            schedule_task.add_done_callback(dispatcher.fatal_error_callback)
         if self.events:
             self.events.ready_event.set()
 
