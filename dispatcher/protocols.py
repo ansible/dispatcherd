@@ -65,7 +65,6 @@ class WorkerPool(Protocol):
 
 
 class DispatcherMain(Protocol):
-    fd_lock: asyncio.Lock
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""
