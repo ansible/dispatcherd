@@ -10,9 +10,6 @@ class ItWorked(Exception):
 
 
 class Dispatcher:
-    def __init__(self):
-        self.test_done = asyncio.Event()
-
     async def process_message(self, message):
         assert message.get('on_duplicate') == 'queue_one'
         assert 'schedule' not in message
@@ -25,6 +22,7 @@ class Dispatcher:
 async def run_schedules_for_a_while(producer):
     dispatcher = Dispatcher()
     await producer.start_producing(dispatcher)
+    assert len(producer.all_tasks()) == 1
     for task in producer.all_tasks():
         await task
 
