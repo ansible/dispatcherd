@@ -27,11 +27,12 @@ jobs:
         run: pip install -e .[pg_notify]
       - run: make postgres
       - run: pip install pytest pytest-asyncio
-      - run: pytest tests/unit tests/integration -vv -s
+      - run: pytest tests/unit tests/integration -vv -s -m "not integration"
 
   black:
     name: Run black
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,6 +44,7 @@ jobs:
   isort:
     name: Run isort
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +56,7 @@ jobs:
   mypy:
     name: Run mypy
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +70,7 @@ jobs:
   flake8:
     name: Run flake8
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,3 +78,28 @@ jobs:
 
       - run: pip install flake8
       - run: flake8 dispatcher
+
+  benchmark:
+    name: Run benchmark tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dispatcher
+        run: pip install -e .[pg_notify]
+      - run: make postgres
+      - run: pip install pytest pytest-benchmark pytest-asyncio
+      - run: make benchmark
+
+      - name: Save benchmark results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark_data.json

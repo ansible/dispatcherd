@@ -20,3 +20,6 @@ linters:
 	isort dispatcher/
 	flake8 dispatcher/
 	mypy dispatcher
+
+benchmark:
+	py.test tests/ --benchmark-columns=mean,min,max,stddev,rounds --benchmark-json=benchmark_data.json --benchmark-only
