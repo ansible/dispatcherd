@@ -4,14 +4,14 @@ import sys
 import pytest
 
 
-@pytest.mark.benchmark(group="by_task")
+@pytest.mark.benchmark(group="sleep_by_task")
 @pytest.mark.parametrize('times', [1, 10, 100, 1000])
 def test_clear_sleep_by_task_number(benchmark, times, with_pool_server):
     with with_pool_server(4, function='lambda: __import__("time").sleep(0.01)') as pool_server:
         benchmark(pool_server.run_benchmark_test, pool_server.queue_in, pool_server.queue_out, times)
 
 
-@pytest.mark.benchmark(group="by_task")
+@pytest.mark.benchmark(group="no_op_by_task")
 @pytest.mark.parametrize('times', [1, 10, 100, 1000])
 def test_clear_no_op_by_task_number(benchmark, times, with_pool_server):
     with with_pool_server(4, function='lambda: None') as pool_server:
