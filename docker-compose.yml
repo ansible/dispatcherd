@@ -14,3 +14,28 @@ services:
       retries: 5
     ports:
       - "55777:5432"
+  dispatcherd1:
+    container_name: dispatcherd1
+    working_dir: /dispatcherd
+    build:
+      context: .
+      dockerfile: tools/demo/Dockerfile
+    environment:
+      PATH: /dispatcherd/venv/bin:$PATH
+      PYTHONPATH: .
+    command: dispatcherd --config=/dispatcherd/dispatcher1.yml
+    depends_on:
+      msg_postgres:
+        condition: service_healthy
+  dispatcherd2:
+    container_name: dispatcherd2
+    build:
+      context: .
+      dockerfile: tools/demo/Dockerfile
+    environment:
+      PATH: /dispatcherd/venv/bin:$PATH
+      PYTHONPATH: .
+    command: dispatcherd --config=/dispatcherd/dispatcher2.yml
+    depends_on:
+      msg_postgres:
+        condition: service_healthy
