@@ -123,7 +123,10 @@ class Control(object):
         if data:
             send_data['control_data'] = data
 
-        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        if self.broker_name == 'pg_notify':
+            broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        else:
+            broker = get_broker(self.broker_name, self.broker_config)
 
         def connected_callback() -> None:
             payload = json.dumps(send_data)

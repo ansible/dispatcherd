@@ -127,32 +127,58 @@ and allows for additional configuration parameters to come after those.
 
 ### Manual Demo
 
-For this demo, the [tests/data/methods.py](tests/data/methods.py) will be used
-in place of a real app. Making those importable is why `PYTHONPATH` must be
-modified in some steps. The config for this demo can be found in the
-[dispatcher.yml](dispatcher.yml) file, which is a default location
-the `dispatcher-standalone` entrypoint looks for.
-
 Initial setup:
 
 ```
 pip install -e .[pg_notify]
+```
+
+#### Service in foreground
+
+To experience running a `dispatcherd` service, you can try this:
+
+```
 make postgres
+dispatcherd
 ```
 
-You need to have 2 terminal tabs open to run this.
+The `dispatcherd` entrypoint will look for a config file in the current
+directory if not otherwise specified, which is [dispatcher.yml](dispatcher.yml)
+in this case. You can see it running some schedules and listening.
+
+Ctl+c to stop that server.
+
+#### Two nodes in background
+
+The following will start up postgres, then start up 2 dispatcher services.
+It should take a few seconds, mainly waiting for postgres.
 
 ```
-# tab 1
-PYTHONPATH=$PYTHONPATH:. dispatcher-standalone
-# tab 2
+make demo
+```
+
+After it completes `docker ps -a` should show `dispatcherd1` and `dispatcherd2`
+containers as well as postgres.
+These can accept task submissions. So submit a lot of tasks as a python
+task publisher:
+
+```
 ./run_demo.py
 ```
 
-This will run the dispatcher with schedules, and process bursts of messages
-that give instructions to run tasks. Tab 2 will contain some responses
-from the dispatcher service. Tab 1 will show a large volume of logs
-related to processing tasks.
+You can talk to these services _via_ postgres, using the same local config.
+
+```
+dispatcherctl running
+dispatcherctl workers
+```
+
+This will likely show scheduled tasks and leftover tasks from the demo.
+You can do some filtering
+
+```
+dispatcherctl running --uuid=wait-0
+```
 
 ### Running Tests
 

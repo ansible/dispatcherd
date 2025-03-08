@@ -20,3 +20,6 @@ linters:
 	isort dispatcher/
 	flake8 dispatcher/
 	mypy dispatcher
+
+demo:
+	docker compose up -d
