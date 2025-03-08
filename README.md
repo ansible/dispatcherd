@@ -125,34 +125,65 @@ print_hello.apply_async(args=[], kwargs={})
 The difference is that `apply_async` takes both args and kwargs as kwargs themselves,
 and allows for additional configuration parameters to come after those.
 
-### Manual Demo
+### Manual Demos
 
-For this demo, the [tests/data/methods.py](tests/data/methods.py) will be used
-in place of a real app. Making those importable is why `PYTHONPATH` must be
-modified in some steps. The config for this demo can be found in the
-[dispatcher.yml](dispatcher.yml) file, which is a default location
-the `dispatcher-standalone` entrypoint looks for.
+#### Service in foreground
 
 Initial setup:
 
 ```
 pip install -e .[pg_notify]
+```
+
+To experience running a `dispatcherd` service, you can try this:
+
+```
 make postgres
+dispatcherd
 ```
 
-You need to have 2 terminal tabs open to run this.
+The `dispatcherd` entrypoint will look for a config file in the current
+directory if not otherwise specified, which is [dispatcher.yml](dispatcher.yml)
+in this case. You can see it running some schedules and listening.
+
+Ctl+c to stop that server.
+
+#### Two nodes in background
+
+The following will start up postgres, then start up 2 dispatcher services.
+It should take a few seconds, mainly waiting for postgres.
 
 ```
-# tab 1
-PYTHONPATH=$PYTHONPATH:. dispatcher-standalone
-# tab 2
-./run_demo.py
+make demo
 ```
 
-This will run the dispatcher with schedules, and process bursts of messages
-that give instructions to run tasks. Tab 2 will contain some responses
-from the dispatcher service. Tab 1 will show a large volume of logs
-related to processing tasks.
+After it completes `docker ps -a` should show `dispatcherd1` and `dispatcherd2`
+containers as well as postgres. You can see logs via `docker logs dispatcherd1`.
+These will accept task submissions. Submit a lot of tasks as a python
+task publisher with the `run_demo.py` script. To get accurate replies,
+we need to specify that `2` replies are expected because we are
+communicating with 2 background task services.
+
+```
+./run_demo.py 2
+```
+
+You can talk to these services over postgres with `dispatcherctl`,
+using the same local `dispatcher.yml` config.
+
+```
+dispatcherctl running
+dispatcherctl workers
+```
+
+The "running" command will likely show scheduled tasks and leftover tasks from the demo.
+For demo, the `uuid` and `task` options allow doing filtering.
+
+```
+dispatcherctl running --task=tests.data.methods.sleep_function
+```
+
+This would show any specific instance of `tests.data.methods.sleep_function` currently running.
 
 ### Running Tests
 
