@@ -23,3 +23,6 @@ linters:
 
 demo:
 	docker compose up -d
+
+stop-demo:
+	docker compose down
