@@ -125,15 +125,15 @@ print_hello.apply_async(args=[], kwargs={})
 The difference is that `apply_async` takes both args and kwargs as kwargs themselves,
 and allows for additional configuration parameters to come after those.
 
-### Manual Demo
+### Manual Demos
+
+#### Service in foreground
 
 Initial setup:
 
 ```
 pip install -e .[pg_notify]
 ```
-
-#### Service in foreground
 
 To experience running a `dispatcherd` service, you can try this:
 
