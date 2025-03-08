@@ -158,27 +158,32 @@ make demo
 ```
 
 After it completes `docker ps -a` should show `dispatcherd1` and `dispatcherd2`
-containers as well as postgres.
-These can accept task submissions. So submit a lot of tasks as a python
-task publisher:
+containers as well as postgres. You can see logs via `docker logs dispatcherd1`.
+These will accept task submissions. Submit a lot of tasks as a python
+task publisher with the `run_demo.py` script. To get accurate replies,
+we need to specify that `2` replies are expected because we are
+communicating with 2 background task services.
 
 ```
-./run_demo.py
+./run_demo.py 2
 ```
 
-You can talk to these services _via_ postgres, using the same local config.
+You can talk to these services over postgres with `dispatcherctl`,
+using the same local `dispatcher.yml` config.
 
 ```
 dispatcherctl running
 dispatcherctl workers
 ```
 
-This will likely show scheduled tasks and leftover tasks from the demo.
-You can do some filtering
+The "running" command will likely show scheduled tasks and leftover tasks from the demo.
+For demo, the `uuid` and `task` options allow doing filtering.
 
 ```
-dispatcherctl running --uuid=wait-0
+dispatcherctl running --task=tests.data.methods.sleep_function
 ```
+
+This would show any specific instance of `tests.data.methods.sleep_function` currently running.
 
 ### Running Tests
 

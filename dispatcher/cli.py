@@ -60,6 +60,12 @@ def control() -> None:
         default=None,
         help='Task uuid to filter on.',
     )
+    parser.add_argument(
+        '--expected-replies',
+        type=int,
+        default=1,
+        help='Expected number of replies, in case you are have more than 1 service running.',
+    )
     args = setup_from_parser(parser)
     data = {}
     for field in ('task', 'uuid'):
@@ -67,5 +73,5 @@ def control() -> None:
         if val:
             data[field] = val
     ctl = get_control_from_settings()
-    returned = ctl.control_with_reply(args.command, data=data)
+    returned = ctl.control_with_reply(args.command, data=data, expected_replies=args.expected_replies)
     print(yaml.dump(returned, default_flow_style=False))
