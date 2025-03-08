@@ -21,7 +21,7 @@ class BrokerCallbacks:
         self.expected_replies = expected_replies
 
     async def connected_callback(self) -> None:
-        await self.broker.apublish_message(self.queuename, self.send_message)
+        await self.broker.apublish_message(channel=self.queuename, message=self.send_message)
 
     async def listen_for_replies(self) -> None:
         """Listen to the reply channel until we get the expected number of messages.
@@ -94,12 +94,14 @@ class Control:
             await broker.aclose()
 
     def control_with_reply(self, command: str, expected_replies: int = 1, timeout: float = 1.0, data: Optional[dict] = None) -> list[dict]:
-        logger.info(f'control-and-reply {command} to {self.queuename}')
         start = time.time()
         reply_queue = Control.generate_reply_queue_name()
         send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
 
-        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        try:
+            broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        except TypeError:
+            broker = get_broker(self.broker_name, self.broker_config)
 
         def connected_callback() -> None:
             broker.publish_message(channel=self.queuename, message=send_message)

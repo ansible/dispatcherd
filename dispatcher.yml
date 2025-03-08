@@ -21,6 +21,8 @@ brokers:
     default_publish_channel: test_channel
     max_connection_idle_seconds: 5
     max_self_check_message_age_seconds: 2
+  socket:
+    socket_path: demo_dispatcher.sock
 producers:
   ScheduledProducer:
     task_schedule:
@@ -32,4 +34,5 @@ producers:
     task_list:
       'lambda: print("This task runs on startup")': {}
 publish:
+  default_control_broker: socket
   default_broker: pg_notify

@@ -10,6 +10,8 @@ import psycopg
 from ..protocols import BrokerSelfCheckStatus
 from ..utils import resolve_callable
 
+from ..protocols import Broker as BrokerProtocol
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +38,7 @@ def create_connection(**config) -> psycopg.Connection:  # type: ignore[no-untype
     return connection
 
 
-class Broker:
+class Broker(BrokerProtocol):
     NOTIFY_QUERY_TEMPLATE = 'SELECT pg_notify(%s, %s);'
 
     def __init__(
@@ -129,6 +131,9 @@ class Broker:
             return self.channels[0]
 
         raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
+
+    def __str__(self) -> str:
+        return 'pg_notify-broker'
 
     # --- asyncio connection methods ---
 
@@ -227,7 +232,7 @@ class Broker:
         """The inner logic of async message publishing where we already have a cursor"""
         await cursor.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
-    async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:  # public
+    async def apublish_message(self, channel: Optional[str] = None, origin: Union[str, int, None] = '', message: str = '') -> None:  # public
         """asyncio way to publish a message, used to send control in control-and-reply
 
         Not strictly necessary for the service itself if it sends replies in the workers,
