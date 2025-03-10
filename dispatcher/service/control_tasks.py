@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 __all__ = ['running', 'cancel', 'alive', 'workers']
@@ -37,14 +36,9 @@ async def _find_tasks(dispatcher, cancel: bool = False, **data) -> dict[str, dic
     for i, capsule in enumerate(dispatcher.delayed_messages.copy()):
         if task_filter_match(capsule.message, data):
             if cancel:
-                logger.warning(f'Canceling delayed task (uuid={capsule.uuid})')
-                capsule.task.cancel()
-                try:
-                    await capsule.task
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    logger.error(f'Error canceling delayed task (uuid={capsule.uuid})')
+                uuid = capsule.message.get('uuid', '<unknown>')
+                logger.warning(f'Canceling delayed task (uuid={uuid})')
+                capsule.has_ran = True  # make sure we do not run by accident
                 dispatcher.delayed_messages.remove(capsule)
             ret[f'delayed-{i}'] = capsule.message
     return ret
