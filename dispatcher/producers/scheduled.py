@@ -28,7 +28,7 @@ class ScheduledProducer(BaseProducer):
         self.task_schedule = task_schedule
         self.schedule_entries: set[ScheduleEntry] = set()
         self.dispatcher: Optional[DispatcherMain] = None
-        self.schedule_runner = NextWakeupRunner(self.schedule_entries, self.trigger_schedule)
+        self.schedule_runner = NextWakeupRunner(self.schedule_entries, self.trigger_schedule, name='ScheduledProducer')
         super().__init__()
 
     async def trigger_schedule(self, entry: ScheduleEntry) -> None:
@@ -41,6 +41,7 @@ class ScheduledProducer(BaseProducer):
 
     async def start_producing(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
         self.dispatcher = dispatcher
+        self.schedule_runner.exit_event = exit_event
         current_time = time.monotonic()
 
         for task_name, options in self.task_schedule.items():

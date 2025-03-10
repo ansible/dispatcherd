@@ -40,7 +40,6 @@ class DelayCapsule(HasWakeup):
 class DispatcherMain:
     def __init__(self, producers: Iterable[Producer], pool: WorkerPool, node_id: Optional[str] = None):
         self.delayed_messages: set[DelayCapsule] = set()
-        self.delayed_runner = NextWakeupRunner(self.delayed_messages, self.process_delayed_task)
         self.received_count = 0
         self.control_count = 0
         self.shutting_down = False
@@ -60,6 +59,9 @@ class DispatcherMain:
             self.node_id = str(uuid4())
 
         self.events: DispatcherEvents = DispatcherEvents()
+
+        self.delayed_runner = NextWakeupRunner(self.delayed_messages, self.process_delayed_task, name='delayed_task_runner')
+        self.delayed_runner.exit_event = self.events.exit_event
 
     def receive_signal(self, *args, **kwargs) -> None:
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
