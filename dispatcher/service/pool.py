@@ -6,8 +6,8 @@ import time
 from typing import Any, Literal, Optional
 
 from .asyncio_tasks import ensure_fatal
-from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .blocker import Blocker
+from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
 from .queuer import Queuer
 
