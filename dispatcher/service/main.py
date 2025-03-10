@@ -1,6 +1,17 @@
 import asyncio
 import json
 import logging
+import prometheus_client
+from prometheus_client import (
+    generate_latest,
+    Gauge,
+    Counter,
+    Enum,
+    CollectorRegistry,
+    parser,
+)
+from prometheus_client.core import GaugeMetricFamily, CounterMetricFamily, REGISTRY, StateSetMetricFamily
+from prometheus_client.registry import Collector
 import signal
 import time
 from typing import Iterable, Optional, Union
@@ -13,6 +24,53 @@ from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .pool import WorkerPool
 
 logger = logging.getLogger(__name__)
+
+
+class MetricsNamespace:
+    def __init__(self, namespace):
+        self._namespace = namespace
+
+
+class MetricsServerSettings(MetricsNamespace):
+    def port(self):
+        return 8070
+
+
+class MetricsServer(MetricsServerSettings):
+    def __init__(self, namespace, registry):
+        MetricsNamespace.__init__(self, namespace)
+        self._registry = registry
+
+        self._server = None
+        self._tid = None
+
+    def start(self):
+        try:
+            # TODO: addr for ipv6 ?
+            self._server, self._tid = prometheus_client.start_http_server(self.port(), addr='localhost', registry=self._registry)
+        except Exception:
+            logger.error(f"MetricsServer failed to start for service '{self._namespace}.")
+            raise
+        
+    def stop(self):
+        self._server.shutdown()
+        self._tid.join()
+
+
+class CustomCollector(Collector):
+    def __init__(self, do_metrics):
+        self._do_metrics = do_metrics
+
+    def collect(self):
+        for m in self._do_metrics():
+            yield m
+
+
+class DispatcherMetricsServer(MetricsServer):
+    def __init__(self, do_metrics):
+        registry = CollectorRegistry(auto_describe=True)
+        registry.register(CustomCollector(do_metrics))
+        super().__init__('dispatcherd', registry)
 
 
 class DispatcherEvents:
@@ -60,6 +118,8 @@ class DispatcherMain:
             self.node_id = str(uuid4())
 
         self.events: DispatcherEvents = DispatcherEvents()
+        
+        self._metrics_server = DispatcherMetricsServer(self.do_metrics)
 
     def receive_signal(self, *args, **kwargs) -> None:
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
@@ -227,6 +287,8 @@ class DispatcherMain:
 
     async def main(self) -> None:
         await self.connect_signals()
+        
+        self.start_metrics()
 
         try:
             await self.start_working()
@@ -237,5 +299,58 @@ class DispatcherMain:
             await self.shutdown()
 
             await self.cancel_tasks()
+            
+            self.stop_metrics()
 
         logger.debug('Dispatcher loop fully completed')
+
+    def start_metrics(self) -> None:
+        self._metrics_server.start()
+
+    def stop_metrics(self) -> None:
+        self._metrics_server.stop()
+        
+    def do_metrics(self) -> None:
+        yield CounterMetricFamily(
+            f'dispatcher_messages_received_total',
+            'Number of messages received by dispatchermain',
+            value=self.received_count,
+        )
+        yield CounterMetricFamily(
+            f'dispatcher_control_messages_count',
+            'Number of control messages received.',
+            value=self.control_count,
+        )
+        created_at = GaugeMetricFamily(
+            f'dispatcher_worker_created_at',
+            'Creation time of worker',
+            labels=['worker_index'],
+        )
+        finished_count = GaugeMetricFamily(
+            f'dispatcher_worker_finished_count',
+            'Finished count of tasks by the worker',
+            labels=['worker_index'],
+        )
+        worker_status = StateSetMetricFamily(
+            f'dispatcher_worker_status',
+            'Status of worker.',
+            labels=['worker_index']
+        )
+        
+
+        for worker_index, worker in self.pool.workers.items():
+            created_at.add_metric([f'{worker_index}'], worker.created_at)
+            finished_count.add_metric([f'{worker_index}'], worker.finished_count)
+            worker_status.add_metric([f'{worker_index}'], {
+                'initialized': worker.status == 'initialized',
+                'spawned': worker.status == 'spawned',
+                'starting': worker.status == 'starting',
+                'ready': worker.status == 'ready',
+                'stopping': worker.status == 'stopping',
+                'exited': worker.status == 'exited',
+                'error': worker.status == 'error',
+                'retired': worker.status == 'retired'
+            })
+        yield created_at
+        yield finished_count
+        yield worker_status
