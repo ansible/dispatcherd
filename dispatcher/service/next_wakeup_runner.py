@@ -58,7 +58,7 @@ class NextWakeupRunner:
            without calling the callback for anything
         """
         future_wakeup = None
-        for obj in self.wakeup_objects:
+        for obj in list(self.wakeup_objects):
             if obj_wakeup := obj.next_wakeup():
                 if do_processing and (obj_wakeup < current_time):
                     await self.process_object(obj)
