@@ -2,7 +2,7 @@ import asyncio
 import io
 import logging
 
-__all__ = ['running', 'cancel', 'alive', 'workers']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers']
 
 
 logger = logging.getLogger(__name__)
