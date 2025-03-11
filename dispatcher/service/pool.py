@@ -299,7 +299,7 @@ class WorkerPool:
         remove_ids = []
         for worker in self.workers.values():
             # Check for workers that died unexpectedly
-            if worker.status not in ['retired', 'error', 'exited'] and not worker.process.is_alive():
+            if worker.status not in ['retired', 'error', 'exited', 'initialized', 'spawned'] and not worker.process.is_alive():
                 logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
 
                 if worker.current_task:
