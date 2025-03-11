@@ -188,6 +188,25 @@ async def test_alive_check(apg_dispatcher, pg_control):
 
 
 @pytest.mark.asyncio
+async def test_aio_tasks(apg_dispatcher, pg_control):
+    aio_tasks_list = await asyncio.wait_for(pg_control.acontrol_with_reply('aio_tasks', timeout=1), timeout=5)
+    assert len(aio_tasks_list) == 1
+    aio_tasks = aio_tasks_list[0]
+    assert 'results_task' in aio_tasks
+    assert aio_tasks['results_task']['done'] is False
+    assert aio_tasks['results_task'].get('stack')
+    assert 'No stack for' not in aio_tasks['results_task'].get('stack')
+    assert apg_dispatcher.control_count == 1
+
+    aio_tasks_list = await asyncio.wait_for(pg_control.acontrol_with_reply('aio_tasks', data={'limit': 0}, timeout=1), timeout=5)
+
+    assert len(aio_tasks_list) == 1
+    aio_tasks = aio_tasks_list[0]
+    assert 'No stack for' in aio_tasks['results_task'].get('stack')
+    assert apg_dispatcher.control_count == 2
+
+
+@pytest.mark.asyncio
 async def test_task_discard(apg_dispatcher, pg_message):
     messages = [
         json.dumps(

@@ -1,6 +1,8 @@
+import asyncio
+import io
 import logging
 
-__all__ = ['running', 'cancel', 'alive', 'workers']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers']
 
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,24 @@ async def running(dispatcher, **data) -> dict[str, dict]:
 async def cancel(dispatcher, **data) -> dict[str, dict]:
     async with dispatcher.pool.management_lock:
         return await _find_tasks(dispatcher, cancel=True, **data)
+
+
+def _stack_from_task(task: asyncio.Task, limit=6) -> str:
+    buffer = io.StringIO()
+    task.print_stack(file=buffer, limit=limit)
+    return buffer.getvalue()
+
+
+async def aio_tasks(dispatcher, **data) -> dict[str, dict]:
+    ret = {}
+    extra = {}
+    if 'limit' in data:
+        extra['limit'] = data['limit']
+
+    for task in asyncio.all_tasks():
+        task_name = task.get_name()
+        ret[task_name] = {'done': task.done(), 'stack': _stack_from_task(task, **extra)}
+    return ret
 
 
 async def alive(dispatcher, **data) -> dict:
