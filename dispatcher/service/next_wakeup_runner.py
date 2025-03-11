@@ -97,12 +97,12 @@ class NextWakeupRunner:
         self.asyncio_task = asyncio.create_task(self.background_task(), name=self.name)
         ensure_fatal(self.asyncio_task)
 
-    def kick(self) -> None:
+    async def kick(self) -> None:
         """Initiates the asyncio task to wake up at the next run time
 
         This needs to be called if objects in wakeup_objects are changed, for example
         """
-        if self.process_wakeups(current_time=time.monotonic(), do_processing=False) is None:
+        if await self.process_wakeups(current_time=time.monotonic(), do_processing=False) is None:
             # Optimization here, if there is no next time, do not bother managing tasks
             return
         if self.asyncio_task:
@@ -120,4 +120,4 @@ class NextWakeupRunner:
 
     async def shutdown(self):
         self.shutting_down = True
-        self.kick()
+        await self.kick()
