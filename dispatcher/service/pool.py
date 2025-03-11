@@ -298,12 +298,24 @@ class WorkerPool:
         """
         remove_ids = []
         for worker in self.workers.values():
+            # Check for workers that died unexpectedly
+            if worker.status not in ['retired', 'error', 'exited'] and not worker.process.is_alive():
+                logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
+
+                if worker.current_task:
+                    uuid = worker.current_task.get('uuid', '<unknown>')
+                    logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} but the worker died unexpectedly')
+                    self.canceled_count += 1
+                    worker.is_active_cancel = False  # Ensure it's not processed by timeout runner
+
+                worker.status = 'error'
+                worker.retired_at = time.monotonic()
+
             if worker.status == 'exited':
                 await worker.stop()  # happy path
             elif worker.status == 'stopping' and worker.stopping_at and (time.monotonic() - worker.stopping_at) > self.worker_stop_wait:
                 logger.warning(f'Worker id={worker.worker_id} failed to respond to stop signal')
                 await worker.stop()  # agressively bring down process
-
             elif worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
                 remove_ids.append(worker.worker_id)
 
