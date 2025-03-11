@@ -28,7 +28,7 @@ async def test_scale_due_to_queue_pressure(test_settings):
     for worker in pool.workers.values():
         worker.status = 'ready'  # a lie, for test
         worker.current_task = {'task': 'waiting.task'}
-    pool.queued_messages = [{'task': 'waiting.task'}]
+    pool.queuer.queued_messages = [{'task': 'waiting.task'}]
     assert len(pool.workers) == 5
     await pool.scale_workers()
     assert len(pool.workers) == 6
@@ -50,7 +50,7 @@ async def test_initialized_workers_count_for_scaling(test_settings):
     assert len(pool.workers) == 5
     assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}
 
-    pool.queued_messages = [{'task': 'waiting.task'} for i in range(5)]  # 5 tasks, 5 workers
+    pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(5)]  # 5 tasks, 5 workers
     await pool.scale_workers()
     assert len(pool.workers) == 5
 
@@ -68,7 +68,7 @@ async def test_initialized_and_ready_but_scale(test_settings):
     await pool.scale_workers()
     assert len(pool.workers) == 2
 
-    pool.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 2 workers
+    pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 2 workers
     await pool.scale_workers()
     assert len(pool.workers) == 3  # grew, added 1 more initialized worker
     assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}  # everything still in startup
@@ -81,7 +81,7 @@ async def test_scale_down_condition(test_settings):
     pool = WorkerPool(pm, min_workers=1, max_workers=3)
 
     # Prepare for test by scaling up to the 3 max workers by adding demand
-    pool.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 3 workers
+    pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 3 workers
     for i in range(3):
         await pool.scale_workers()
     assert len(pool.workers) == 3
@@ -91,7 +91,7 @@ async def test_scale_down_condition(test_settings):
     assert set([worker.status for worker in pool.workers.values()]) == {'ready'}
 
     # Clear queue and set finished times to long ago
-    pool.queued_messages = []  # queue has been fully worked through, no workers are busy
+    pool.queuer.queued_messages = []  # queue has been fully worked through, no workers are busy
     pool.last_used_by_ct = {i: time.monotonic() - 120. for i in range(30)}  # all work finished 120 seconds ago
 
     # Outcome of this situation is expected to be a scale-down event
@@ -108,7 +108,7 @@ async def test_error_while_scaling_up(test_settings):
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=1, max_workers=1)
 
-    pool.queued_messages = [{'task': 'waiting.task'}]
+    pool.queuer.queued_messages = [{'task': 'waiting.task'}]
     for i in range(3):
         await pool.scale_workers()
     assert len(pool.workers) == 1

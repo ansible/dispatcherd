@@ -15,9 +15,6 @@ class Dispatcher:
         assert 'schedule' not in message
         raise ItWorked
 
-    def fatal_error_callback(self, *args, **kwargs):
-        raise Exception('task error')
-
 
 async def run_schedules_for_a_while(producer):
     dispatcher = Dispatcher()

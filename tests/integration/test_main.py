@@ -219,7 +219,7 @@ async def test_task_discard(apg_dispatcher, pg_message):
     await wait_to_receive(apg_dispatcher, 10)
 
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.discard_count] == [0, 9]  # First task should still be running
+    assert [pool.finished_count, pool.blocker.discard_count] == [0, 9]  # First task should still be running
 
 
 @pytest.mark.asyncio
@@ -230,7 +230,7 @@ async def test_task_discard_in_task_definition(apg_dispatcher, test_settings):
     await wait_to_receive(apg_dispatcher, 10)
 
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.discard_count] == [0, 9]  # First task should still be running
+    assert [pool.finished_count, pool.blocker.discard_count] == [0, 9]  # First task should still be running
 
 
 @pytest.mark.asyncio
@@ -241,7 +241,7 @@ async def test_tasks_in_serial(apg_dispatcher, test_settings):
     await wait_to_receive(apg_dispatcher, 10)
 
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, sum(1 for w in pool.workers.values() if w.current_task), len(pool.queued_messages), pool.discard_count] == [0, 1, 9, 0]
+    assert [pool.finished_count, sum(1 for w in pool.workers.values() if w.current_task), pool.blocker.count(), pool.blocker.discard_count] == [0, 1, 9, 0]
 
 
 @pytest.mark.asyncio
@@ -252,7 +252,7 @@ async def test_tasks_queue_one(apg_dispatcher, test_settings):
     await wait_to_receive(apg_dispatcher, 10)
 
     pool = apg_dispatcher.pool
-    assert [pool.finished_count, sum(1 for w in pool.workers.values() if w.current_task), len(pool.queued_messages), pool.discard_count] == [0, 1, 1, 8]
+    assert [pool.finished_count, sum(1 for w in pool.workers.values() if w.current_task), pool.blocker.count(), pool.blocker.discard_count] == [0, 1, 1, 8]
 
 
 @pytest.mark.asyncio

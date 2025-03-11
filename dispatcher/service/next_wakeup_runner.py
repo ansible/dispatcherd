@@ -41,6 +41,8 @@ class NextWakeupRunner:
         self.asyncio_task: Optional[asyncio.Task] = None
         self.kick_event = asyncio.Event()
         self.shutting_down: bool = False
+        # If we hit errors, will set this to tell main program to exit, not expected to be present at __init__
+        self.exit_event: Optional[asyncio.Event] = None
         if name is None:
             method_name = getattr(process_object, '__name__', str(process_object))
             self.name = f'next-run-manager-of-{method_name}'
@@ -95,7 +97,7 @@ class NextWakeupRunner:
     def mk_new_task(self) -> None:
         """Should only be called if a task is not currently running"""
         self.asyncio_task = asyncio.create_task(self.background_task(), name=self.name)
-        ensure_fatal(self.asyncio_task)
+        ensure_fatal(self.asyncio_task, exit_event=self.exit_event)
 
     async def kick(self) -> None:
         """Initiates the asyncio task to wake up at the next run time

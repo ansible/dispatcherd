@@ -80,7 +80,7 @@ class Control(object):
         await producer.start_producing(control_callbacks)
         for task in producer.all_tasks():
             # Make sure we catch errors
-            ensure_fatal(task)
+            ensure_fatal(task, exit_event=control_callbacks.events.exit_event)
 
         await producer.events.ready_event.wait()
 

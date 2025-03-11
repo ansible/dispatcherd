@@ -3,12 +3,13 @@ import logging
 import os
 import signal
 import time
-from typing import Any, Iterator, Literal, Optional
+from typing import Any, Literal, Optional
 
-from ..utils import DuplicateBehavior, MessageAction
 from .asyncio_tasks import ensure_fatal
+from .blocker import Blocker
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
+from .queuer import Queuer
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ class PoolWorker(HasWakeup):
         self.finished_count = 0
         self.status: Literal['initialized', 'spawned', 'starting', 'ready', 'stopping', 'exited', 'error', 'retired'] = 'initialized'
         self.exit_msg_event = asyncio.Event()
+
+    def is_ready(self):
+        """Worker is ready to receive task requests"""
+        return bool(self.status == 'ready')
 
     async def start(self) -> None:
         if self.status != 'initialized':
@@ -174,12 +179,10 @@ class WorkerPool:
 
         # internal tracking variables
         self.workers: dict[int, PoolWorker] = {}
-        self.queued_messages: list[dict] = []  # TODO: use deque https://github.com/ansible/dispatcherd/issues/104
         self.next_worker_id = 0
         self.shutting_down = False
         self.finished_count: int = 0
         self.canceled_count: int = 0
-        self.discard_count: int = 0
         self.shutdown_timeout = 3
 
         # the timeout runner keeps its own task
@@ -199,17 +202,22 @@ class WorkerPool:
         self.worker_stop_wait = worker_stop_wait  # seconds to wait for a worker to exit on its own before SIGTERM, SIGKILL
         self.worker_removal_wait = worker_removal_wait  # after worker process exits, seconds to keep its record, for stats
 
+        # queuer and blocker objects hold an internal inventory of tasks that can not yet run
+        self.queuer = Queuer(self.workers.values())
+        self.blocker = Blocker(self.queuer)
+
     @property
     def processed_count(self):
-        return self.finished_count + self.canceled_count + self.discard_count
+        return self.finished_count + self.canceled_count + self.blocker.discard_count
 
     @property
     def received_count(self):
-        return self.processed_count + len(self.queued_messages) + sum(1 for w in self.workers.values() if w.current_task)
+        return self.processed_count + self.queuer.count() + self.blocker.count() + sum(1 for w in self.workers.values() if w.current_task)
 
-    async def start_working(self, forking_lock: asyncio.Lock) -> None:
-        self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'))
-        self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(forking_lock=forking_lock), name='management_task'))
+    async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
+        self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'), exit_event=exit_event)
+        self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(forking_lock=forking_lock), name='management_task'), exit_event=exit_event)
+        self.timeout_runner.exit_event = exit_event
 
     def get_running_count(self) -> int:
         ct = 0
@@ -368,6 +376,8 @@ class WorkerPool:
         self.shutting_down = True
         self.events.management_event.set()
         await self.timeout_runner.shutdown()
+        self.queuer.shutdown()
+        self.blocker.shutdown()
         await self.stop_workers()
         self.process_manager.finished_queue.put('stop')
 
@@ -391,125 +401,45 @@ class WorkerPool:
             except asyncio.CancelledError:
                 pass  # intended
 
-        if self.queued_messages:
-            uuids = [message.get('uuid', '<unknown>') for message in self.queued_messages]
-            logger.error(f'Dispatcher shut down with queued work, uuids: {uuids}')
-
         logger.info('Pool is shut down')
-
-    def get_free_worker(self) -> Optional[PoolWorker]:
-        for candidate_worker in self.workers.values():
-            if (not candidate_worker.current_task) and candidate_worker.status == 'ready':
-                return candidate_worker
-        return None
-
-    def running_tasks(self) -> Iterator[dict]:
-        for worker in self.workers.values():
-            if worker.current_task:
-                yield worker.current_task
-
-    def _duplicate_in_list(self, message, task_iter) -> bool:
-        for other_message in task_iter:
-            if other_message is message:
-                continue
-            keys = ('task', 'args', 'kwargs')
-            if all(other_message.get(key) == message.get(key) for key in keys):
-                return True
-        return False
-
-    def already_running(self, message) -> bool:
-        return self._duplicate_in_list(message, self.running_tasks())
-
-    def already_queued(self, message) -> bool:
-        return self._duplicate_in_list(message, self.queued_messages)
-
-    def get_blocking_action(self, message: dict) -> str:
-        on_duplicate = message.get('on_duplicate', DuplicateBehavior.parallel.value)
-
-        if on_duplicate == DuplicateBehavior.serial.value:
-            if self.already_running(message):
-                return MessageAction.queue.value
-
-        elif on_duplicate == DuplicateBehavior.discard.value:
-            if self.already_running(message) or self.already_queued(message):
-                return MessageAction.discard.value
-
-        elif on_duplicate == DuplicateBehavior.queue_one.value:
-            if self.already_queued(message):
-                return MessageAction.discard.value
-            elif self.already_running(message):
-                return MessageAction.queue.value
-
-        elif on_duplicate != DuplicateBehavior.parallel.value:
-            logger.warning(f'Got unexpected on_duplicate value {on_duplicate}')
-
-        return MessageAction.run.value
-
-    def message_is_blocked(self, message: dict) -> bool:
-        return bool(self.get_blocking_action(message) == MessageAction.queue.value)
-
-    def get_unblocked_message(self) -> Optional[dict]:
-        """Returns a message from the queue that is unblocked to run, if one exists"""
-        for message in self.queued_messages:
-            if not self.message_is_blocked(message):
-                return message
-        return None
-
-    def unblocked_message_ct(self) -> int:
-        "The number of queued tasks currently eligible to run"
-        unblocked_msg_ct = 0
-        for message in self.queued_messages:
-            if not self.message_is_blocked(message):
-                unblocked_msg_ct += 1
-        return unblocked_msg_ct
 
     def active_task_ct(self) -> int:
         "The number of tasks currently being ran, or immediently eligible to run"
-        return self.get_running_count() + self.unblocked_message_ct()
+        return self.get_running_count() + self.queuer.count()
 
-    async def post_task_start(self, message):
+    async def post_task_start(self, message: dict) -> None:
         if 'timeout' in message:
             await self.timeout_runner.kick()  # kick timeout task to set wakeup
         running_ct = self.get_running_count()
         self.last_used_by_ct[running_ct] = None  # block scale down of this amount
 
     async def dispatch_task(self, message: dict) -> None:
+        uuid = message.get("uuid", "<unknown>")
         async with self.management_lock:
-            uuid = message.get("uuid", "<unknown>")
-
-            blocking_action = self.get_blocking_action(message)
-            if blocking_action == MessageAction.discard.value:
-                logger.info(f'Discarding task because it is already running: \n{message}')
-                self.discard_count += 1
-                return
-            elif self.shutting_down:
-                logger.info(f'Not starting task (uuid={uuid}) because we are shutting down, queued_ct={len(self.queued_messages)}')
-                self.queued_messages.append(message)
-                return
-            elif blocking_action == MessageAction.queue.value:
-                logger.info(f'Queuing task (uuid={uuid}) because it is already running or queued, queued_ct={len(self.queued_messages)}')
-                self.queued_messages.append(message)
-                return
-
-            if worker := self.get_free_worker():
-                logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
-                await worker.start_task(message)
-                await self.post_task_start(message)
-            else:
-                logger.warning(f'Queueing task (uuid={uuid}), ran out of workers, queued_ct={len(self.queued_messages)}')
-                self.queued_messages.append(message)
-                self.events.management_event.set()  # kick manager task to start auto-scale up
+            if unblocked_task := self.blocker.process_task(message):
+                if worker := self.queuer.get_worker_or_process_task(unblocked_task):
+                    logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+                    await worker.start_task(unblocked_task)
+                    await self.post_task_start(unblocked_task)
+                else:
+                    self.events.management_event.set()  # kick manager task to start auto-scale up
 
     async def drain_queue(self) -> None:
-        work_done = False
-        while requeue_message := self.get_unblocked_message():
-            if (not self.get_free_worker()) or self.shutting_down:
-                return
-            self.queued_messages.remove(requeue_message)
-            await self.dispatch_task(requeue_message)
-            work_done = True
+        async with self.management_lock:
+            # First move all unblocked tasks into the blocked-on-capacity queue
+            for message in self.blocker.pop_unblocked_messages():
+                self.queuer.queued_messages.append(message)
 
-        if work_done:
+        # Now process all messages we can in the unblocked queue
+        processed_queue = False
+        for message in self.queuer.queued_messages.copy():
+            if (not self.queuer.get_free_worker()) or self.shutting_down:
+                return
+            self.queuer.queued_messages.remove(message)
+            await self.dispatch_task(message)
+            processed_queue = True
+
+        if processed_queue:
             self.events.queue_cleared.set()
 
     async def process_finished(self, worker, message) -> None:
@@ -537,7 +467,7 @@ class WorkerPool:
                 self.finished_count += 1
             worker.mark_finished_task()
 
-        if not self.queued_messages and all(worker.current_task is None for worker in self.workers.values()):
+        if not self.queuer.queued_messages and all(worker.current_task is None for worker in self.workers.values()):
             self.events.work_cleared.set()
 
         if 'timeout' in message:
