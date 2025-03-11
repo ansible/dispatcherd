@@ -51,7 +51,7 @@ class ScheduledProducer(BaseProducer):
             entry = ScheduleEntry(period=per_seconds, start_time=current_time, body=submission_options)
             self.schedule_entries.add(entry)
 
-        self.schedule_runner.kick()
+        await self.schedule_runner.kick()
 
         if self.events:
             self.events.ready_event.set()

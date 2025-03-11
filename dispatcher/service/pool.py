@@ -469,7 +469,7 @@ class WorkerPool:
 
     async def post_task_start(self, message):
         if 'timeout' in message:
-            self.timeout_runner.kick()  # kick timeout task to set wakeup
+            await self.timeout_runner.kick()  # kick timeout task to set wakeup
         running_ct = self.get_running_count()
         self.last_used_by_ct[running_ct] = None  # block scale down of this amount
 
@@ -541,7 +541,7 @@ class WorkerPool:
             self.events.work_cleared.set()
 
         if 'timeout' in message:
-            self.timeout_runner.kick()
+            await self.timeout_runner.kick()
 
     async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""

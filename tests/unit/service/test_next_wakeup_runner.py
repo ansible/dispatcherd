@@ -82,7 +82,7 @@ async def test_next_wakeup_is_in_past():
 
     # now that our test is done we can shut down the background task runner
     await runner.shutdown()
-    runner.kick()
+    await runner.kick()
 
     # the task should reach its exit condition for shutdown now
     await background_task
@@ -101,7 +101,7 @@ async def test_graceful_shutdown():
         callback()  # track for assertion
 
     runner = NextWakeupRunner(objects, mock_process_tasks)
-    runner.kick()  # creates task, starts running
+    await runner.kick()  # creates task, starts running
 
     # Poll for the objects data to reflect that it has been processed
     for _ in range(10):
@@ -113,7 +113,7 @@ async def test_graceful_shutdown():
 
 
     runner.shutting_down = True
-    runner.kick()
+    await runner.kick()
     await runner.asyncio_task
     assert runner.asyncio_task.done()
 

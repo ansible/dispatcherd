@@ -113,13 +113,13 @@ class DispatcherMain:
         await self.process_message_internal(capsule.message)
         self.delayed_messages.remove(capsule)
 
-    def create_delayed_task(self, message: dict) -> None:
+    async def create_delayed_task(self, message: dict) -> None:
         "Called as alternative to sending to worker now, send to worker later"
         # capsule, as in, time capsule
         capsule = DelayCapsule(message['delay'], message)
         logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')
         self.delayed_messages.add(capsule)
-        self.delayed_runner.kick()
+        await self.delayed_runner.kick()
 
     async def process_message(
         self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
@@ -152,7 +152,7 @@ class DispatcherMain:
 
         if 'delay' in message:
             # NOTE: control messages with reply should never be delayed, document this for users
-            self.create_delayed_task(message)
+            await self.create_delayed_task(message)
         else:
             return await self.process_message_internal(message, producer=producer)
         return (None, None)
