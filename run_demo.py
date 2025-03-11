@@ -59,6 +59,18 @@ def main():
     print(json.dumps(worker_data, indent=2))
 
     print('')
+    print('getting main process tasks')
+    task_data_list = ctl.control_with_reply('aio_tasks')
+    for orig_task_data in task_data_list:
+        task_data = orig_task_data.copy()
+        print(f'Task data for node {task_data["node_id"]}')
+        task_data.pop('node_id', None)
+        for task_name, aio_task_data in task_data.items():
+            print(f'  {task_name} is done={aio_task_data["done"]}')
+            print('   trace:')
+            print(aio_task_data['stack'])
+
+    print('')
     print('run bogus control command')
     worker_data = ctl.control_with_reply('not-a-command')
     print(json.dumps(worker_data, indent=2))

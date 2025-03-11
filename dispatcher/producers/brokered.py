@@ -17,7 +17,7 @@ class BrokeredProducer(BaseProducer):
         super().__init__()
 
     async def start_producing(self, dispatcher: DispatcherMain) -> None:
-        self.production_task = asyncio.create_task(self.produce_forever(dispatcher), name=f'{self.broker}_production')
+        self.production_task = asyncio.create_task(self.produce_forever(dispatcher), name=f'{self.broker.__module__}_production')
 
     def all_tasks(self) -> Iterable[asyncio.Task]:
         if self.production_task:
