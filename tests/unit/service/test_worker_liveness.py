@@ -77,6 +77,8 @@ async def test_dead_worker_with_no_task(test_settings):
     pool = WorkerPool(pm, min_workers=1, max_workers=3)
     await pool.up()
     worker = pool.workers[0]
+
+    # Set the status to 'ready' instead of waiting for a workers_ready event (which may never fire)
     worker.status = 'ready'
     worker.current_task = None
 
