@@ -11,29 +11,38 @@ from dispatcher.service.process import ProcessManager
 @pytest.mark.asyncio
 async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     """
-    Verify that when a worker that is processing a task dies unexpectedly,
-    it is marked with an error status, its task is canceled, and proper logging occurs.
+    Verify that if a worker dies unexpectedly while processing a task,
+    it is marked as 'error', its task is canceled, and appropriate error logs are produced.
     """
-    # Setup: create a pool with one worker and set its state as ready with a running task.
+    # Create a pool with one worker and start it
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=2, max_workers=5)
-    await pool.up()
-    worker = pool.workers[0]
-    worker.status = 'ready'
+    pool = WorkerPool(pm, min_workers=1, max_workers=5)
+    await pool.start_working(asyncio.Lock())
+    await pool.events.workers_ready.wait()
+
+    # Get the ready worker and assign a task
+    worker = list(pool.workers.values())[0]
     worker.current_task = {'uuid': 'test-task-123'}
+    worker_pid = worker.process.pid
+    assert worker_pid is not None, "Worker process PID should not be None"
 
-    # Simulate unexpected process death by forcing is_alive to return False.
-    with caplog.at_level("DEBUG"):
-        with mock.patch.object(worker.process, 'is_alive', return_value=False):
-            await pool.manage_old_workers()
+    # Directly kill the worker's process using kill(), which sends SIGKILL
+    with caplog.at_level("ERROR"):
+        worker.process.kill()
+        await asyncio.sleep(0.1)  # Allow time for the kill to be registered
+        await pool.manage_old_workers()
 
-    # Assert the worker status is updated and the task cancellation counter is incremented.
+    # Verify that the worker's status is updated and the cancellation counter incremented
     assert worker.status == 'error'
-    assert hasattr(worker, 'retired_at') and worker.retired_at is not None
+    assert worker.retired_at is not None
     assert pool.canceled_count == 1
+    assert "died unexpectedly" in caplog.text
+    assert "test-task-123" in caplog.text
 
-    # Verify that an error message was logged.
-    assert "Worker" in caplog.text
+    # Clean up by shutting down the pool (override cancel to prevent errors)
+    for w in pool.workers.values():
+        w.cancel = lambda: None
+    await pool.shutdown()
 
 
 @pytest.mark.asyncio
