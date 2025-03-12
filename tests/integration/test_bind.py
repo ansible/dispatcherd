@@ -35,3 +35,17 @@ async def test_bind_not_set(apg_dispatcher, pg_message, caplog):
     assert 'result: hello-world-12345543221' not in caplog.text
 
     assert apg_dispatcher.pool.finished_count == 1
+
+@pytest.mark.asyncio
+async def test_control_action(apg_dispatcher, test_settings, caplog):
+    assert apg_dispatcher.control_count == 0
+    assert apg_dispatcher.pool.finished_count == 0
+
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    test_methods.prints_running_tasks.apply_async(settings=test_settings)
+    await asyncio.wait_for(clearing_task, timeout=3)
+
+    # ran both a normal task and an internal control task
+    assert apg_dispatcher.control_count == 1
+    assert apg_dispatcher.pool.finished_count == 1
