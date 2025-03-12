@@ -52,11 +52,7 @@ class DispatcherBoundMethods:
         self.uuid = message.get('uuid', '<unknown>')
 
     def control(self, command: str, data: Optional[dict] = None) -> dict:
-        to_send = {
-            'worker': self.worker_id,
-            'event': 'control',
-            'command': command
-        }
+        to_send = {'worker': self.worker_id, 'event': 'control', 'command': command}
         if data:
             to_send['control_data'] = data
         self.message_queue.put(to_send)
@@ -78,7 +74,9 @@ class TaskWorker:
     Previously this initialized pre-fork, making init logic unusable.
     """
 
-    def __init__(self, worker_id: int, message_queue: multiprocessing.Queue, finished_queue: multiprocessing.Queue, registry: DispatcherMethodRegistry = global_registry) -> None:
+    def __init__(
+        self, worker_id: int, message_queue: multiprocessing.Queue, finished_queue: multiprocessing.Queue, registry: DispatcherMethodRegistry = global_registry
+    ) -> None:
         self.worker_id: int = worker_id
         self.message_queue = message_queue
         self.finished_queue = finished_queue

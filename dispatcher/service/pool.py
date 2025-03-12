@@ -5,12 +5,12 @@ import signal
 import time
 from typing import Any, Literal, Optional
 
+from ..protocols import DispatcherMain
 from .asyncio_tasks import ensure_fatal
 from .blocker import Blocker
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
 from .queuer import Queuer
-from ..protocols import DispatcherMain
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +221,9 @@ class WorkerPool:
     async def start_working(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
         self.dispatcher = dispatcher
         self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'), exit_event=exit_event)
-        self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task'), exit_event=exit_event)
+        self.management_task = ensure_fatal(
+            asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task'), exit_event=exit_event
+        )
         self.timeout_runner.exit_event = exit_event
 
     def get_running_count(self) -> int:

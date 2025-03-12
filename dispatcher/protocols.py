@@ -65,6 +65,7 @@ class WorkerPool(Protocol):
 
 
 class DispatcherMain(Protocol):
+    lock_fd: asyncio.Lock  # Forking and locking may need to be serialized, which this does
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""
@@ -72,6 +73,10 @@ class DispatcherMain(Protocol):
 
     async def connected_callback(self, producer: Producer) -> None:
         """Called by producers when they are connected"""
+        ...
+
+    async def get_control_result(self, action: str, control_data: Optional[dict] = None) -> dict:
+        """Used by WorkerPool if a task needs to run a local control task"""
         ...
 
     async def process_message(
