@@ -9,9 +9,9 @@ services:
       POSTGRES_PASSWORD: dispatching
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "dispatch", "-d", "dispatch_db"]
-      interval: 10s
+      interval: 1s
       timeout: 5s
-      retries: 5
+      retries: 20
     ports:
       - "55777:5432"
   dispatcherd1:
@@ -23,10 +23,18 @@ services:
     environment:
       PATH: /dispatcherd/venv/bin:$PATH
       PYTHONPATH: .
-    command: dispatcherd --config=/dispatcherd/dispatcher1.yml
+      DISPATCHER_CONFIG_FILE: /dispatcherd/dispatcher1.yml
+    command: dispatcherd
     depends_on:
       msg_postgres:
         condition: service_healthy
+    volumes:
+      - "./:/dispatcherd/src"
+    healthcheck:
+      test: ["CMD", "dispatcherctl", "alive", "--expected-replies=2"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
   dispatcherd2:
     container_name: dispatcherd2
     build:
@@ -35,7 +43,15 @@ services:
     environment:
       PATH: /dispatcherd/venv/bin:$PATH
       PYTHONPATH: .
-    command: dispatcherd --config=/dispatcherd/dispatcher2.yml
+      DISPATCHER_CONFIG_FILE: /dispatcherd/dispatcher2.yml
+    command: dispatcherd
     depends_on:
       msg_postgres:
         condition: service_healthy
+    volumes:
+      - "./:/dispatcherd/src"
+    healthcheck:
+      test: ["CMD", "dispatcherctl", "alive", "--expected-replies=2"]
+      interval: 1s
+      timeout: 5s
+      retries: 5

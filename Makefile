@@ -22,7 +22,7 @@ linters:
 	mypy dispatcher
 
 demo:
-	docker compose up -d
+	docker compose up -d --wait
 
 stop-demo:
 	docker compose down

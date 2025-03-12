@@ -12,6 +12,9 @@ from .factories import get_control_from_settings
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_CONFIG_FILE = 'dispatcher.yml'
+
+
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CLI entrypoint for dispatcher, mainly intended for testing.")
     parser.add_argument(
@@ -24,7 +27,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--config',
         type=os.path.abspath,
-        default='dispatcher.yml',
+        default=DEFAULT_CONFIG_FILE,
         help='Path to dispatcher config.',
     )
     return parser
@@ -36,7 +39,12 @@ def setup_from_parser(parser) -> argparse.Namespace:
 
     logger.debug(f"Configured standard out logging at {args.log_level} level")
 
-    setup(file_path=args.config)
+    if os.getenv('DISPATCHER_CONFIG_FILE') and args.config == os.path.abspath(DEFAULT_CONFIG_FILE):
+        logger.info(f'Using config from environment variable DISPATCHER_CONFIG_FILE={os.getenv("DISPATCHER_CONFIG_FILE")}')
+        setup()
+    else:
+        logger.info(f'Using config from file {args.config}')
+        setup(file_path=args.config)
     return args
 
 
@@ -75,3 +83,6 @@ def control() -> None:
     ctl = get_control_from_settings()
     returned = ctl.control_with_reply(args.command, data=data, expected_replies=args.expected_replies)
     print(yaml.dump(returned, default_flow_style=False))
+    if len(returned) < args.expected_replies:
+        logger.error(f'Obtained only {len(returned)} of {args.expected_replies}, exiting with non-zero code')
+        sys.exit(1)
