@@ -1,5 +1,15 @@
 import asyncio
+from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
+
+
+class BrokerSelfCheckResult(Enum):
+    """This enum represents the result of a broker self-check
+    """
+    UNDECIDED = 1,  # self-check hasn't run yet
+    SUCCESS = 2,    # the last self-check was successful
+    FAILURE = 3     # the last self-check failed
+    IN_PROGRESS = 4 # self check in progress
 
 
 class Broker(Protocol):
@@ -21,6 +31,14 @@ class Broker(Protocol):
         """Close the asynchronous connection, used by service, and optionally by publishers"""
         ...
 
+    async def initiate_self_check(self, node_id: str) -> None:
+        """Start a self check of the broker connection, used by service"""
+        ...
+
+    async def get_self_check_result(self, node_id: str) -> BrokerSelfCheckResult:
+        """Get the last self check result"""
+        ...
+
     def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
         """Synchronous method to generate messages from broker, used for synchronous control-and-reply"""
         ...
@@ -32,6 +50,9 @@ class Broker(Protocol):
     def close(self):
         """Close the sychronous connection"""
         ...
+
+    def reconnect(self):
+        """Close and reconnect the synchronous connection"""
 
 
 class ProducerEvents(Protocol):

@@ -1,8 +1,11 @@
+import json
 import logging
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 import psycopg
+from psycopg.pq import PGconn, ConnStatus
 
+from dispatcher.protocols import BrokerSelfCheckResult
 from dispatcher.utils import resolve_callable
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ def create_connection(**config) -> psycopg.Connection:
 
 class Broker:
     NOTIFY_QUERY_TEMPLATE = 'SELECT pg_notify(%s, %s);'
+    SELF_CHECK_CHANNEL = 'pgnotify_self_check'
 
     def __init__(
         self,
@@ -73,6 +77,10 @@ class Broker:
         else:
             self._config = {}
 
+        # Make sure that the self check channel is always present
+        if not self.SELF_CHECK_CHANNEL in channels:
+            channels.append(self.SELF_CHECK_CHANNEL)
+
         self.channels = channels
         self.default_publish_channel = default_publish_channel
 
@@ -81,6 +89,10 @@ class Broker:
         # These variables track things so that we can exit, send, and re-enter
         self.notify_loop_active: bool = False
         self.notify_queue: list = []
+
+        # Set the initial value of the self check result to UNDECIDED to indicate
+        # that a self check needs to be initiated
+        self.self_check_result = BrokerSelfCheckResult.UNDECIDED
 
     def get_publish_channel(self, channel: Optional[str] = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
@@ -93,6 +105,26 @@ class Broker:
             return self.channels[0]
 
         raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
+
+    async def initiate_self_check(self, node_id: str) -> None:
+        try:
+            self.publish_message(self.SELF_CHECK_CHANNEL, json.dumps({'self_check': True, 'task': f'lambda: "{node_id}"'}))
+            self.self_check_result = BrokerSelfCheckResult.IN_PROGRESS
+        except Exception as connection_error:
+            logger.error(f'publish message failed with: {connection_error} ')
+            self.self_check_result = BrokerSelfCheckResult.FAILURE
+
+    async def get_self_check_result(self, node_id: str) -> BrokerSelfCheckResult:
+        try:
+            for channel, payload in self.process_notify():
+                if channel == self.SELF_CHECK_CHANNEL and node_id in payload:
+                    self.self_check_result = BrokerSelfCheckResult.SUCCESS
+        except Exception as connection_error:
+            logger.error(f'get self check result failed with: {connection_error} ')
+            self.self_check_result = BrokerSelfCheckResult.FAILURE
+
+        return self.self_check_result
+
 
     # --- asyncio connection methods ---
 
@@ -229,6 +261,11 @@ class Broker:
             self._sync_connection.close()
             self._sync_connection = None
 
+    def reconnect(self) -> None:
+        self.close()
+        self.get_connection()
+        self.self_check_result = BrokerSelfCheckResult.UNDECIDED
+
 
 class ConnectionSaver:
     def __init__(self) -> None:
@@ -247,6 +284,9 @@ def connection_saver(**config) -> psycopg.Connection:
     Dispatcher does not manage connections, so this a simulation of that.
     """
     if connection_save._connection is None:
+        connection_save._connection = create_connection(**config)
+    if connection_save._connection.closed or connection_save._connection.broken:
+        connection_save._connection.close()
         connection_save._connection = create_connection(**config)
     return connection_save._connection
 

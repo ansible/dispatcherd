@@ -6,7 +6,9 @@ import time
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
-from ..protocols import Producer
+from ..brokers import get_broker
+from ..producers import BrokeredProducer
+from ..protocols import Producer, BrokerSelfCheckResult
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
@@ -234,7 +236,31 @@ class DispatcherMain:
             await self.start_working()
 
             logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
-            await self.events.exit_event.wait()
+
+            while True:
+                try:
+                    await asyncio.wait_for(self.events.exit_event.wait(), 5.0)
+
+                    # exit_event has fired, process should exit
+                    break
+                except asyncio.TimeoutError:
+                    logger.info(f'initiating broker self check for node-id {self.node_id}')
+                    for producer in self.producers:
+                        if isinstance(producer, BrokeredProducer):
+                            result = await producer.broker.get_self_check_result(self.node_id)
+
+                            if result == BrokerSelfCheckResult.IN_PROGRESS:
+                                # the last self check still hasn't finished - we treat that as a connection failure
+                                result = BrokerSelfCheckResult.FAILURE
+
+                            match result:
+                                case BrokerSelfCheckResult.UNDECIDED | BrokerSelfCheckResult.SUCCESS:
+                                    asyncio.create_task(producer.broker.initiate_self_check(self.node_id))
+                                    continue
+                                case BrokerSelfCheckResult.FAILURE:
+                                    logger.error(f'broker self check failed for node-id {self.node_id}')
+                                    producer.broker.reconnect()
+
         finally:
             await self.shutdown()
 
