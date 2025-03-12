@@ -120,7 +120,7 @@ class Broker:
         """
         return psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel))
 
-    def get_unlisten_query(self) -> psycopg.sql.Composed:
+    def get_unlisten_query(self) -> psycopg.sql.SQL:
         """Stops listening on all channels for current session, see pg_notify docs"""
         return psycopg.sql.SQL("UNLISTEN *;")
 
