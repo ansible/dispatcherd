@@ -52,3 +52,9 @@ def use_callable_queue():
 class RunJob:
     def run(self):
         print('successful run using callable queue with class')
+
+
+@task(bind=True)
+def prints_running_tasks(binder):
+    r = binder.control('running')
+    print(r)
