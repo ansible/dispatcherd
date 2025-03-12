@@ -120,6 +120,10 @@ class Broker:
         """
         return psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel))
 
+    def get_unlisten_query(self) -> psycopg.sql.Composed:
+        """Stops listening on all channels for current session, see pg_notify docs"""
+        return psycopg.sql.SQL("UNLISTEN *;")
+
     async def aprocess_notify(
         self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
     ) -> AsyncGenerator[tuple[str, str], None]:  # public
@@ -208,6 +212,8 @@ class Broker:
             logger.debug('Starting listening for pg_notify notifications')
             for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
                 yield (notify.channel, notify.payload)
+
+            cur.execute(self.get_unlisten_query())
 
     def publish_message(self, channel: Optional[str] = None, message: str = '') -> None:
         connection = self.get_connection()
