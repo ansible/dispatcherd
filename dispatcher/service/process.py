@@ -59,14 +59,17 @@ class ProcessManager:
         self.ctx = multiprocessing.get_context(self.mp_context)
         self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
         self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
-        self._loop = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
-    def get_event_loop(self):
-        if not self._loop:
-            self._loop = asyncio.get_event_loop()
+    def get_event_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop:
+            return self._loop
+        self._loop = asyncio.get_event_loop()
         return self._loop
 
-    def create_process(self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs) -> ProcessProxy:
+    def create_process(  # type: ignore[no-untyped-def]
+        self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs
+    ) -> ProcessProxy:
         "Returns a ProcessProxy object, which itself contains a Process object, but actual subprocess is not yet started"
         # kwargs allow passing target for substituting the work_loop for testing
         if kwargs is None:

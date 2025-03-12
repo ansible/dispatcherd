@@ -2,6 +2,8 @@ import asyncio
 import io
 import logging
 
+from ..protocols import DispatcherMain
+
 __all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers']
 
 
@@ -19,27 +21,27 @@ def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
     return True
 
 
-async def _find_tasks(dispatcher, cancel: bool = False, **data) -> dict[str, dict]:
+async def _find_tasks(dispatcher: DispatcherMain, data: dict, cancel: bool = False) -> dict[str, dict]:
     "Utility method used for both running and cancel control methods"
     ret = {}
-    for worker in dispatcher.pool.workers.values():
+    for worker in dispatcher.pool.workers:
         if worker.current_task:
             if task_filter_match(worker.current_task, data):
                 if cancel:
                     logger.warning(f'Canceling task in worker {worker.worker_id}, task: {worker.current_task}')
                     worker.cancel()
                 ret[f'worker-{worker.worker_id}'] = worker.current_task
-    for i, message in enumerate(dispatcher.pool.blocker.blocked_messages):
+    for i, message in enumerate(dispatcher.pool.blocker):
         if task_filter_match(message, data):
             if cancel:
                 logger.warning(f'Canceling task in pool blocker: {message}')
-                dispatcher.pool.blocker.blocked_messages.remove(message)
+                dispatcher.pool.blocker.remove_task(message)
             ret[f'blocked-{i}'] = message
-    for i, message in enumerate(dispatcher.pool.queuer.queued_messages):
+    for i, message in enumerate(dispatcher.pool.queuer):
         if task_filter_match(message, data):
             if cancel:
                 logger.warning(f'Canceling task in pool queue: {message}')
-                dispatcher.pool.queuer.queued_messages.remove(message)
+                dispatcher.pool.queuer.remove_task(message)
             ret[f'queued-{i}'] = message
     for i, capsule in enumerate(dispatcher.delayed_messages.copy()):
         if task_filter_match(capsule.message, data):
@@ -52,23 +54,23 @@ async def _find_tasks(dispatcher, cancel: bool = False, **data) -> dict[str, dic
     return ret
 
 
-async def running(dispatcher, **data) -> dict[str, dict]:
-    async with dispatcher.pool.management_lock:
-        return await _find_tasks(dispatcher, **data)
+async def running(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    async with dispatcher.pool.workers.management_lock:
+        return await _find_tasks(dispatcher=dispatcher, data=data)
 
 
-async def cancel(dispatcher, **data) -> dict[str, dict]:
-    async with dispatcher.pool.management_lock:
-        return await _find_tasks(dispatcher, cancel=True, **data)
+async def cancel(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    async with dispatcher.pool.workers.management_lock:
+        return await _find_tasks(dispatcher=dispatcher, cancel=True, data=data)
 
 
-def _stack_from_task(task: asyncio.Task, limit=6) -> str:
+def _stack_from_task(task: asyncio.Task, limit: int = 6) -> str:
     buffer = io.StringIO()
     task.print_stack(file=buffer, limit=limit)
     return buffer.getvalue()
 
 
-async def aio_tasks(dispatcher, **data) -> dict[str, dict]:
+async def aio_tasks(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
     ret = {}
     extra = {}
     if 'limit' in data:
@@ -80,12 +82,12 @@ async def aio_tasks(dispatcher, **data) -> dict[str, dict]:
     return ret
 
 
-async def alive(dispatcher, **data) -> dict:
+async def alive(dispatcher: DispatcherMain, data: dict) -> dict:
     return {}
 
 
-async def workers(dispatcher, **data) -> dict:
+async def workers(dispatcher: DispatcherMain, data: dict) -> dict:
     ret = {}
-    for worker in dispatcher.pool.workers.values():
+    for worker in dispatcher.pool.workers:
         ret[f'worker-{worker.worker_id}'] = worker.get_data()
     return ret
