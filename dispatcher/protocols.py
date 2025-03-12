@@ -54,7 +54,46 @@ class Producer(Protocol):
         ...
 
 
+class PoolWorker(Protocol):
+    current_task: Optional[dict]
+    worker_id: int
+
+    async def start_task(self, message: dict) -> None: ...
+
+    def is_ready(self) -> bool: ...
+
+    def get_data(self) -> dict[str, Any]:
+        """Used for worker status control-and-reply command"""
+        ...
+
+    def cancel(self) -> None: ...
+
+
+class Queuer(Protocol):
+    def __iter__(self) -> Iterator[dict]: ...
+
+    def remove_task(self, message: dict) -> None: ...
+
+
+class Blocker(Protocol):
+    def __iter__(self) -> Iterator[dict]: ...
+
+    def remove_task(self, message: dict) -> None: ...
+
+
+class WorkerData(Protocol):
+    management_lock: asyncio.Lock
+
+    def __iter__(self) -> Iterator[PoolWorker]: ...
+
+    def get_by_id(self, worker_id: int) -> PoolWorker: ...
+
+
 class WorkerPool(Protocol):
+    workers: WorkerData
+    queuer: Queuer
+    blocker: Blocker
+
     async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
         """Start persistent asyncio tasks, including asychronously starting worker subprocesses"""
         ...
@@ -63,8 +102,12 @@ class WorkerPool(Protocol):
         """Called by DispatcherMain after in the normal task lifecycle, pool will try to hand the task to a worker"""
         ...
 
+    async def shutdown(self) -> None: ...
+
 
 class DispatcherMain(Protocol):
+    pool: WorkerPool
+    delayed_messages: set
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""

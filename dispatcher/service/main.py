@@ -6,11 +6,11 @@ import time
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
-from ..protocols import Producer
+from ..protocols import DispatcherMain as DispatcherMainProtocol
+from ..protocols import Producer, WorkerPool
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
-from .pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class DelayCapsule(HasWakeup):
         return self.received_at + self.delay
 
 
-class DispatcherMain:
+class DispatcherMain(DispatcherMainProtocol):
     def __init__(self, producers: Iterable[Producer], pool: WorkerPool, node_id: Optional[str] = None):
         self.delayed_messages: set[DelayCapsule] = set()
         self.received_count = 0
@@ -63,11 +63,11 @@ class DispatcherMain:
         self.delayed_runner = NextWakeupRunner(self.delayed_messages, self.process_delayed_task, name='delayed_task_runner')
         self.delayed_runner.exit_event = self.events.exit_event
 
-    def receive_signal(self, *args, **kwargs) -> None:
+    def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.events.exit_event.set()
 
-    async def wait_for_producers_ready(self, timeout=3) -> None:
+    async def wait_for_producers_ready(self) -> None:
         "Returns when all the producers have hit their ready event"
         for producer in self.producers:
             existing_tasks = list(producer.all_tasks())
@@ -171,7 +171,7 @@ class DispatcherMain:
             method = getattr(control_tasks, action)
             if control_data is None:
                 control_data = {}
-            return_data = await method(self, **control_data)
+            return_data = await method(dispatcher=self, data=control_data)
 
         # Identify the current node in the response
         return_data['node_id'] = self.node_id
@@ -185,7 +185,7 @@ class DispatcherMain:
             logger.info(f"Control action {action} returned {return_data}, done")
             return (None, None)
 
-    async def process_message_internal(self, message: dict, producer=None) -> tuple[Optional[str], Optional[str]]:
+    async def process_message_internal(self, message: dict, producer: Optional[Producer] = None) -> tuple[Optional[str], Optional[str]]:
         """Route message based on needed action - delay for later, return reply, or dispatch to worker"""
         if 'control' in message:
             return await self.run_control_action(message['control'], control_data=message.get('control_data'), reply_to=message.get('reply_to'))
@@ -215,7 +215,7 @@ class DispatcherMain:
                 for task in producer.all_tasks():
                     ensure_fatal(task, exit_event=self.events.exit_event)
 
-    async def cancel_tasks(self):
+    async def cancel_tasks(self) -> None:
         for task in asyncio.all_tasks():
             if task == asyncio.current_task():
                 continue

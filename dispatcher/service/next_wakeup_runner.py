@@ -120,6 +120,6 @@ class NextWakeupRunner:
             return [self.asyncio_task]
         return []
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         self.shutting_down = True
         await self.kick()

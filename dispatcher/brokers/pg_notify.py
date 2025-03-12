@@ -16,7 +16,7 @@ Thus, all psycopg-lib-specific actions must happen here.
 """
 
 
-async def acreate_connection(**config) -> psycopg.AsyncConnection:
+async def acreate_connection(**config) -> psycopg.AsyncConnection:  # type: ignore[no-untyped-def]
     "Create a new asyncio connection"
     connection = await psycopg.AsyncConnection.connect(**config)
     if not connection.autocommit:
@@ -24,7 +24,7 @@ async def acreate_connection(**config) -> psycopg.AsyncConnection:
     return connection
 
 
-def create_connection(**config) -> psycopg.Connection:
+def create_connection(**config) -> psycopg.Connection:  # type: ignore[no-untyped-def]
     connection = psycopg.Connection.connect(**config)
     if not connection.autocommit:
         connection.set_autocommit(True)
@@ -239,7 +239,7 @@ class ConnectionSaver:
 connection_save = ConnectionSaver()
 
 
-def connection_saver(**config) -> psycopg.Connection:
+def connection_saver(**config) -> psycopg.Connection:  # type: ignore[no-untyped-def]
     """
     This mimics the behavior of Django for tests and demos
     Philosophically, this is used by an application that uses an ORM,
@@ -251,7 +251,7 @@ def connection_saver(**config) -> psycopg.Connection:
     return connection_save._connection
 
 
-async def async_connection_saver(**config) -> psycopg.AsyncConnection:
+async def async_connection_saver(**config) -> psycopg.AsyncConnection:  # type: ignore[no-untyped-def]
     """
     This mimics the behavior of Django for tests and demos
     Philosophically, this is used by an application that uses an ORM,
