@@ -15,6 +15,9 @@ class Client:
         self.reader = reader
         self.writer = writer
 
+    def write(self, message):
+        self.writer.write((message + '\n').encode())
+
 
 class Broker:
     def __init__(self, socket_path: str):
@@ -30,6 +33,7 @@ class Broker:
             os.remove(self.socket_path)
 
         self.aserver = await asyncio.start_unix_server(self._add_client, self.socket_path)
+        logger.info(f'Set up socket server on {self.socket_path}')
 
     async def _add_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         client = Client(self.client_ct, reader, writer)
@@ -67,7 +71,7 @@ class Broker:
     async def apublish_message(self, channel: Optional[str] = '', origin: Optional[int] = None, message: str = "") -> None:
         client = self.clients.get(origin)
         if client:
-            client.writer((message + '\n').encode())
+            client.write(message)
             await client.writer.drain()
         else:
             logger.error(f'Client_id={origin} is not currently connected')
@@ -98,6 +102,7 @@ class Broker:
         received_ct = 0
         lock = threading.Lock()
         stop_event = threading.Event()
+        buffer = ''
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 self.sock = sock
@@ -106,7 +111,7 @@ class Broker:
                 if connected_callback:
                     connected_callback()
 
-                timeout_thread = threading.Thread(thread=self._enforce_timeout, daemon=True, args=(timeout, stop_event, self.sock, lock))
+                timeout_thread = threading.Thread(target=self._enforce_timeout, daemon=True, args=(timeout, stop_event, self.sock, lock))
                 timeout_thread.start()
 
                 while True:
@@ -116,12 +121,18 @@ class Broker:
                         logger.info(f'Received {received_ct} of {max_messages} in {timeout}, exiting receiving')
                         return
 
-                    received_ct += 1
-                    yield (0, response)
-                    if received_ct >= max_messages:
-                        with self.lock:
-                            stop_event.set()
-                        return
+                    if response.endswith('}'):
+
+                        response = buffer + response
+                        buffer = ''
+                        received_ct += 1
+                        yield (0, response)
+                        if received_ct >= max_messages:
+                            with lock:
+                                stop_event.set()
+                            return
+                    else:
+                        buffer += response
         finally:
             self.sock = None
 
@@ -129,12 +140,12 @@ class Broker:
         sock.sendall((message + "\n").encode())
 
     def publish_message(self, channel=None, message=None):
-        if not self.sock:
+        if self.sock:
             self._publish_from_sock(self.sock, message)
-
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.connect(self.socket_path)
-            self._publish_from_sock(sock, message)
+        else:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.connect(self.socket_path)
+                self._publish_from_sock(sock, message)
 
     def close(self):
         if self.client_socket:

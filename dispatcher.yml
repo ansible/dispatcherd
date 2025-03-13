@@ -19,6 +19,8 @@ brokers:
     - test_channel2
     - test_channel3
     default_publish_channel: test_channel
+  socket:
+    socket_path: demo_dispatcher.sock
 producers:
   ScheduledProducer:
     task_schedule:
@@ -30,4 +32,4 @@ producers:
     task_list:
       'lambda: print("This task runs on startup")': {}
 publish:
-  default_broker: pg_notify
+  default_broker: socket  # TODO: switch back to pg_notify when ready for review
