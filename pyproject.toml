@@ -25,7 +25,8 @@ classifiers = [
 dependencies = ["pyyaml"]
 
 [project.scripts]
-dispatcher-standalone = "dispatcher.cli:standalone"
+dispatcherd = "dispatcher.cli:standalone"
+dispatcherctl = "dispatcher.cli:control"
 
 [tool.setuptools.packages.find]
 include = ["dispatcher*"]

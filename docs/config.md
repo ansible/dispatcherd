@@ -10,15 +10,14 @@ This will result in an error:
 
 > Dispatcher not configured, set DISPATCHER_CONFIG_FILE or call dispatcher.config.setup
 
-This is an error because dispatcher does not have information to connect to a message broker.
-In the case of postgres, that information is the connection information (host, user, password, etc)
+This errors because dispatcher does not know how to connect to a message broker.
+For the demo, that would be the postgres host, user, password, etc.,
 as well as the pg_notify channel to send the message to.
 
 ### Ways to configure
 
 #### From file
 
-The provided entrypoint `dispatcher-standalone` can only use a file, which is how the demo works.
 The demo runs using the `dispatcher.yml` config file at the top-level of this repo.
 
 You can do the same thing in python by:
@@ -29,11 +28,19 @@ from dispatcher.config import setup
 setup(file_path='dispatcher.yml')
 ```
 
-This approach is used by the demo's test script at `tools/write_messages.py`,
-which acts as a "publisher", meaning that it submits tasks over the message
+This is used by the demo's test script at `tools/write_messages.py`,
+which acts as a "publisher", meaning that it submits tasks to the message
 broker to be ran.
-This setup ensures that both the service (`dispatcher-standalone`) and the publisher
+Using `setup` ensures that both the service (`dispatcherd`) and the publisher
 are using the same configuration.
+
+##### With Environment variable
+
+Alternatively, the `DISPATCHER_CONFIG_FILE` environment variable can point to a file. Example:
+
+```
+DISPATCHER_CONFIG_FILE=dispatcher.yml dispatcherd
+```
 
 #### From a dictionary
 
