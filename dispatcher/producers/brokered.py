@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 
 from ..protocols import Broker, DispatcherMain
 from .base import BaseProducer
@@ -36,10 +36,10 @@ class BrokeredProducer(BaseProducer):
             self.produced_count += 1
             reply_to, reply_payload = await dispatcher.process_message(payload, producer=self, channel=channel)
             if reply_to and reply_payload:
-                await self.notify(channel=reply_to, message=reply_payload)
+                await self.notify(channel=reply_to, origin=channel, message=reply_payload)
 
-    async def notify(self, channel: Optional[str] = None, message: str = '') -> None:
-        await self.broker.apublish_message(channel=channel, message=message)
+    async def notify(self, channel: Optional[str] = None, origin: Optional[Union[int, str]] = None, message: str = '') -> None:
+        await self.broker.apublish_message(channel=channel, origin=origin, message=message)
 
     async def shutdown(self) -> None:
         if self.production_task:
