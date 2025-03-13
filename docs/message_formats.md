@@ -56,3 +56,10 @@ it must identify itself, and identify the event. For example:
     "event": "ready"
 }
 ```
+
+This is used for several core functions of dispatcherd.
+These include notifying the parent of:
+ - finishing a task, meaning that worker is ready for new task
+ - entering main loop, meaning that worker has started up
+ - control actions triggered from the task logic
+ - shutting down, confirming it is safe to join process

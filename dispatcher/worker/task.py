@@ -7,6 +7,7 @@ import sys
 import time
 import traceback
 from queue import Empty as QueueEmpty
+from typing import Optional
 
 from ..config import setup
 from ..registry import DispatcherMethodRegistry
@@ -44,9 +45,18 @@ class DispatcherBoundMethods:
     This contains public methods for users of the dispatcher to call.
     """
 
-    def __init__(self, worker_id, message):
+    def __init__(self, worker_id: int, message: dict, message_queue: multiprocessing.Queue, finished_queue: multiprocessing.Queue) -> None:
         self.worker_id = worker_id
+        self.message_queue = message_queue
+        self.finished_queue = finished_queue
         self.uuid = message.get('uuid', '<unknown>')
+
+    def control(self, command: str, data: Optional[dict] = None) -> dict:
+        to_send = {'worker': self.worker_id, 'event': 'control', 'command': command}
+        if data:
+            to_send['control_data'] = data
+        self.message_queue.put(to_send)
+        return self.finished_queue.get()
 
 
 class TaskWorker:
@@ -64,8 +74,12 @@ class TaskWorker:
     Previously this initialized pre-fork, making init logic unusable.
     """
 
-    def __init__(self, worker_id: int, registry: DispatcherMethodRegistry = global_registry):
+    def __init__(
+        self, worker_id: int, message_queue: multiprocessing.Queue, finished_queue: multiprocessing.Queue, registry: DispatcherMethodRegistry = global_registry
+    ) -> None:
         self.worker_id: int = worker_id
+        self.message_queue = message_queue
+        self.finished_queue = finished_queue
         self.registry = registry
         self.ppid = os.getppid()
         self.pid = os.getpid()
@@ -87,7 +101,7 @@ class TaskWorker:
         """
         Return the object with public callbacks to pass to the task
         """
-        return DispatcherBoundMethods(self.worker_id, message)
+        return DispatcherBoundMethods(self.worker_id, message, self.message_queue, self.finished_queue)
 
     def run_callable(self, message):
         """
@@ -212,7 +226,7 @@ def work_loop(worker_id: int, settings: dict, finished_queue: multiprocessing.Qu
     # Load settings passed from parent
     # this assures that workers are all configured the same
     setup(config=settings)
-    worker = TaskWorker(worker_id)
+    worker = TaskWorker(worker_id, finished_queue, message_queue)
     # TODO: add an app callback here to set connection name and things like that
 
     finished_queue.put(worker.get_ready_message())
