@@ -1,7 +1,7 @@
 <!-- License Badge -->
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
 
-## Dispatcher
+## Dispatcherd
 
 The dispatcher is a service to run python tasks in subprocesses,
 designed specifically to work well with pg_notify,
@@ -32,10 +32,11 @@ In the "Manual Demo" section, an runnable example of this is given.
 #### Library
 
 The dispatcher `@task()` decorator is used to register tasks.
-
 The [tests/data/methods.py](tests/data/methods.py) module defines some
-dispatcher tasks and the pg_notify channels they will be sent over.
-For more `@task` options, see [docs/task_options.md](docs/task_options.md).
+dispatcher tasks.
+
+The decorator accepts some kwargs (like `queue` below) that will affect task behavior,
+see [docs/task_options.md](docs/task_options.md).
 
 ```python
 from dispatcher.publish import task
@@ -45,7 +46,7 @@ def print_hello():
     print('hello world!!')
 ```
 
-Additionally, you need to configure dispatcher somewhere in your import path.
+Configure dispatcher somewhere in your import path or before running the service.
 This tells dispatcher how to submit tasks to be ran.
 
 ```python
@@ -81,7 +82,7 @@ If you submit a task in an outage of the service, it will be dropped.
 There are 2 ways to run the dispatcher service:
 
 - Importing and running (code snippet below)
-- A CLI entrypoint `dispatcher-standalone` for demo purposes
+- A CLI entrypoint `dispatcherd` for demo purposes
 
 ```python
 from dispatcher import run_service
@@ -92,8 +93,6 @@ run_service()
 ```
 
 Configuration tells how to connect to postgres, and what channel(s) to listen to.
-
-
 
 #### Publisher
 
