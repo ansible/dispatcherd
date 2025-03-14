@@ -22,18 +22,10 @@ class Client:
 class Broker:
     def __init__(self, socket_path: str) -> None:
         self.socket_path = socket_path
-        self.aserver: Optional[asyncio.Server] = None
         self.client_ct = 0
         self.clients: dict[int, Client] = {}
         self.sock: Optional[socket.socket] = None  # for synchronous clients
         self.incoming_queue: asyncio.Queue = asyncio.Queue()
-
-    async def aconnect(self) -> None:
-        if os.path.exists(self.socket_path):
-            os.remove(self.socket_path)
-
-        self.aserver = await asyncio.start_unix_server(self._add_client, self.socket_path)
-        logger.info(f'Set up socket server on {self.socket_path}')
 
     async def _add_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         client = Client(self.client_ct, reader, writer)
@@ -58,15 +50,35 @@ class Broker:
             logger.info(f'Client_id={client.client_id} has disconnected')
 
     async def aprocess_notify(self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None) -> AsyncGenerator[tuple[int, str], None]:
-        if not self.aserver:
-            await self.aconnect()
+        if os.path.exists(self.socket_path):
+            os.remove(self.socket_path)
 
-        if connected_callback:
-            await connected_callback()
+        aserver = None
+        try:
+            aserver = await asyncio.start_unix_server(self._add_client, self.socket_path)
+            logger.info(f'Set up socket server on {self.socket_path}')
 
-        while True:
-            client_id, message = await self.incoming_queue.get()
-            yield client_id, message
+            if connected_callback:
+                await connected_callback()
+
+            while True:
+                client_id, message = await self.incoming_queue.get()
+                yield client_id, message
+
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if aserver:
+                aserver.close()
+                await aserver.wait_closed()
+
+            for client in self.clients.values():
+                client.writer.close()
+                await client.writer.wait_closed()
+            self.clients = {}
+
+            if os.path.exists(self.socket_path):
+                os.remove(self.socket_path)
 
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
         if origin:
@@ -76,20 +88,6 @@ class Broker:
                 await client.writer.drain()
             else:
                 logger.error(f'Client_id={origin} is not currently connected')
-
-    async def aclose(self) -> None:
-        if self.aserver:
-            self.aserver.close()
-            await self.aserver.wait_closed()
-        self.aserver = None
-
-        for client in self.clients.values():
-            client.writer.close()
-            await client.writer.wait_closed()
-        self.clients = {}
-
-        if os.path.exists(self.socket_path):
-            os.remove(self.socket_path)
 
     def _enforce_timeout(self, timeout, stop_event, sock, lock) -> None:
         """Used for enforce timeout in a thread"""
