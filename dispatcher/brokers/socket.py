@@ -22,6 +22,15 @@ class Client:
 
 
 class Broker(BrokerProtocol):
+    """A Unix socket client for dispatcher as simple as possible
+
+    Because we want to be as simple as possible we do not maintain persistent connections.
+    So every control-and-reply command will connect and disconnect.
+
+    Intended use is for dispatcherctl, so that we may bypass any flake related to pg_notify
+    for debugging information.
+    """
+
     def __init__(self, socket_path: str) -> None:
         self.socket_path = socket_path
         self.client_ct = 0
@@ -94,6 +103,7 @@ class Broker(BrokerProtocol):
         await self.incoming_queue.put((-1, 'stop'))
 
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
+        logger.warning(f'apublish_message with socket {(channel, origin, len(message))}')
         if origin:
             client = self.clients.get(int(origin))
             if client:
@@ -125,7 +135,7 @@ class Broker(BrokerProtocol):
                 if connected_callback:
                     connected_callback()
 
-                timeout_thread = threading.Thread(target=self._enforce_timeout, daemon=True, args=(timeout, stop_event, self.sock, lock))
+                timeout_thread = threading.Thread(target=self._enforce_timeout, daemon=True, args=(timeout, stop_event, sock, lock))
                 timeout_thread.start()
 
                 while True:

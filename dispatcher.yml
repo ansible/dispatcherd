@@ -32,4 +32,5 @@ producers:
     task_list:
       'lambda: print("This task runs on startup")': {}
 publish:
-  default_broker: socket  # TODO: switch back to pg_notify when ready for review
+  default_control_broker: socket
+  default_broker: pg_notify
