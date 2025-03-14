@@ -125,7 +125,6 @@ class Broker:
 
         return self.self_check_result
 
-
     # --- asyncio connection methods ---
 
     async def aget_connection(self) -> psycopg.AsyncConnection:

@@ -4,12 +4,12 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator,
 
 
 class BrokerSelfCheckResult(Enum):
-    """This enum represents the result of a broker self-check
-    """
-    UNDECIDED = 1,  # self-check hasn't run yet
-    SUCCESS = 2,    # the last self-check was successful
-    FAILURE = 3     # the last self-check failed
-    IN_PROGRESS = 4 # self check in progress
+    """This enum represents the result of a broker self-check"""
+
+    UNDECIDED = (1,)  # self-check hasn't run yet
+    SUCCESS = (2,)  # the last self-check was successful
+    FAILURE = 3  # the last self-check failed
+    IN_PROGRESS = 4  # self check in progress
 
 
 class Broker(Protocol):
