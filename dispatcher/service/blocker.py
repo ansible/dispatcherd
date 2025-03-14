@@ -1,20 +1,24 @@
 import logging
-from typing import Optional
+from typing import Iterable, Iterator, Optional
 
+from ..protocols import Blocker as BlockerProtocol
 from ..utils import DuplicateBehavior
 from .queuer import Queuer
 
 logger = logging.getLogger(__name__)
 
 
-class Blocker:
+class Blocker(BlockerProtocol):
     def __init__(self, queuer: Queuer) -> None:
         self.blocked_messages: list[dict] = []  # TODO: use deque, customizability
         self.queuer = queuer
         self.discard_count: int = 0
         self.shutting_down: bool = False
 
-    def _duplicate_in_list(self, message, task_iter) -> bool:
+    def __iter__(self) -> Iterator[dict]:
+        return iter(self.blocked_messages)
+
+    def _duplicate_in_list(self, message: dict, task_iter: Iterable[dict]) -> bool:
         for other_message in task_iter:
             if other_message is message:
                 continue
@@ -23,11 +27,14 @@ class Blocker:
                 return True
         return False
 
-    def already_running(self, message) -> bool:
+    def already_running(self, message: dict) -> bool:
         return self._duplicate_in_list(message, self.queuer.running_tasks())
 
-    def already_queued(self, message) -> bool:
+    def already_queued(self, message: dict) -> bool:
         return self._duplicate_in_list(message, self.blocked_messages)
+
+    def remove_task(self, message: dict) -> None:
+        self.blocked_messages.remove(message)
 
     def process_task(self, message: dict) -> Optional[dict]:
         """If task is blocked, it is consumed here and None is returned, if not blocked, return message as-is

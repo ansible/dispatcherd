@@ -1,27 +1,24 @@
 import logging
-from typing import Iterable, Iterator, Optional, Protocol
+from typing import Iterable, Iterator, Optional
+
+from ..protocols import PoolWorker
+from ..protocols import Queuer as QueuerProtocol
 
 logger = logging.getLogger(__name__)
 
 
-class PoolWorkerProto(Protocol):
-    current_task: Optional[dict]
-    worker_id: int
-
-    async def start_task(self, message: dict) -> None: ...
-
-    def is_ready(self) -> bool: ...
-
-
-class Queuer:
-    def __init__(self, workers: Iterable[PoolWorkerProto]) -> None:
+class Queuer(QueuerProtocol):
+    def __init__(self, workers: Iterable[PoolWorker]) -> None:
         self.queued_messages: list[dict] = []  # TODO: use deque, customizability
         self.workers = workers
+
+    def __iter__(self) -> Iterator[dict]:
+        return iter(self.queued_messages)
 
     def count(self) -> int:
         return len(self.queued_messages)
 
-    def get_free_worker(self) -> Optional[PoolWorkerProto]:
+    def get_free_worker(self) -> Optional[PoolWorker]:
         for candidate_worker in self.workers:
             if (not candidate_worker.current_task) and candidate_worker.is_ready():
                 return candidate_worker
@@ -32,7 +29,10 @@ class Queuer:
             if worker.current_task:
                 yield worker.current_task
 
-    def get_worker_or_process_task(self, message) -> Optional[PoolWorkerProto]:
+    def remove_task(self, message: dict) -> None:
+        self.queued_messages.remove(message)
+
+    def get_worker_or_process_task(self, message: dict) -> Optional[PoolWorker]:
         """Either give a worker to place the task on, or put message into queue
 
         In the future we may change to optionally discard some tasks.

@@ -2,7 +2,7 @@ import asyncio
 import multiprocessing
 from multiprocessing.context import BaseContext
 from types import ModuleType
-from typing import Callable, Iterable, Optional, Union
+from typing import Any, Callable, Iterable, Optional, Union
 
 from ..config import LazySettings
 from ..config import settings as global_settings
@@ -51,6 +51,23 @@ class ProcessProxy:
     def terminate(self) -> None:
         self._process.terminate()
 
+    def __enter__(self) -> "ProcessProxy":
+        """Enter the runtime context and return this ProcessProxy."""
+        return self
+
+    def __exit__(self, exc_type: Optional[type], exc_value: Optional[BaseException], traceback: Optional[Any]) -> Optional[bool]:
+        """Ensure the process is terminated and joined when exiting the context.
+
+        If the process is still alive, it will be terminated (or killed if necessary) and then joined.
+        """
+        if self.is_alive():
+            try:
+                self.terminate()
+            except Exception:
+                self.kill()
+        self.join()
+        return None
+
 
 class ProcessManager:
     mp_context = 'fork'
@@ -59,14 +76,17 @@ class ProcessManager:
         self.ctx = multiprocessing.get_context(self.mp_context)
         self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
         self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
-        self._loop = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
-    def get_event_loop(self):
-        if not self._loop:
-            self._loop = asyncio.get_event_loop()
+    def get_event_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop:
+            return self._loop
+        self._loop = asyncio.get_event_loop()
         return self._loop
 
-    def create_process(self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs) -> ProcessProxy:
+    def create_process(  # type: ignore[no-untyped-def]
+        self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs
+    ) -> ProcessProxy:
         "Returns a ProcessProxy object, which itself contains a Process object, but actual subprocess is not yet started"
         # kwargs allow passing target for substituting the work_loop for testing
         if kwargs is None:

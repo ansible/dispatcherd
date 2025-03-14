@@ -21,7 +21,7 @@ async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     await pool.events.workers_ready.wait()
 
     # Get the ready worker and assign a task
-    worker = list(pool.workers.values())[0]
+    worker = list(pool.workers)[0]
     worker.current_task = {'uuid': 'test-task-123'}
     worker_pid = worker.process.pid
     assert worker_pid is not None, "Worker process PID should not be None"
@@ -40,7 +40,7 @@ async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     assert "test-task-123" in caplog.text
 
     # Clean up by shutting down the pool (override cancel to prevent errors)
-    for w in pool.workers.values():
+    for w in pool.workers:
         w.cancel = lambda: None
     await pool.shutdown()
 
@@ -54,7 +54,7 @@ async def test_manage_dead_worker_removal(test_settings):
     # Set a very short removal wait time for the test.
     pool = WorkerPool(pm, min_workers=1, max_workers=3, worker_removal_wait=0.1)
     await pool.up()
-    worker = pool.workers[0]
+    worker = pool.workers.get_by_id(0)
     worker.status = 'error'
     # Set retired_at to a time sufficiently in the past.
     worker.retired_at = time.monotonic() - 1.0
@@ -76,7 +76,7 @@ async def test_dead_worker_with_no_task(test_settings):
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=1, max_workers=3)
     await pool.up()
-    worker = pool.workers[0]
+    worker = pool.workers.get_by_id(0)
 
     # Set the status to 'ready' instead of waiting for a workers_ready event (which may never fire)
     worker.status = 'ready'

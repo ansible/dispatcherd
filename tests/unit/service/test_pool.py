@@ -16,7 +16,7 @@ async def test_scale_to_min(test_settings):
     assert len(pool.workers) == 0
     await pool.scale_workers()
     assert len(pool.workers) == 5
-    assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}
+    assert set([worker.status for worker in pool.workers]) == {'initialized'}
 
 
 @pytest.mark.asyncio
@@ -25,14 +25,14 @@ async def test_scale_due_to_queue_pressure(test_settings):
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=5, max_workers=10)
     await pool.scale_workers()
-    for worker in pool.workers.values():
+    for worker in pool.workers:
         worker.status = 'ready'  # a lie, for test
         worker.current_task = {'task': 'waiting.task'}
     pool.queuer.queued_messages = [{'task': 'waiting.task'}]
     assert len(pool.workers) == 5
     await pool.scale_workers()
     assert len(pool.workers) == 6
-    assert set([worker.status for worker in pool.workers.values()]) == {'ready', 'initialized'}
+    assert set([worker.status for worker in pool.workers]) == {'ready', 'initialized'}
 
 
 @pytest.mark.asyncio
@@ -48,7 +48,7 @@ async def test_initialized_workers_count_for_scaling(test_settings):
     pool = WorkerPool(pm, min_workers=5, max_workers=10)
     await pool.scale_workers()
     assert len(pool.workers) == 5
-    assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}
+    assert set([worker.status for worker in pool.workers]) == {'initialized'}
 
     pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(5)]  # 5 tasks, 5 workers
     await pool.scale_workers()
@@ -71,7 +71,7 @@ async def test_initialized_and_ready_but_scale(test_settings):
     pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 2 workers
     await pool.scale_workers()
     assert len(pool.workers) == 3  # grew, added 1 more initialized worker
-    assert set([worker.status for worker in pool.workers.values()]) == {'initialized'}  # everything still in startup
+    assert set([worker.status for worker in pool.workers]) == {'initialized'}  # everything still in startup
 
 
 @pytest.mark.asyncio
@@ -85,10 +85,10 @@ async def test_scale_down_condition(test_settings):
     for i in range(3):
         await pool.scale_workers()
     assert len(pool.workers) == 3
-    for worker in pool.workers.values():
+    for worker in pool.workers:
         worker.status = 'ready'  # a lie, for test
         worker.current_task = None
-    assert set([worker.status for worker in pool.workers.values()]) == {'ready'}
+    assert set([worker.status for worker in pool.workers]) == {'ready'}
 
     # Clear queue and set finished times to long ago
     pool.queuer.queued_messages = []  # queue has been fully worked through, no workers are busy
@@ -99,7 +99,7 @@ async def test_scale_down_condition(test_settings):
     await pool.scale_workers()
     # Same number of workers but one worker has been sent a stop signal
     assert len(pool.workers) == 3
-    assert set([worker.status for worker in pool.workers.values()]) == {'ready', 'stopping'}
+    assert set([worker.status for worker in pool.workers]) == {'ready', 'stopping'}
 
 
 @pytest.mark.asyncio
@@ -116,4 +116,4 @@ async def test_error_while_scaling_up(test_settings):
     with mock.patch('dispatcher.service.process.ProcessProxy.start', side_effect=RuntimeError):
         await pool.manage_new_workers(asyncio.Lock())
 
-    assert set([worker.status for worker in pool.workers.values()]) == {'error'}
+    assert set([worker.status for worker in pool.workers]) == {'error'}
