@@ -13,7 +13,7 @@ class Broker(Protocol):
         """
         yield ('', '')  # yield affects CPython type https://github.com/python/mypy/pull/18422
 
-    async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:
+    async def apublish_message(self, channel: Optional[str] = None, origin: Union[int, str, None] = None, message: str = '') -> None:
         """Asynchronously send a message to the broker, used by dispatcher service for reply messages"""
         ...
 

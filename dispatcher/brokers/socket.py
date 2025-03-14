@@ -4,7 +4,7 @@ import os
 import socket
 import threading
 import time
-from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional
+from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -15,20 +15,20 @@ class Client:
         self.reader = reader
         self.writer = writer
 
-    def write(self, message):
+    def write(self, message) -> None:
         self.writer.write((message + '\n').encode())
 
 
 class Broker:
-    def __init__(self, socket_path: str):
+    def __init__(self, socket_path: str) -> None:
         self.socket_path = socket_path
-        self.aserver = None
+        self.aserver: Optional[asyncio.Server] = None
         self.client_ct = 0
-        self.clients = {}
-        self.sock = None  # for synchronous clients
-        self.incoming_queue = asyncio.Queue()
+        self.clients: dict[int, Client] = {}
+        self.sock: Optional[socket.socket] = None  # for synchronous clients
+        self.incoming_queue: asyncio.Queue = asyncio.Queue()
 
-    async def aconnect(self):
+    async def aconnect(self) -> None:
         if os.path.exists(self.socket_path):
             os.remove(self.socket_path)
 
@@ -57,7 +57,7 @@ class Broker:
             await client.writer.wait_closed()
             logger.info(f'Client_id={client.client_id} has disconnected')
 
-    async def aprocess_notify(self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None) -> AsyncGenerator[tuple[str, str], None]:
+    async def aprocess_notify(self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None) -> AsyncGenerator[tuple[int, str], None]:
         if not self.aserver:
             await self.aconnect()
 
@@ -68,13 +68,14 @@ class Broker:
             client_id, message = await self.incoming_queue.get()
             yield client_id, message
 
-    async def apublish_message(self, channel: Optional[str] = '', origin: Optional[int] = None, message: str = "") -> None:
-        client = self.clients.get(origin)
-        if client:
-            client.write(message)
-            await client.writer.drain()
-        else:
-            logger.error(f'Client_id={origin} is not currently connected')
+    async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
+        if origin:
+            client = self.clients.get(int(origin))
+            if client:
+                client.write(message)
+                await client.writer.drain()
+            else:
+                logger.error(f'Client_id={origin} is not currently connected')
 
     async def aclose(self) -> None:
         if self.aserver:
@@ -90,7 +91,7 @@ class Broker:
         if os.path.exists(self.socket_path):
             os.remove(self.socket_path)
 
-    def _enforce_timeout(self, timeout, stop_event, sock, lock):
+    def _enforce_timeout(self, timeout, stop_event, sock, lock) -> None:
         """Used for enforce timeout in a thread"""
         time.sleep(timeout)
         with lock:
@@ -98,7 +99,7 @@ class Broker:
                 return
             sock.close()
 
-    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
+    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[int, str]]:
         received_ct = 0
         lock = threading.Lock()
         stop_event = threading.Event()
@@ -136,22 +137,13 @@ class Broker:
         finally:
             self.sock = None
 
-    def _publish_from_sock(self, sock, message):
+    def _publish_from_sock(self, sock, message) -> None:
         sock.sendall((message + "\n").encode())
 
-    def publish_message(self, channel=None, message=None):
+    def publish_message(self, channel=None, message=None) -> None:
         if self.sock:
             self._publish_from_sock(self.sock, message)
         else:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 sock.connect(self.socket_path)
                 self._publish_from_sock(sock, message)
-
-    def close(self):
-        if self.client_socket:
-            self.client_socket.close()
-            self.client_socket = None
-        if self.server:
-            self.server.close()
-            self.server = None
-            os.remove(self.socket_path)
