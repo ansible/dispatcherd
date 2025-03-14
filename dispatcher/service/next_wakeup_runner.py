@@ -50,9 +50,12 @@ class NextWakeupRunner:
             self.name = name
 
     async def process_wakeups(self, current_time: float, do_processing: bool = True) -> Optional[float]:
-        """Runs process_object for objects past for which we have passed the wakeup time
+        """Runs process_object for objects whose wakeup time has passed.
 
-        Returns the time of the soonest wakeup that has not been processed here
+        Returns the soonest upcoming wakeup time among the objects that have not been processed.
+
+        If do_processing is True, process_object is called for objects with wakeup times below current_time.
+        Errors from process_object are logged and propagated.
 
         Arguments:
          - current_time - output of time.monotonic() passed from caller to keep this deterministic
@@ -63,7 +66,11 @@ class NextWakeupRunner:
         for obj in list(self.wakeup_objects):
             if obj_wakeup := obj.next_wakeup():
                 if do_processing and (obj_wakeup < current_time):
-                    await self.process_object(obj)
+                    try:
+                        await self.process_object(obj)
+                    except Exception as e:
+                        logger.error(f"Error processing wakeup for object {obj}: {e}", exc_info=True)
+                        raise
                     # refresh wakeup, which should be nullified or pushed back by process_object
                     obj_wakeup = obj.next_wakeup()
                     if obj_wakeup is None:

@@ -317,14 +317,22 @@ class WorkerPool(WorkerPoolProtocol):
     async def manage_old_workers(self) -> None:
         """Clear internal memory of workers whose process has exited, and assures processes are gone
 
+        This method takes a snapshot of the current workers under lock,
+        processes them outside the lock (including awaiting worker stops),
+        and then re-acquires the lock to remove workers marked for deletion.
+
         happy path:
         The scale_workers method notifies a worker they need to exit
         The read_results_task will mark the worker status to exited
         This method will see the updated status, join the process, and remove it from self.workers
         """
+        # Phase 1: Get a consistent snapshot of workers.
+        async with self.workers.management_lock:
+            current_workers = list(self.workers)
+
         remove_ids = []
-        for worker in self.workers:
-            # Check for workers that died unexpectedly
+        for worker in current_workers:
+            # Check if the worker has died unexpectedly.
             if worker.status not in ['retired', 'error', 'exited', 'initialized', 'spawned'] and not worker.process.is_alive():
                 logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
 
@@ -332,8 +340,7 @@ class WorkerPool(WorkerPoolProtocol):
                     uuid = worker.current_task.get('uuid', '<unknown>')
                     logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} but the worker died unexpectedly')
                     self.canceled_count += 1
-                    worker.is_active_cancel = False  # Ensure it's not processed by timeout runner
-
+                    worker.is_active_cancel = False  # Prevent further processing.
                 worker.status = 'error'
                 worker.retired_at = time.monotonic()
 
@@ -345,9 +352,9 @@ class WorkerPool(WorkerPoolProtocol):
             elif worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
                 remove_ids.append(worker.worker_id)
 
-        # Remove workers from memory, done as separate loop due to locking concerns
-        for worker_id in remove_ids:
-            async with self.workers.management_lock:
+        # Phase 2: Remove workers from the collection under lock.
+        async with self.workers.management_lock:
+            for worker_id in remove_ids:
                 if worker_id in self.workers:
                     logger.debug(f'Fully removing worker id={worker_id}')
                     self.workers.remove_by_id(worker_id)
@@ -453,14 +460,16 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def dispatch_task(self, message: dict) -> None:
         uuid = message.get("uuid", "<unknown>")
-        async with self.workers.management_lock:
-            if unblocked_task := self.blocker.process_task(message):
-                if worker := self.queuer.get_worker_or_process_task(unblocked_task):
-                    logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+        unblocked_task = self.blocker.process_task(message)
+        if unblocked_task:
+            worker = self.queuer.get_worker_or_process_task(unblocked_task)
+            if worker:
+                logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+                async with self.workers.management_lock:
                     await worker.start_task(unblocked_task)
                     await self.post_task_start(unblocked_task)
-                else:
-                    self.events.management_event.set()  # kick manager task to start auto-scale up
+            else:
+                self.events.management_event.set()  # kick manager task to start auto-scale up if needed
 
     async def drain_queue(self) -> None:
         async with self.workers.management_lock:

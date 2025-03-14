@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 import psycopg
@@ -97,8 +98,8 @@ class Broker:
     # --- asyncio connection methods ---
 
     async def aget_connection(self) -> psycopg.AsyncConnection:
-        "Return existing connection or create a new one"
-        if not self._async_connection:
+        # Check if the cached async connection is either None or closed.
+        if not self._async_connection or getattr(self._async_connection, "closed", 0) != 0:
             if self._async_connection_factory:
                 factory = resolve_callable(self._async_connection_factory)
                 if not factory:
@@ -109,7 +110,7 @@ class Broker:
             else:
                 raise RuntimeError('Could not construct async connection for lack of config or factory')
             self._async_connection = connection
-            return connection  # slightly weird due to MyPY
+        assert self._async_connection is not None
         return self._async_connection
 
     def get_listen_query(self, channel: str) -> psycopg.sql.Composed:
@@ -178,7 +179,8 @@ class Broker:
     # --- synchronous connection methods ---
 
     def get_connection(self) -> psycopg.Connection:
-        if not self._sync_connection:
+        # Check if the cached connection is either None or closed.
+        if not self._sync_connection or getattr(self._sync_connection, "closed", 0) != 0:
             if self._sync_connection_factory:
                 factory = resolve_callable(self._sync_connection_factory)
                 if not factory:
@@ -189,7 +191,7 @@ class Broker:
             else:
                 raise RuntimeError('Could not construct connection for lack of config or factory')
             self._sync_connection = connection
-            return connection
+        assert self._sync_connection is not None
         return self._sync_connection
 
     def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
@@ -234,6 +236,7 @@ class ConnectionSaver:
     def __init__(self) -> None:
         self._connection: Optional[psycopg.Connection] = None
         self._async_connection: Optional[psycopg.AsyncConnection] = None
+        self._lock = threading.Lock()
 
 
 connection_save = ConnectionSaver()
@@ -245,10 +248,14 @@ def connection_saver(**config) -> psycopg.Connection:  # type: ignore[no-untyped
     Philosophically, this is used by an application that uses an ORM,
     or otherwise has its own connection management logic.
     Dispatcher does not manage connections, so this a simulation of that.
+
+    Uses a thread lock to ensure thread safety.
     """
-    if connection_save._connection is None:
-        connection_save._connection = create_connection(**config)
-    return connection_save._connection
+    with connection_save._lock:
+        # Check if we need to create a new connection because it's either None or closed.
+        if connection_save._connection is None or getattr(connection_save._connection, 'closed', False):
+            connection_save._connection = create_connection(**config)
+        return connection_save._connection
 
 
 async def async_connection_saver(**config) -> psycopg.AsyncConnection:  # type: ignore[no-untyped-def]
@@ -257,7 +264,10 @@ async def async_connection_saver(**config) -> psycopg.AsyncConnection:  # type: 
     Philosophically, this is used by an application that uses an ORM,
     or otherwise has its own connection management logic.
     Dispatcher does not manage connections, so this a simulation of that.
+
+    Uses a thread lock to ensure thread safety.
     """
-    if connection_save._async_connection is None:
-        connection_save._async_connection = await acreate_connection(**config)
-    return connection_save._async_connection
+    with connection_save._lock:
+        if connection_save._async_connection is None or getattr(connection_save._async_connection, 'closed', False):
+            connection_save._async_connection = await acreate_connection(**config)
+        return connection_save._async_connection

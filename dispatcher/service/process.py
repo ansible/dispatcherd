@@ -2,7 +2,7 @@ import asyncio
 import multiprocessing
 from multiprocessing.context import BaseContext
 from types import ModuleType
-from typing import Callable, Iterable, Optional, Union
+from typing import Any, Callable, Iterable, Optional, Union
 
 from ..config import LazySettings
 from ..config import settings as global_settings
@@ -50,6 +50,23 @@ class ProcessProxy:
 
     def terminate(self) -> None:
         self._process.terminate()
+
+    def __enter__(self) -> "ProcessProxy":
+        """Enter the runtime context and return this ProcessProxy."""
+        return self
+
+    def __exit__(self, exc_type: Optional[type], exc_value: Optional[BaseException], traceback: Optional[Any]) -> Optional[bool]:
+        """Ensure the process is terminated and joined when exiting the context.
+
+        If the process is still alive, it will be terminated (or killed if necessary) and then joined.
+        """
+        if self.is_alive():
+            try:
+                self.terminate()
+            except Exception:
+                self.kill()
+        self.join()
+        return None
 
 
 class ProcessManager:
