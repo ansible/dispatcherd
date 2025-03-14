@@ -5,6 +5,8 @@ import psycopg
 
 from dispatcher.utils import resolve_callable
 
+from ..protocols import Broker as BrokerProtocol
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,7 @@ def create_connection(**config) -> psycopg.Connection:
     return connection
 
 
-class Broker:
+class Broker(BrokerProtocol):
     NOTIFY_QUERY_TEMPLATE = 'SELECT pg_notify(%s, %s);'
 
     def __init__(
@@ -152,7 +154,7 @@ class Broker:
         """The inner logic of async message publishing where we already have a cursor"""
         await cursor.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
-    async def apublish_message(self, channel: Optional[str] = None, origin: Optional[str] = '', message: str = '') -> None:  # public
+    async def apublish_message(self, channel: Optional[str] = None, origin: Union[str, int, None] = '', message: str = '') -> None:  # public
         """asyncio way to publish a message, used to send control in control-and-reply
 
         Not strictly necessary for the service itself if it sends replies in the workers,

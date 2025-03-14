@@ -34,7 +34,7 @@ class BrokeredProducer(BaseProducer):
         self.dispatcher = dispatcher
         async for channel, payload in self.broker.aprocess_notify(connected_callback=self.connected_callback):
             self.produced_count += 1
-            reply_to, reply_payload = await dispatcher.process_message(payload, producer=self, channel=channel)
+            reply_to, reply_payload = await dispatcher.process_message(payload, producer=self, channel=str(channel))
             if reply_to and reply_payload:
                 await self.notify(channel=reply_to, origin=channel, message=reply_payload)
 

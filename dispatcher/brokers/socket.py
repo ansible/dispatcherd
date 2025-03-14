@@ -6,6 +6,8 @@ import threading
 import time
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
+from ..protocols import Broker as BrokerProtocol
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +21,7 @@ class Client:
         self.writer.write((message + '\n').encode())
 
 
-class Broker:
+class Broker(BrokerProtocol):
     def __init__(self, socket_path: str) -> None:
         self.socket_path = socket_path
         self.client_ct = 0
@@ -31,6 +33,7 @@ class Broker:
         client = Client(self.client_ct, reader, writer)
         self.clients[self.client_ct] = client
         self.client_ct += 1
+        logger.info(f'Socket client_id={client.client_id} is connected')
 
         try:
             while True:
@@ -47,10 +50,13 @@ class Broker:
             del self.clients[client.client_id]
             client.writer.close()
             await client.writer.wait_closed()
-            logger.info(f'Client_id={client.client_id} has disconnected')
+            logger.info(f'Socket client_id={client.client_id} is disconnected')
 
-    async def aprocess_notify(self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None) -> AsyncGenerator[tuple[int, str], None]:
+    async def aprocess_notify(
+        self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
+    ) -> AsyncGenerator[tuple[Union[int, str], str], None]:
         if os.path.exists(self.socket_path):
+            logger.debug(f'Deleted pre-existing {self.socket_path}')
             os.remove(self.socket_path)
 
         aserver = None
@@ -63,10 +69,13 @@ class Broker:
 
             while True:
                 client_id, message = await self.incoming_queue.get()
+                if (client_id == -1) and (message == 'stop'):
+                    return  # internal exit signaling from aclose
+
                 yield client_id, message
 
         except asyncio.CancelledError:
-            pass
+            logger.debug('Ack that general socket server task has been canceled')
         finally:
             if aserver:
                 aserver.close()
@@ -79,6 +88,10 @@ class Broker:
 
             if os.path.exists(self.socket_path):
                 os.remove(self.socket_path)
+
+    async def aclose(self) -> None:
+        """Send an internal message to the async generator, which will cause it to close the server"""
+        await self.incoming_queue.put((-1, 'stop'))
 
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
         if origin:
@@ -97,7 +110,9 @@ class Broker:
                 return
             sock.close()
 
-    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[int, str]]:
+    def process_notify(
+        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
+    ) -> Iterator[tuple[Union[int, str], str]]:
         received_ct = 0
         lock = threading.Lock()
         stop_event = threading.Event()
