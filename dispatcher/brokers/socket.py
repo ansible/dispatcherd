@@ -14,9 +14,27 @@ class Client:
         self.client_id = client_id
         self.reader = reader
         self.writer = writer
+        self.listen_loop_active = False
+        # This is needed for task management betewen the client tasks and the main aprocess_notify
+        # if the client task starts listening, then we can not send replies
+        # so this waits for the caller method to add replies to stack before continuing
+        self.yield_clear = asyncio.Event()
+        self.replies_to_send: list = []
 
     def write(self, message) -> None:
         self.writer.write((message + '\n').encode())
+
+    def queue_reply(self, reply: str) -> None:
+        self.replies_to_send.append(reply)
+
+    async def send_replies(self):
+        for reply in self.replies_to_send.copy():
+            logger.info(f'Sending reply to client_id={self.client_id} len={len(reply)}')
+            self.write(reply)
+        else:
+            logger.info(f'No replies to send to client_id={self.client_id}')
+        await self.writer.drain()
+        self.replies_to_send = []
 
 
 class Broker(BrokerProtocol):
@@ -43,12 +61,20 @@ class Broker(BrokerProtocol):
         logger.info(f'Socket client_id={client.client_id} is connected')
 
         try:
+            client.listen_loop_active = True
             while True:
                 line = await client.reader.readline()
                 if not line:
                     break  # disconnect
                 message = line.decode().strip()
                 await self.incoming_queue.put((client.client_id, message))
+                # Wait for caller to potentially fill a reply queue
+                # this should realistically never take more than a trivial amount of time
+                await asyncio.wait_for(client.yield_clear.wait(), timeout=2)
+                client.yield_clear.clear()
+                await client.send_replies()
+        except asyncio.TimeoutError:
+            logger.error(f'Unexpected asyncio task management bug for client_id={client.client_id}, exiting')
         except asyncio.CancelledError:
             logger.debug(f'Ack that reader task for client_id={client.client_id} has been canceled')
         except Exception:
@@ -80,6 +106,11 @@ class Broker(BrokerProtocol):
                     return  # internal exit signaling from aclose
 
                 yield client_id, message
+                # trigger reply messages if applicable
+                client = self.clients.get(client_id)
+                if client:
+                    logger.info(f'Yield complete for client_id={client_id}')
+                    client.yield_clear.set()
 
         except asyncio.CancelledError:
             logger.debug('Ack that general socket server task has been canceled')
@@ -102,11 +133,16 @@ class Broker(BrokerProtocol):
 
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
         logger.warning(f'apublish_message with socket {(channel, origin, len(message))}')
-        if origin:
+        if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
-                client.write(message)
-                await client.writer.drain()
+                if client.listen_loop_active:
+                    logger.info(f'Queued message for client_id={client.client_id}')
+                    client.queue_reply(message)
+                else:
+                    logger.warning(f'Not currently listening to client_id={client.client_id}, reply might be dropped')
+                    client.write(message)
+                    await client.writer.drain()
             else:
                 logger.error(f'Client_id={origin} is not currently connected')
 

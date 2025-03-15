@@ -179,10 +179,11 @@ class DispatcherMain:
 
         # Give Nones for no reply, or the reply
         if reply_to:
-            logger.info(f"Control action {action} returned {return_data}, sending back reply")
-            return (reply_to, json.dumps(return_data))
+            reply_msg = json.dumps(return_data)
+            logger.info(f"Control action {action} returned message len={len(reply_msg)}, sending back reply")
+            return (reply_to, reply_msg)
         else:
-            logger.info(f"Control action {action} returned {return_data}, done")
+            logger.info(f"Control action {action} returned {type(return_data)}, done")
             return (None, None)
 
     async def process_message_internal(self, message: dict, producer=None) -> tuple[Optional[str], Optional[str]]:
