@@ -123,7 +123,10 @@ class Control(object):
         if data:
             send_data['control_data'] = data
 
-        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        try:
+            broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        except TypeError:
+            broker = get_broker(self.broker_name, self.broker_config)
 
         def connected_callback() -> None:
             payload = json.dumps(send_data)
@@ -134,7 +137,11 @@ class Control(object):
 
         replies = []
         for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=expected_replies, timeout=timeout):
-            reply_data = json.loads(payload)
+            try:
+                reply_data = json.loads(payload)
+            except Exception:
+                logger.error(f'Failed to parse response:\n{payload}')
+                raise
             replies.append(reply_data)
 
         logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
