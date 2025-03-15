@@ -2,8 +2,6 @@ import asyncio
 import logging
 import os
 import socket
-import threading
-import time
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 from ..protocols import Broker as BrokerProtocol
@@ -112,31 +110,19 @@ class Broker(BrokerProtocol):
             else:
                 logger.error(f'Client_id={origin} is not currently connected')
 
-    def _enforce_timeout(self, timeout, stop_event, sock, lock) -> None:
-        """Used for enforce timeout in a thread"""
-        time.sleep(timeout)
-        with lock:
-            if stop_event.is_set():
-                return
-            sock.close()
-
     def process_notify(
         self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
     ) -> Iterator[tuple[Union[int, str], str]]:
         received_ct = 0
-        lock = threading.Lock()
-        stop_event = threading.Event()
         buffer = ''
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 self.sock = sock
+                sock.settimeout(timeout)
                 sock.connect(self.socket_path)
 
                 if connected_callback:
                     connected_callback()
-
-                timeout_thread = threading.Thread(target=self._enforce_timeout, daemon=True, args=(timeout, stop_event, sock, lock))
-                timeout_thread.start()
 
                 while True:
                     response = sock.recv(1024).decode().strip()
@@ -152,8 +138,6 @@ class Broker(BrokerProtocol):
                         received_ct += 1
                         yield (0, response)
                         if received_ct >= max_messages:
-                            with lock:
-                                stop_event.set()
                             return
                     else:
                         buffer += response

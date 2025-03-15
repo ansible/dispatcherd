@@ -92,12 +92,12 @@ def get_publisher_from_settings(publish_broker: Optional[str] = None, settings: 
 
 def get_control_from_settings(publish_broker: Optional[str] = None, settings: LazySettings = global_settings, **overrides):
     if 'default_control_broker' in settings.publish:
-        publish_broker = settings.publish['default_control_broker']
+        result_publish_broker = settings.publish['default_control_broker']
     else:
-        publish_broker = _get_publisher_broker_name(publish_broker=publish_broker, settings=settings)
-    broker_options = settings.brokers[publish_broker].copy()
+        result_publish_broker = _get_publisher_broker_name(publish_broker=result_publish_broker, settings=settings)
+    broker_options = settings.brokers[result_publish_broker].copy()
     broker_options.update(overrides)
-    return Control(publish_broker, broker_options)
+    return Control(result_publish_broker, broker_options)
 
 
 # ---- Schema generation ----
