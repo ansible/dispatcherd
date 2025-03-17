@@ -67,6 +67,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     async def signal_stop(self) -> None:
         "Tell the worker to stop and return"
         self.process.message_queue.put("stop")
+        logger.debug(f'Sent stop message to worker_id={self.worker_id}')
         if self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
             logger.warning(f'Worker {self.worker_id} is currently running task (uuid={uuid}), canceling for shutdown')
@@ -398,10 +399,21 @@ class WorkerPool(WorkerPoolProtocol):
         return new_worker_id
 
     async def stop_workers(self) -> None:
+        # Stop any workers that are expected to be running
+        workers_to_stop = []
         for worker in self.workers:
-            await worker.signal_stop()
-        stop_tasks = [worker.stop() for worker in self.workers]
+            async with self.workers.management_lock:
+                if worker.counts_for_capacity:
+                    await worker.signal_stop()
+                    workers_to_stop.append(worker)
+        stop_tasks = [worker.stop() for worker in workers_to_stop]
         await asyncio.gather(*stop_tasks)
+
+        # Tripple-check that all workers are stopped in practice
+        for worker in self.workers:
+            if worker.process.is_alive():
+                logger.warning(f'worker_id={worker.worker_id} was found alive unexpectedly')
+                await worker.stop()
 
     async def force_shutdown(self) -> None:
         for worker in self.workers:
@@ -419,7 +431,20 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def shutdown(self) -> None:
         self.shutting_down = True
+
+        # Shutting down the management task first reduces the number of tasks that might modify self.workers
         self.events.management_event.set()
+        if self.management_task:
+            try:
+                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)  # in happy path this should exit very fast
+            except asyncio.TimeoutError:
+                logger.error('Worker management task failed to shut down on its own, canceling')
+                self.management_task.cancel()  # could be non-atomic, we do not really want to do this
+                try:
+                    await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
+                except asyncio.CancelledError:
+                    pass  # intended
+
         await self.timeout_runner.shutdown()
         self.queuer.shutdown()
         self.blocker.shutdown()
@@ -435,16 +460,6 @@ class WorkerPool(WorkerPoolProtocol):
                 await self.force_shutdown()
             except asyncio.CancelledError:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
-
-        if self.management_task:
-            logger.info('Canceling worker management task')
-            self.management_task.cancel()
-            try:
-                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
-            except asyncio.TimeoutError:
-                logger.error('The scaleup task failed to shut down')
-            except asyncio.CancelledError:
-                pass  # intended
 
         logger.info('Pool is shut down')
 
@@ -520,6 +535,19 @@ class WorkerPool(WorkerPoolProtocol):
         if 'timeout' in message:
             await self.timeout_runner.kick()
 
+    @property
+    def status_counts(self) -> dict[str, int]:
+        """Debugging data for logs only
+
+        example format:
+        {'retired': 8, 'exited': 1, 'stopping': 3}
+        """
+        stats: dict[str, int] = {}
+        for worker in self.workers:
+            stats.setdefault(worker.status, 0)
+            stats[worker.status] += 1
+        return stats
+
     async def read_results_forever(self) -> None:
         """Perpetual task that continuously waits for task completions."""
         while True:
@@ -528,8 +556,7 @@ class WorkerPool(WorkerPoolProtocol):
 
             if message == 'stop':
                 if self.shutting_down:
-                    stats = [worker.status for worker in self.workers]
-                    logger.debug(f'Results message got administrative stop message, worker status: {stats}')
+                    logger.debug(f'Results message got administrative stop message, worker status: {self.status_counts}')
                     return
                 else:
                     logger.error('Results queue got stop message even through not shutting down')
@@ -555,8 +582,9 @@ class WorkerPool(WorkerPoolProtocol):
                         logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
                         return
                     else:
-                        stats = [worker.status for worker in self.workers]
-                        logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining: {stats}")
+                        logger.debug(
+                            f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining statuses: {self.status_counts}"
+                        )
                 else:
                     self.events.management_event.set()
                     logger.debug(f"Worker {worker_id} sent exit signal.")
