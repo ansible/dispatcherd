@@ -79,7 +79,10 @@ class Broker:
 
         # Make sure that the self check channel is always present
         if not self.SELF_CHECK_CHANNEL in channels:
-            channels.append(self.SELF_CHECK_CHANNEL)
+            if isinstance(channels, list):
+                channels.append(self.SELF_CHECK_CHANNEL)
+            elif isinstance(channels, tuple):
+                channels = channels + (self.SELF_CHECK_CHANNEL,)
 
         self.channels = channels
         self.default_publish_channel = default_publish_channel
@@ -100,10 +103,9 @@ class Broker:
             return channel
         elif self.default_publish_channel is not None:
             return self.default_publish_channel
-        elif len(self.channels) == 1:
-            # de-facto default channel, because there is only 1
-            return self.channels[0]
 
+        # There is always at least one channel, but we don't consider the self-check channel
+        # as a regular publish channel
         raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
 
     async def initiate_self_check(self, node_id: str) -> None:
