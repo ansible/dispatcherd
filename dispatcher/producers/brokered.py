@@ -9,10 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 class BrokeredProducer(BaseProducer):
-    def __init__(self, broker: Broker, close_on_exit: bool = True) -> None:
+    def __init__(self, broker: Broker) -> None:
         self.production_task: Optional[asyncio.Task] = None
         self.broker = broker
-        self.close_on_exit = close_on_exit
         self.dispatcher: Optional[DispatcherMain] = None
         super().__init__()
 
@@ -50,6 +49,5 @@ class BrokeredProducer(BaseProducer):
                 logger.info(f'Successfully canceled production from {self.broker}')
 
             self.production_task = None
-        if self.close_on_exit:
-            logger.debug(f'Closing {self.broker} connection')
-            await self.broker.aclose()
+
+        await self.broker.aclose()

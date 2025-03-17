@@ -14,7 +14,7 @@ logger = logging.getLogger('awx.main.dispatch.control')
 
 class BrokerCallbacks:
     def __init__(self, queuename: Optional[str], broker: Broker, send_message: str, expected_replies: int = 1) -> None:
-        self.received_replies: list = []
+        self.received_replies: list[str] = []
         self.queuename = queuename
         self.broker = broker
         self.send_message = send_message
@@ -29,12 +29,7 @@ class BrokerCallbacks:
         This gets ran in an async task, and timing out will be accomplished by the main code
         """
         async for channel, payload in self.broker.aprocess_notify(connected_callback=self.connected_callback):
-            try:
-                # If payload is a string, parse it to a dict; otherwise assume it's valid.
-                message = json.loads(payload) if isinstance(payload, str) else payload
-                self.received_replies.append(message)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Invalid JSON on channel '{channel}': {payload[:100]}... (Error: {e})")
+            self.received_replies.append(payload)
             if len(self.received_replies) >= self.expected_replies:
                 return
 
@@ -50,13 +45,16 @@ class Control:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
     @staticmethod
-    def parse_replies(received_replies: list[Union[str, dict]]) -> list[dict]:
+    def parse_replies(received_replies: list[str]) -> list[dict]:
         ret = []
-        for payload in received_replies:
-            if isinstance(payload, dict):
-                ret.append(payload)
-            else:
-                ret.append(json.loads(payload))
+        for i, payload in enumerate(received_replies):
+            try:
+                item_as_dict = json.loads(payload)
+                ret.append(item_as_dict)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid JSON for reply for reply {i}: {payload[:100]}... (Error: {e})")
+                ret.append({'error': 'JSON parse error', 'original': payload})
+
         return ret
 
     def create_message(self, command: str, reply_to: Optional[str] = None, send_data: Optional[dict] = None) -> str:

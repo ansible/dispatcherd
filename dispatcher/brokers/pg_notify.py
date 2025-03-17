@@ -65,9 +65,12 @@ class Broker:
 
         self._async_connection_factory = async_connection_factory
         self._async_connection = async_connection
+        # If a connection is created by the factory, we will not manage it (closing) here
+        self.owns_async_connection = False
 
         self._sync_connection_factory = sync_connection_factory
         self._sync_connection = sync_connection
+        self.owns_sync_connection = False
 
         if config:
             self._config: dict = config.copy()
@@ -106,6 +109,7 @@ class Broker:
                     raise RuntimeError(f'Could not import async connection factory {self._async_connection_factory}')
                 connection = await factory(**self._config)
             elif self._config:
+                self.owns_async_connection = True
                 connection = await acreate_connection(**self._config)
             else:
                 raise RuntimeError('Could not construct async connection for lack of config or factory')
@@ -172,9 +176,11 @@ class Broker:
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
 
     async def aclose(self) -> None:
-        if self._async_connection:
+        if self.owns_async_connection and self._async_connection:
+            logger.info('Closing asynchronous psycopg connection')
             await self._async_connection.close()
             self._async_connection = None
+            self.owns_async_connection = False
 
     # --- synchronous connection methods ---
 
@@ -187,6 +193,7 @@ class Broker:
                     raise RuntimeError(f'Could not import connection factory {self._sync_connection_factory}')
                 connection = factory(**self._config)
             elif self._config:
+                self.owns_sync_connection = True
                 connection = create_connection(**self._config)
             else:
                 raise RuntimeError('Could not construct connection for lack of config or factory')
@@ -227,9 +234,11 @@ class Broker:
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
 
     def close(self) -> None:
-        if self._sync_connection:
+        if self.owns_sync_connection and self._sync_connection:
+            logger.info('Closing synchronous psycopg connection')
             self._sync_connection.close()
             self._sync_connection = None
+            self.owns_sync_connection = False
 
 
 class ConnectionSaver:
