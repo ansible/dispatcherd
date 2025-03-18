@@ -108,6 +108,31 @@ class Queuer(Protocol):
     def remove_task(self, message: dict) -> None: ...
 
 
+class DelayCapsule(Protocol):
+    """Task wrapper for delayed tasks"""
+
+    delay: float
+    message: dict
+    has_ran: bool
+
+
+class Delayer(Protocol):
+    """
+    Describes an interface for handling tasks that specifify a delay before running.
+
+    This runs an asyncio task as needed to get wakeups.
+    It advances tasks into the next stage of processing by the callback passed in.
+    """
+
+    def __iter__(self) -> Iterator[DelayCapsule]: ...
+
+    async def process_task(self, message: dict) -> Optional[dict]: ...
+
+    def remove_capsule(self, capsule: DelayCapsule) -> None: ...
+
+    async def shutdown(self) -> None: ...
+
+
 class Blocker(Protocol):
     """
     Describes an interface for handling tasks that are temporarily deferred.
@@ -168,7 +193,7 @@ class DispatcherMain(Protocol):
     """
 
     pool: WorkerPool
-    delayed_messages: set
+    delayer: Delayer
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""
