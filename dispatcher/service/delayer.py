@@ -1,14 +1,16 @@
 import asyncio
 import logging
 import time
-from typing import Any, Callable, Coroutine, Iterator, Optional
+from typing import Any, Callable, Coroutine, Iterator, Optional, cast
 
+from ..protocols import DelayCapsule as DelayCapsuleProtocol
+from ..protocols import Delayer as DelayerProtocol
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 logger = logging.getLogger(__name__)
 
 
-class DelayCapsule(HasWakeup):
+class DelayCapsule(HasWakeup, DelayCapsuleProtocol):
     """When a task has a delay, this tracks the delay, as in a time capsult"""
 
     def __init__(self, delay: float, message: dict) -> None:
@@ -23,23 +25,23 @@ class DelayCapsule(HasWakeup):
         return self.received_at + self.delay
 
 
-class Delayer(NextWakeupRunner):
+class Delayer(NextWakeupRunner, DelayerProtocol):
     def __init__(
         self,
         process_message_now: Callable[[dict[Any, Any]], Coroutine[Any, Any, tuple[str | None, str | None]]],
         exit_event: Optional[asyncio.Event] = None,
     ) -> None:
-        self.delayed_messages: set[DelayCapsule] = set()
+        self.delayed_messages: set[DelayCapsuleProtocol] = set()
         self.shutting_down = False
         self.process_message_now = process_message_now
         super().__init__(
-            wakeup_objects=self.delayed_messages,
+            wakeup_objects=cast(set[HasWakeup], self.delayed_messages),
             process_object=self.run_delayed_capsule,  # type: ignore[arg-type] # takes capsules, not HasWakeups, which is more specific
             name='delayed_task_runner',
             exit_event=exit_event,
         )
 
-    def __iter__(self) -> Iterator[DelayCapsule]:
+    def __iter__(self) -> Iterator[DelayCapsuleProtocol]:
         return iter(self.delayed_messages)
 
     async def shutdown(self) -> None:
@@ -56,14 +58,17 @@ class Delayer(NextWakeupRunner):
         self.delayed_messages.add(capsule)
         await self.kick()
 
-    async def run_delayed_capsule(self, capsule: DelayCapsule, /) -> None:
+    def remove_capsule(self, capsule: DelayCapsuleProtocol) -> None:
+        self.delayed_messages.remove(capsule)
+
+    async def run_delayed_capsule(self, capsule: DelayCapsuleProtocol, /) -> None:
         """Mark the capsule as having been run for race conditions, remove it from list, call the actual task dispatching method"""
         capsule.has_ran = True
         logger.debug(f'Wakeup for delayed task: {capsule.message}')
         reply_to, payload = await self.process_message_now(capsule.message)
         if reply_to:
             logger.warning(f'Can not return reply to channel {reply_to} from delayed tasks, dropping reply:\n{payload}')
-        self.delayed_messages.remove(capsule)
+        self.remove_capsule(capsule)
 
     async def process_task(self, message: dict) -> Optional[dict]:
         """The general contract for process_task is that we can _consume_ the task and return None

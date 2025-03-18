@@ -49,7 +49,7 @@ async def _find_tasks(dispatcher: DispatcherMain, data: dict, cancel: bool = Fal
                 uuid = capsule.message.get('uuid', '<unknown>')
                 logger.warning(f'Canceling delayed task (uuid={uuid})')
                 capsule.has_ran = True  # make sure we do not run by accident
-                dispatcher.delayer.delayed_messages.remove(capsule)
+                dispatcher.delayer.remove_capsule(capsule)
             ret[f'delayed-{i}'] = capsule.message
     return ret
 

@@ -5,12 +5,12 @@ import signal
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
+from ..protocols import Delayer as DelayerProtocol
 from ..protocols import DispatcherMain as DispatcherMainProtocol
 from ..protocols import Producer, WorkerPool
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal
 from .delayer import Delayer
-from .pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
         self.events: DispatcherEvents = DispatcherEvents()
 
-        self.delayer = Delayer(self.process_message_now, exit_event=self.events.exit_event)
+        self.delayer: DelayerProtocol = Delayer(self.process_message_now, exit_event=self.events.exit_event)
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
