@@ -65,3 +65,4 @@ pg_notify = ["psycopg[binary]>=3.2.4"]
 
 [tool.pytest.ini_options]
 log_cli_level = "DEBUG"
+addopts = "-m 'not asyncio'"
