@@ -157,7 +157,7 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
 
     ret['service']['metrics_kwargs'] = schema_for_cls(DispatcherMetricsServer)
     ret['service']['process_manager_kwargs'] = {}
-    pm_classes = (process.ProcessManager, process.ForkServerManager)
+    pm_classes = (process.ProcessManager, process.ForkServerManager, process.SpawnServerManager)
     for pm_cls in pm_classes:
         ret['service']['process_manager_kwargs'].update(schema_for_cls(pm_cls))
     ret['service']['process_manager_cls'] = str(Literal[tuple(pm_cls.__name__ for pm_cls in pm_classes)])

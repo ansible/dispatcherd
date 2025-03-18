@@ -196,6 +196,20 @@ class SharedAsyncObjects:
     forking_and_connecting_lock: asyncio.Lock  # Forking and locking may need to be serialized, which this does
 
 
+class PoolEvents:
+    """
+    Container for events related to the WorkerPool
+
+    These have so far been events triggered _by_ the worker pool.
+    This is useful for writing tests or 3rd party customization of the main loop.
+    """
+
+    queue_cleared: asyncio.Event
+    work_cleared: asyncio.Event = asyncio.Event()
+    management_event: asyncio.Event = asyncio.Event()
+    workers_ready: asyncio.Event = asyncio.Event()
+
+
 class WorkerPool(Protocol):
     """
     Describes an interface for a pool managing task workers.
@@ -208,6 +222,7 @@ class WorkerPool(Protocol):
     queuer: Queuer
     blocker: Blocker
     shared: SharedAsyncObjects
+    finished_count: int
 
     async def start_working(self, dispatcher: 'DispatcherMain') -> None:
         """Start persistent asyncio tasks, including asychronously starting worker subprocesses"""

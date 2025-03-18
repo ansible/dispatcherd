@@ -1,7 +1,6 @@
 import asyncio
 import json
 import time
-from typing import Union
 
 import pytest
 
@@ -21,15 +20,6 @@ async def wait_to_receive(dispatcher, ct, timeout=5.0, interval=0.05):
         await asyncio.sleep(interval)
     else:
         raise RuntimeError(f'Failed to receive expected {ct} messages {dispatcher.pool.received_count}')
-
-
-@pytest.mark.asyncio
-async def test_run_lambda_function(apg_dispatcher, pg_message):
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait(), name='test_lambda_clear_wait')
-    await pg_message('lambda: "This worked!"')
-    await asyncio.wait_for(clearing_task, timeout=3)
-
-    assert apg_dispatcher.pool.finished_count == 1
 
 
 @pytest.mark.asyncio
@@ -88,45 +78,8 @@ async def test_ten_messages_queued(apg_dispatcher, pg_message):
     assert apg_dispatcher.pool.finished_count == 15
 
 
-def get_worker_data(response_list: list[dict[str, Union[str, dict]]]) -> dict:
-    "Given some control-and-response data, assuming 1 node, 1 entry, get the task message"
-    assert len(response_list) == 1
-    response = response_list[0].copy()
-    response.pop('node_id', None)
-    assert len(response) == 1
-    return list(response.values())[0]
-
-
 @pytest.mark.asyncio
-async def test_get_running_jobs(apg_dispatcher, pg_message, pg_control):
-    msg = json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'find_me'})
-    await pg_message(msg)
-
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    running_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('running', timeout=1), timeout=5)
-    running_job = get_worker_data(running_jobs)
-
-    assert running_job['uuid'] == 'find_me'
-
-
-@pytest.mark.asyncio
-async def test_cancel_task(apg_dispatcher, pg_message, pg_control):
-    msg = json.dumps({'task': 'lambda: __import__("time").sleep(3.1415)', 'uuid': 'foobar'})
-    await pg_message(msg)
-
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    await asyncio.sleep(0.2)
-    canceled_jobs = await asyncio.wait_for(pg_control.acontrol_with_reply('cancel', data={'uuid': 'foobar'}, timeout=1), timeout=5)
-    canceled_message = get_worker_data(canceled_jobs)
-    assert canceled_message['uuid'] == 'foobar'
-    await asyncio.wait_for(clearing_task, timeout=3)
-
-    pool = apg_dispatcher.pool
-    assert [pool.finished_count, pool.canceled_count, apg_dispatcher.control_count] == [0, 1, 1], 'cts: [finished, canceled, control]'
-
-
-@pytest.mark.asyncio
-async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
+async def test_message_with_delay(apg_dispatcher, pg_message, pg_control, get_worker_data):
     # Send message to run task with a delay
     msg = json.dumps({'task': 'lambda: print("This task had a delay")', 'uuid': 'delay_task', 'delay': 0.3})
     await pg_message(msg)
@@ -145,7 +98,7 @@ async def test_message_with_delay(apg_dispatcher, pg_message, pg_control):
 
 
 @pytest.mark.asyncio
-async def test_cancel_delayed_task(apg_dispatcher, pg_message, pg_control):
+async def test_cancel_delayed_task(apg_dispatcher, pg_message, pg_control, get_worker_data):
     # Send message to run task with a delay
     msg = json.dumps({'task': 'lambda: print("This task should be canceled before start")', 'uuid': 'delay_task_will_cancel', 'delay': 0.8})
     await pg_message(msg)
