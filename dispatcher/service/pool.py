@@ -90,6 +90,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         except asyncio.TimeoutError:
             logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
             self.status = 'error'  # can signal for result task to exit, since no longer waiting for it here
+            self.process.message_queue.close()
 
         await self.join()  # If worker fails to exit, this returns control without raising an exception
 
@@ -461,6 +462,18 @@ class WorkerPool(WorkerPoolProtocol):
             except asyncio.CancelledError:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
 
+        if self.management_task:
+            logger.info('Canceling worker management task')
+            self.management_task.cancel()
+            try:
+                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
+            except asyncio.TimeoutError:
+                logger.error('The scaleup task failed to shut down')
+            except asyncio.CancelledError:
+                pass  # intended
+
+        self.process_manager.shutdown()
+
         logger.info('Pool is shut down')
 
     def active_task_ct(self) -> int:
@@ -576,6 +589,7 @@ class WorkerPool(WorkerPoolProtocol):
                 async with self.workers.management_lock:
                     worker.status = 'exited'
                     worker.exit_msg_event.set()
+                    worker.process.message_queue.close()
 
                 if self.shutting_down:
                     if all(worker.inactive for worker in self.workers):

@@ -84,14 +84,6 @@ def conn_config():
 
 
 @pytest.fixture
-def pg_dispatcher() -> DispatcherMain:
-    # We can not reuse the connection between tests
-    config = BASIC_CONFIG.copy()
-    config['brokers']['pg_notify'].pop('async_connection_factory')
-    return DispatcherMain(config)
-
-
-@pytest.fixture
 def test_settings():
     return DispatcherSettings(BASIC_CONFIG)
 

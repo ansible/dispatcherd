@@ -23,13 +23,10 @@ async def wait_to_receive(dispatcher, ct, timeout=5.0, interval=0.05):
         raise RuntimeError(f'Failed to receive expected {ct} messages {dispatcher.pool.received_count}')
 
 
-@pytest.mark.asyncio
-async def test_run_lambda_function(apg_dispatcher, pg_message):
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait(), name='test_lambda_clear_wait')
-    await pg_message('lambda: "This worked!"')
-    await asyncio.wait_for(clearing_task, timeout=3)
-
-    assert apg_dispatcher.pool.finished_count == 1
+def test_run_lambda_function(pg_dispatcher, pg_broker):
+    pg_broker.publish_message(message='lambda: "This worked!"')
+    message = pg_dispatcher.q_out.get()
+    assert message == 'work_cleared'
 
 
 @pytest.mark.asyncio

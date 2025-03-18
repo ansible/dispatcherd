@@ -1,0 +1,136 @@
+import asyncio
+import contextlib
+import logging
+import multiprocessing
+import sys
+from multiprocessing.context import BaseContext
+from types import ModuleType
+from typing import Any, AsyncGenerator, Union
+
+from ..config import DispatcherSettings
+from ..factories import from_settings
+from ..service.main import DispatcherMain
+
+logger = logging.getLogger(__name__)
+
+
+class CommunicationItems:
+    """Various things used for communication between the parent process and the subprocess service
+
+    This will be passed in the call to the subprocess.
+    """
+
+    def __init__(self, main_events: tuple[str], pool_events: tuple[str], context: Union[BaseContext, ModuleType]) -> None:
+        self.q_in: multiprocessing.Queue = context.Queue()
+        self.q_out: multiprocessing.Queue = context.Queue()
+        self.main_events = main_events
+        self.pool_events = pool_events
+
+
+@contextlib.asynccontextmanager
+async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, Any]:
+    dispatcher = None
+    try:
+        settings = DispatcherSettings(config)
+        dispatcher = from_settings(settings=settings)  # type: ignore[arg-type]
+
+        await dispatcher.connect_signals()
+        await dispatcher.start_working()
+        await dispatcher.wait_for_producers_ready()
+        await dispatcher.pool.events.workers_ready.wait()
+
+        assert dispatcher.pool.finished_count == 0  # sanity
+        assert dispatcher.control_count == 0
+
+        yield dispatcher
+    finally:
+        if dispatcher:
+            try:
+                await dispatcher.shutdown()
+                await dispatcher.cancel_tasks()
+            except Exception:
+                logger.exception('shutdown had error')
+
+
+async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
+    loop = asyncio.get_event_loop()
+    async with adispatcher_service(config) as dispatcher:
+        comms.q_out.put('ready')
+
+        events: dict[str, asyncio.Event] = {}
+        for event_name in comms.main_events:
+            events[event_name] = getattr(dispatcher.events, event_name)
+        for event_name in comms.pool_events:
+            events[event_name] = getattr(dispatcher.pool.events, event_name)
+
+        event_tasks: dict[str, asyncio.Task] = {}
+        for event_name, event in events.items():
+            event_tasks[event_name] = asyncio.create_task(event.wait(), name=f'waiting_for_{event_name}')
+
+        new_message_task = None
+
+        while True:
+            if new_message_task is None:
+                new_message_task = loop.run_in_executor(None, comms.q_in.get)
+
+            all_tasks = list(event_tasks.values()) + [new_message_task]
+            await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+
+            # Update our parent process with any events they requested from us
+            for event_name, event in events.items():
+                if event.is_set():
+                    comms.q_out.put(event_name)
+                    # await loop.run_in_executor(None, comms.q_out.put, event_name)
+                event.clear()
+                event_tasks[event_name] = asyncio.create_task(event.wait())
+
+            # If no no instructions came from parent then work is done, continue loop
+            if not new_message_task.done():
+                continue
+
+            message = new_message_task.result()
+            new_message_task = None
+
+            if message == 'stop':
+                print('shutting down pool server')
+                for event in events.values():
+                    event.set()  # close out other tasks
+                await dispatcher.shutdown()
+                break
+            else:
+                eval(message)
+
+
+def subprocess_main(config, comms):
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(asyncio_target(config, comms))
+    except Exception:
+        # The main process is very likely waiting for message of an event
+        # and exceptions may not automatically halt the test, so give a value
+        comms.q_out.put('error')
+        raise
+    finally:
+        loop.close()
+
+
+@contextlib.contextmanager
+def dispatcher_service(config, main_events=(), pool_events=()):
+    ctx = multiprocessing.get_context('spawn')
+    comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
+    process = multiprocessing.Process(target=subprocess_main, args=(config, comms))
+    try:
+        process.start()
+        ready_msg = comms.q_out.get()
+        if ready_msg != 'ready':
+            raise RuntimeError(f'Never got "ready" message from server, got {ready_msg}')
+        yield comms
+    finally:
+        comms.q_in.put('stop')
+        process.join(timeout=1)
+        if process.is_alive():
+            process.terminate()  # SIGTERM
+        comms.q_in.close()
+        comms.q_out.close()
+        sys.stdout.flush()
+        sys.stderr.flush()
