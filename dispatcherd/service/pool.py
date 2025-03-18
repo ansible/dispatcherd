@@ -496,8 +496,7 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def dispatch_task(self, message: dict) -> None:
         uuid = message.get("uuid", "<unknown>")
-        unblocked_task = self.blocker.process_task(message)
-        if unblocked_task:
+        if unblocked_task := await self.blocker.process_task(message):
             worker = self.queuer.get_worker_or_process_task(unblocked_task)
             if worker:
                 logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
