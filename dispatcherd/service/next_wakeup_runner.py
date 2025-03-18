@@ -35,14 +35,20 @@ class NextWakeupRunner:
      - process_object: and async callback that takes a an object, will be called when wakeup happens for that object
     """
 
-    def __init__(self, wakeup_objects: Iterable[HasWakeup], process_object: Callable[[Any], Coroutine[Any, Any, None]], name: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        wakeup_objects: Iterable[HasWakeup],
+        process_object: Callable[[Any], Coroutine[Any, Any, None]],
+        name: Optional[str] = None,
+        exit_event: Optional[asyncio.Event] = None,
+    ) -> None:
         self.wakeup_objects = wakeup_objects
-        self.process_object = process_object
+        self.process_object_callback = process_object
         self.asyncio_task: Optional[asyncio.Task] = None
         self.kick_event = asyncio.Event()
         self.shutting_down: bool = False
         # If we hit errors, will set this to tell main program to exit, not expected to be present at __init__
-        self.exit_event: Optional[asyncio.Event] = None
+        self.exit_event: Optional[asyncio.Event] = exit_event
         if name is None:
             method_name = getattr(process_object, '__name__', str(process_object))
             self.name = f'next-run-manager-of-{method_name}'
@@ -67,7 +73,7 @@ class NextWakeupRunner:
             if obj_wakeup := obj.next_wakeup():
                 if do_processing and (obj_wakeup < current_time):
                     try:
-                        await self.process_object(obj)
+                        await self.process_object_callback(obj)
                     except Exception as e:
                         logger.error(f"Error processing wakeup for object {obj}: {e}", exc_info=True)
                         raise
