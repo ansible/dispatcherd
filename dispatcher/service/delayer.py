@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class DelayCapsule(HasWakeup, DelayCapsuleProtocol):
-    """When a task has a delay, this tracks the delay, as in a time capsult"""
+    """When a task has a delay, this tracks the delay, as in a time capsule"""
 
     def __init__(self, delay: float, message: dict) -> None:
         self.has_ran: bool = False
