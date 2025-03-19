@@ -1,6 +1,7 @@
 import asyncio
 import time
 from unittest import mock
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,7 +18,8 @@ async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     # Create a pool with one worker and start it
     pm = ProcessManager(settings=test_settings)
     pool = WorkerPool(pm, min_workers=1, max_workers=5)
-    await pool.start_working(asyncio.Lock())
+    dispatcher = SimpleNamespace(fd_lock=asyncio.Lock(), exit_event=asyncio.Event())
+    await pool.start_working(dispatcher)
     await pool.events.workers_ready.wait()
 
     # Get the ready worker and assign a task
