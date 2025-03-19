@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from ..protocols import DispatcherMain as DispatcherMainProtocol
 from ..protocols import Producer, WorkerPool
+from ..producers import BrokeredProducer
+from ..protocols import Producer, BrokerSelfCheckStatus
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
@@ -145,6 +147,10 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
 
+        if 'self_check' in message:
+            if isinstance(producer, BrokeredProducer):
+                producer.broker.verify_self_check(message)
+
         # A client may provide a task uuid (hope they do it correctly), if not add it
         if 'uuid' not in message:
             message['uuid'] = f'internal-{self.received_count}'
@@ -234,7 +240,22 @@ class DispatcherMain(DispatcherMainProtocol):
             await self.start_working()
 
             logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
-            await self.events.exit_event.wait()
+
+            while True:
+                try:
+                    await asyncio.wait_for(self.events.exit_event.wait(), 5.0)
+
+                    # exit_event has fired, process should exit
+                    break
+                except asyncio.TimeoutError:
+                    # check if we have a broker with a failed connection
+                    for producer in self.producers:
+                        if isinstance(producer, BrokeredProducer):
+                            if producer.broker.get_current_self_check_status() == BrokerSelfCheckStatus.FAILURE:
+                                logger.error(f'broker self check failed for node-id={self.node_id}')
+                                await producer.broker.reconnect()
+
+
         finally:
             await self.shutdown()
 
