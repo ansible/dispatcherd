@@ -164,7 +164,7 @@ class WorkerPool(Protocol):
     queuer: Queuer
     blocker: Blocker
 
-    async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
+    async def start_working(self, dispatcher: 'DispatcherMain', exit_event: Optional[asyncio.Event] = None) -> None:
         """Start persistent asyncio tasks, including asychronously starting worker subprocesses"""
         ...
 
@@ -186,7 +186,7 @@ class DispatcherMain(Protocol):
 
     pool: WorkerPool
     delayed_messages: set
-    lock_fd: asyncio.Lock  # Forking and locking may need to be serialized, which this does
+    fd_lock: asyncio.Lock  # Forking and locking may need to be serialized, which this does
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""
