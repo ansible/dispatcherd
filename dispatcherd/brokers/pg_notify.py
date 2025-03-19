@@ -1,10 +1,17 @@
+import asyncio
+import json
 import logging
 import threading
+import time
+import uuid
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
+
+from datetime import datetime
 
 import psycopg
 
-from dispatcherd.utils import resolve_callable
+from ..protocols import BrokerSelfCheckStatus
+from ..utils import resolve_callable
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +44,7 @@ class Broker:
 
     def __init__(
         self,
+        node_id: str,
         config: Optional[dict] = None,
         async_connection_factory: Optional[str] = None,
         sync_connection_factory: Optional[str] = None,
@@ -44,6 +52,8 @@ class Broker:
         async_connection: Optional[psycopg.AsyncConnection] = None,
         channels: Union[tuple, list] = (),
         default_publish_channel: Optional[str] = None,
+        max_connection_idle_seconds: Optional[int] = None,
+        max_self_check_message_age_seconds: Optional[int] = None,
     ) -> None:
         """
         config - kwargs to psycopg connect classes, if creating connection this way
@@ -57,11 +67,22 @@ class Broker:
           by default messages will be sent to this channel.
           this should be one of the listening channels for messages to be received.
         """
+        self.node_id = node_id
+
         if not (config or async_connection_factory or async_connection):
             raise RuntimeError('Must specify either config or async_connection_factory')
 
         if not (config or sync_connection_factory or sync_connection):
             raise RuntimeError('Must specify either config or sync_connection_factory')
+
+        if not max_connection_idle_seconds:
+            raise RuntimeError('Must specify max_connection_idle_seconds')
+
+        if max_self_check_message_age_seconds > max_connection_idle_seconds:
+            raise RuntimeError('max_self_check_message_age_seconds must be smaller than max_connection_idle_seconds')
+
+        self.max_connection_idle_seconds = max_connection_idle_seconds
+        self.max_self_check_message_age_seconds = max_self_check_message_age_seconds
 
         self._async_connection_factory = async_connection_factory
         self._async_connection = async_connection
@@ -77,6 +98,16 @@ class Broker:
         else:
             self._config = {}
 
+        # Generate a special channel for broker self checks
+        self.self_check_channel = self.generate_self_check_channel_name()
+        if not self.self_check_channel in channels:
+            if isinstance(channels, list):
+                channels.append(self.self_check_channel)
+            elif isinstance(channels, tuple):
+                channels = channels + (self.self_check_channel,)
+
+        self.self_check_status = BrokerSelfCheckStatus.SUCCESS
+
         self.channels = channels
         self.default_publish_channel = default_publish_channel
 
@@ -85,6 +116,10 @@ class Broker:
         # These variables track things so that we can exit, send, and re-enter
         self.notify_loop_active: bool = False
         self.notify_queue: list = []
+
+    @classmethod
+    def generate_self_check_channel_name(cls) -> str:
+        return f"self_check_{str(uuid.uuid4()).replace('-', '_')}"
 
     def get_publish_channel(self, channel: Optional[str] = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
@@ -129,6 +164,42 @@ class Broker:
         """Stops listening on all channels for current session, see pg_notify docs"""
         return psycopg.sql.SQL("UNLISTEN *;")
 
+    async def initiate_self_check(self) -> None:
+        if self.self_check_status == BrokerSelfCheckStatus.IN_PROGRESS:
+            # a self check message has already been sent, but not received
+            self.self_check_status = BrokerSelfCheckStatus.FAILURE
+            return
+
+        try:
+            await self.apublish_message(self.self_check_channel, json.dumps({
+                'self_check': True,
+                'sent': time.time(),
+                'task': f'lambda: "{self.node_id}"'
+            }))
+        except Exception as e:
+            logger.error(f'failed to initiate self check: {e}')
+            self.self_check_status = BrokerSelfCheckStatus.FAILURE
+
+    def verify_self_check(self, message: dict[str, Any]) -> None:
+        """Verify a received self check message: check if it was sent from the same node and
+        is not outdated
+        """
+        now = time.time()
+        message_date = message['sent']
+        delta_seconds = now - message_date
+
+        if self.node_id not in message['task']:
+            # sent from a different node, ignore it
+            return
+
+        if delta_seconds <= self.max_self_check_message_age_seconds:
+            self.self_check_status = BrokerSelfCheckStatus.FAILURE
+        else:
+            self.self_check_status = BrokerSelfCheckStatus.FAILURE
+
+    def get_current_self_check_status(self) -> BrokerSelfCheckStatus:
+        return self.self_check_status
+
     async def aprocess_notify(
         self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
     ) -> AsyncGenerator[tuple[str, str], None]:  # public
@@ -144,10 +215,14 @@ class Broker:
             while True:
                 logger.debug('Starting listening for pg_notify notifications')
                 self.notify_loop_active = True
-                async for notify in connection.notifies():
+                async for notify in (await self.aget_connection()).notifies(timeout=self.max_connection_idle_seconds):
                     yield notify.channel, notify.payload
                     if self.notify_queue:
                         break
+                else:
+                    logger.info(f'no message received since {self.max_connection_idle_seconds} seconds, starting self check')
+                    await self.initiate_self_check()
+
                 self.notify_loop_active = False
                 for reply_to, reply_message in self.notify_queue:
                     await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
@@ -232,6 +307,10 @@ class Broker:
             cur.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
+
+    async def reconnect(self) -> None:
+        await self.aclose()
+        self.self_check_status = BrokerSelfCheckStatus.SUCCESS
 
     def close(self) -> None:
         if self.owns_sync_connection and self._sync_connection:
