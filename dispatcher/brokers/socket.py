@@ -21,13 +21,13 @@ class Client:
         self.yield_clear = asyncio.Event()
         self.replies_to_send: list = []
 
-    def write(self, message) -> None:
+    def write(self, message: str, /) -> None:
         self.writer.write((message + '\n').encode())
 
-    def queue_reply(self, reply: str) -> None:
+    def queue_reply(self, reply: str, /) -> None:
         self.replies_to_send.append(reply)
 
-    async def send_replies(self):
+    async def send_replies(self) -> None:
         for reply in self.replies_to_send.copy():
             logger.info(f'Sending reply to client_id={self.client_id} len={len(reply)}')
             self.write(reply)
@@ -54,8 +54,8 @@ class Broker(BrokerProtocol):
         self.sock: Optional[socket.socket] = None  # for synchronous clients
         self.incoming_queue: asyncio.Queue = asyncio.Queue()
 
-    def __str__(self):
-        return f'socket-producer-{self.socket_path}'
+    def __str__(self) -> str:
+        return f'socket-broker-{self.socket_path}'
 
     async def _add_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         client = Client(self.client_ct, reader, writer)
@@ -190,10 +190,11 @@ class Broker(BrokerProtocol):
         finally:
             self.sock = None
 
-    def _publish_from_sock(self, sock, message) -> None:
+    def _publish_from_sock(self, sock: socket.socket, message: str) -> None:
         sock.sendall((message + "\n").encode())
 
-    def publish_message(self, channel=None, message=None) -> None:
+    def publish_message(self, channel: Optional[str] = None, message: Optional[str] = None) -> None:
+        assert isinstance(message, str)
         if self.sock:
             logger.info(f'Publishing socket message len={len(message)} via existing connection')
             self._publish_from_sock(self.sock, message)

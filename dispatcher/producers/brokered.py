@@ -15,7 +15,7 @@ class BrokeredProducer(BaseProducer):
         self.dispatcher: Optional[DispatcherMain] = None
         super().__init__()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'brokered-producer-{self.broker}'
 
     async def start_producing(self, dispatcher: DispatcherMain) -> None:

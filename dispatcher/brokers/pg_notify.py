@@ -100,6 +100,9 @@ class Broker(BrokerProtocol):
 
         raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
 
+    def __str__(self) -> str:
+        return 'pg_notify-broker'
+
     # --- asyncio connection methods ---
 
     async def aget_connection(self) -> psycopg.AsyncConnection:
