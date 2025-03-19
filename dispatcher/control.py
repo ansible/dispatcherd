@@ -21,7 +21,7 @@ class BrokerCallbacks:
         self.expected_replies = expected_replies
 
     async def connected_callback(self) -> None:
-        await self.broker.apublish_message(self.queuename, self.send_message)
+        await self.broker.apublish_message(channel=self.queuename, message=self.send_message)
 
     async def listen_for_replies(self) -> None:
         """Listen to the reply channel until we get the expected number of messages.
