@@ -3,6 +3,7 @@ import json
 import logging
 import signal
 import time
+from asyncio import wait_for
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from ..protocols import Producer, BrokerSelfCheckStatus
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
+from ..utils import wait_for_any
 
 logger = logging.getLogger(__name__)
 
@@ -214,12 +216,12 @@ class DispatcherMain(DispatcherMainProtocol):
                     await producer.start_producing(self)
                 except Exception:
                     logger.exception(f'Producer {producer} failed to start')
-                    self.events.exit_event.set()
+                    producer.events.recycle_event.set()
 
                 # TODO: recycle producer instead of raising up error
                 # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
-                    ensure_fatal(task, exit_event=self.events.exit_event)
+                    ensure_fatal(task, exit_event=producer.events.recycle_event)
 
     async def cancel_tasks(self) -> None:
         for task in asyncio.all_tasks():
@@ -242,19 +244,24 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
 
             while True:
-                try:
-                    await asyncio.wait_for(self.events.exit_event.wait(), 5.0)
+                events = [self.events.exit_event]
+                for producer in self.producers:
+                    events.append(producer.events.recycle_event)
 
-                    # exit_event has fired, process should exit
+                await wait_for_any(events)
+
+                if self.events.exit_event.is_set():
+                    # If the exit event is set, terminate the process
                     break
-                except asyncio.TimeoutError:
-                    # check if we have a broker with a failed connection
+                else:
+                    # Otherwise, one or some of the producers broke and we need to
+                    # recycle them
                     for producer in self.producers:
-                        if isinstance(producer, BrokeredProducer):
-                            if producer.broker.get_current_self_check_status() == BrokerSelfCheckStatus.FAILURE:
-                                logger.error(f'broker self check failed for node-id={self.node_id}')
-                                await producer.broker.reconnect()
-
+                        if producer.events.recycle_event.is_set():
+                            await producer.recycle()
+                            for task in producer.all_tasks():
+                                ensure_fatal(task, exit_event=producer.events.recycle_event)
+                            logger.info('finished recycling of producer')
 
         finally:
             await self.shutdown()

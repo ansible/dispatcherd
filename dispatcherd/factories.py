@@ -36,8 +36,7 @@ def pool_from_settings(settings: LazySettings = global_settings) -> WorkerPool:
 
 
 def brokers_from_settings(settings: LazySettings = global_settings) -> Iterable[Broker]:
-    node_id = settings.service.get('main_kwargs', {})['node_id']
-    return [get_broker(broker_name, broker_kwargs, node_id) for broker_name, broker_kwargs in settings.brokers.items()]
+    return [get_broker(broker_name, broker_kwargs) for broker_name, broker_kwargs in settings.brokers.items()]
 
 
 def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[Producer]:

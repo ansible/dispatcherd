@@ -14,7 +14,7 @@ class CallbackHolder:
             task.result()
         except asyncio.CancelledError:
             logger.info(f'Ack that task {task.get_name()} was canceled')
-        except Exception:
+        except Exception as e:
             if self.exit_event:
                 self.exit_event.set()
             raise
