@@ -6,9 +6,8 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator,
 class BrokerSelfCheckStatus(Enum):
     """This enum represents the result of a broker self-check"""
 
-    SUCCESS = (1,)      # the last self-check was successful
-    FAILURE = (2,)      # the last self-check failed
-    IN_PROGRESS = (3,)  # self check message in progress
+    IDLE = (1,)         # no self check is currently in progress
+    IN_PROGRESS = (2,)  # a self check is currently in progress
 
 
 class Broker(Protocol):
@@ -53,12 +52,6 @@ class Broker(Protocol):
         """Verify a received self check message"""
         ...
 
-    def get_current_self_check_status(self) -> BrokerSelfCheckStatus:
-        """Return the current self check status"""
-        ...
-
-    async def reconnect(self):
-        """Close and reconnect the synchronous connection"""
 
 class ProducerEvents(Protocol):
     """
@@ -68,6 +61,7 @@ class ProducerEvents(Protocol):
     """
 
     ready_event: asyncio.Event
+    recycle_event: asyncio.Event
 
 
 class Producer(Protocol):
@@ -90,6 +84,10 @@ class Producer(Protocol):
 
     def all_tasks(self) -> Iterable[asyncio.Task]:
         """Returns all asyncio tasks, which is relevant for task management, shutdown, triggered from main loop"""
+        ...
+
+    async def recycle(self) -> None:
+        """Restart the producer"""
         ...
 
 

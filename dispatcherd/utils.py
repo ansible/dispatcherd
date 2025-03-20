@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 from enum import Enum
 from typing import Callable, Optional, Protocol, Type, Union, runtime_checkable
@@ -43,6 +44,25 @@ def resolve_callable(task: str) -> Optional[Callable]:
 def serialize_task(f: Callable) -> str:
     """The reverse of resolve_callable, transform callable into dotted notation"""
     return MODULE_METHOD_DELIMITER.join([f.__module__, f.__name__])
+
+
+async def wait_for_any(events):
+    """
+    Wait for a list of events. If any of the events gets set, this function
+    will return
+    """
+    tasks = [asyncio.create_task(event.wait()) for event in events]
+    done, pending = await asyncio.wait(
+        tasks, return_when=asyncio.FIRST_COMPLETED
+    )
+    for task in pending:
+        task.cancel()
+
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    for i, task in enumerate(tasks):
+        if task in done:
+            return i
 
 
 class DuplicateBehavior(Enum):
