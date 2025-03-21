@@ -6,6 +6,7 @@ import sys
 from multiprocessing.context import BaseContext
 from types import ModuleType
 from typing import Any, AsyncGenerator, Union
+import traceback
 
 from ..config import DispatcherSettings
 from ..factories import from_settings
@@ -109,6 +110,8 @@ def subprocess_main(config, comms):
         # The main process is very likely waiting for message of an event
         # and exceptions may not automatically halt the test, so give a value
         comms.q_out.put('error')
+        stack_trace = traceback.format_exc()
+        comms.q_out.put(stack_trace)
         raise
     finally:
         loop.close()
@@ -116,13 +119,16 @@ def subprocess_main(config, comms):
 
 @contextlib.contextmanager
 def dispatcher_service(config, main_events=(), pool_events=()):
-    ctx = multiprocessing.get_context('spawn')
+    ctx = multiprocessing.get_context('fork')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
     process = multiprocessing.Process(target=subprocess_main, args=(config, comms))
     try:
         process.start()
         ready_msg = comms.q_out.get()
         if ready_msg != 'ready':
+            if ready_msg == 'error':
+                tb = comms.q_out.get()
+                print(tb)
             raise RuntimeError(f'Never got "ready" message from server, got {ready_msg}')
         yield comms
     finally:

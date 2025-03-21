@@ -37,11 +37,8 @@ BASIC_CONFIG = {
             "default_publish_channel": "test_channel"
         }
     },
-    "pool": {
-        "pool_kwargs": {
-            "min_workers": 1,
-            "max_workers": 6
-        }
+    "service": {
+        "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager']",
     }
 }
 
@@ -91,8 +88,8 @@ def test_settings():
 @pytest_asyncio.fixture(
     loop_scope="function",
     scope="function",
-    params=['ProcessManager', 'ForkServerManager'],
-    ids=["fork", "forkserver"],
+    params=['ProcessManager', 'ForkServerManager', 'SpawnServerManager'],
+    ids=["fork", "forkserver", "spawn"],
 )
 async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
     dispatcher = None
