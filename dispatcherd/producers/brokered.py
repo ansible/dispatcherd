@@ -17,7 +17,7 @@ class BrokeredProducer(BaseProducer):
 
     async def recycle(self):
         await self.events.recycle_event.wait()
-        logger.info(f'recycle event received, restarting producer')
+        logger.info('recycle event received, restarting producer')
         self.events.recycle_event.clear()
         if self.production_task.done():
             self.production_task = None
