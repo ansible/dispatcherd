@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import socket
+import json
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 from ..protocols import Broker as BrokerProtocol
@@ -35,6 +36,24 @@ class Client:
             logger.info(f'No replies to send to client_id={self.client_id}')
         await self.writer.drain()
         self.replies_to_send = []
+
+
+def extract_json(message: str) -> Iterator[str]:
+    """With message that may be an incomplete JSON string, yield JSON-complete strings and leftover"""
+    decoder = json.JSONDecoder()
+    pos = 0
+    length = len(message)
+    while pos < length:
+        try:
+            _, index = decoder.raw_decode(message, pos)
+            json_msg = message[pos:index]
+            yield json_msg
+            pos = index
+        except json.JSONDecodeError:
+            break
+
+    return message[pos:].lstrip()
+
 
 
 class Broker(BrokerProtocol):
@@ -177,16 +196,18 @@ class Broker(BrokerProtocol):
                 while True:
                     response = sock.recv(1024).decode().strip()
 
-                    if response.endswith('}'):
-                        response = buffer + response
-                        buffer = ''
+                    current_message = buffer + response
+                    yielded_chars = 0
+                    for complete_msg in extract_json(current_message):
                         received_ct += 1
-                        yield (0, response)
+                        yield (0, complete_msg)
                         if received_ct >= max_messages:
                             return
+                        yielded_chars += len(complete_msg)
                     else:
-                        logger.info(f'Received incomplete message len={len(response)}, adding to buffer')
-                        buffer += response
+                        buffer = current_message[yielded_chars:]
+                        logger.info(f'Received incomplete message len={len(buffer)}, adding to buffer')
+
         finally:
             self.sock = None
 
