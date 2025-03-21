@@ -1,8 +1,7 @@
 import contextlib
 import logging
-import asyncio
 
-from typing import Callable, AsyncIterator
+from typing import Callable, AsyncIterator, Union
 
 import pytest
 
@@ -124,3 +123,16 @@ async def pg_message(psycopg_conn) -> Callable:
 def registry() -> DispatcherMethodRegistry:
     "Return a fresh registry, separate from the global one, for testing"
     return DispatcherMethodRegistry()
+
+
+@pytest.fixture
+def get_worker_data():
+    "General utility for processing control-with-reply response"
+    def _rf(response_list: list[dict[str,Union[str,dict]]]) -> dict:
+        "Given some control-and-response data, assuming 1 node, 1 entry, get the task message"
+        assert len(response_list) == 1
+        response = response_list[0].copy()
+        response.pop('node_id', None)
+        assert len(response) == 1
+        return list(response.values())[0]
+    return _rf
