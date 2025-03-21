@@ -3,7 +3,8 @@ import json
 import logging
 import signal
 import time
-from typing import Iterable, Optional, Union
+from os import getpid
+from typing import Any, Iterable, Optional, Union
 from uuid import uuid4
 
 from ..producers import BrokeredProducer
@@ -67,6 +68,9 @@ class DispatcherMain(DispatcherMainProtocol):
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
         self.events.exit_event.set()
+
+    def get_status_data(self) -> dict[str, Any]:
+        return {"received_count": self.received_count, "control_count": self.control_count, "pid": getpid()}
 
     async def wait_for_producers_ready(self) -> None:
         "Returns when all the producers have hit their ready event"
