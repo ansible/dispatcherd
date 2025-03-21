@@ -169,11 +169,7 @@ class Broker:
             raise RuntimeError(f'failed to initiate self check for broker {self.broker_id}')
 
         try:
-            await self.apublish_message(self.self_check_channel, json.dumps({
-                'self_check': True,
-                'sent': time.time(),
-                'task': f'lambda: "{self.broker_id}"'
-            }))
+            await self.apublish_message(self.self_check_channel, json.dumps({'self_check': True, 'sent': time.time(), 'task': f'lambda: "{self.broker_id}"'}))
             self.self_check_status = BrokerSelfCheckStatus.IN_PROGRESS
         except Exception as error:
             raise RuntimeError(f'failed to send self check message: {error}')

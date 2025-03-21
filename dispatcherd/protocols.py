@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator,
 class BrokerSelfCheckStatus(Enum):
     """This enum represents the result of a broker self-check"""
 
-    IDLE = (1,)         # no self check is currently in progress
+    IDLE = (1,)  # no self check is currently in progress
     IN_PROGRESS = (2,)  # a self check is currently in progress
 
 
