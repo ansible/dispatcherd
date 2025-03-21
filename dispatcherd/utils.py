@@ -52,9 +52,7 @@ async def wait_for_any(events):
     will return
     """
     tasks = [asyncio.create_task(event.wait()) for event in events]
-    done, pending = await asyncio.wait(
-        tasks, return_when=asyncio.FIRST_COMPLETED
-    )
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
         task.cancel()
 
