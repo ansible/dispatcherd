@@ -38,9 +38,9 @@ def settings_from_file(path: str) -> DispatcherSettings:
 
 
 def settings_from_env() -> DispatcherSettings:
-    if file_path := os.getenv('DISPATCHER_CONFIG_FILE'):
+    if file_path := os.getenv('DISPATCHERD_CONFIG_FILE'):
         return settings_from_file(file_path)
-    raise RuntimeError('Dispatcher not configured, set DISPATCHER_CONFIG_FILE or call dispatcher.config.setup')
+    raise RuntimeError('Dispatcher not configured, set DISPATCHERD_CONFIG_FILE or call dispatcherd.config.setup')
 
 
 class LazySettings:

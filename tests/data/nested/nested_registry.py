@@ -1,4 +1,4 @@
-from dispatcher.registry import DispatcherMethodRegistry
+from dispatcherd.registry import DispatcherMethodRegistry
 
 """
 This hosts a registry that has nothing in it

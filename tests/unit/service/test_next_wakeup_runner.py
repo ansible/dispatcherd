@@ -1,10 +1,10 @@
+import asyncio
 import time
 from unittest import mock
-import asyncio
 
 import pytest
 
-from dispatcher.service.next_wakeup_runner import NextWakeupRunner, HasWakeup
+from dispatcherd.service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 
 class ObjectWithWakeup(HasWakeup):
@@ -26,10 +26,10 @@ async def test_process_wakeups(current_time=time.monotonic(), do_processing=Fals
     callback = mock.MagicMock()
     runner = NextWakeupRunner(objects, callback)
     assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) > time.monotonic()
-    assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) < time.monotonic() + 1.
+    assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) < time.monotonic() + 1.0
 
     obj.last_run = time.monotonic() + 0.1
-    assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) > time.monotonic() + 1.
+    assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) > time.monotonic() + 1.0
 
     obj.period = None
     assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) is None
@@ -110,7 +110,6 @@ async def test_graceful_shutdown():
             break
     else:
         raise RuntimeError('Object was never marked as ran as expected')
-
 
     runner.shutting_down = True
     await runner.kick()

@@ -1,13 +1,12 @@
-import time
 import asyncio
 import json
+import time
 from typing import Union
 
 import pytest
 
+from dispatcherd.config import temporary_settings
 from tests.data import methods as test_methods
-
-from dispatcher.config import temporary_settings
 
 SLEEP_METHOD = 'lambda: __import__("time").sleep(0.1)'
 
@@ -72,7 +71,7 @@ async def test_multiple_channels(apg_dispatcher, pg_message):
         pg_message(SLEEP_METHOD, channel='test_channel'),
         pg_message(SLEEP_METHOD, channel='test_channel2'),
         pg_message(SLEEP_METHOD, channel='test_channel3'),
-        pg_message(SLEEP_METHOD, channel='test_channel4')  # not listening to this
+        pg_message(SLEEP_METHOD, channel='test_channel4'),  # not listening to this
     )
     await asyncio.wait_for(clearing_task, timeout=3)
 
@@ -88,7 +87,7 @@ async def test_ten_messages_queued(apg_dispatcher, pg_message):
     assert apg_dispatcher.pool.finished_count == 15
 
 
-def get_worker_data(response_list: list[dict[str,Union[str,dict]]]) -> dict:
+def get_worker_data(response_list: list[dict[str, Union[str, dict]]]) -> dict:
     "Given some control-and-response data, assuming 1 node, 1 entry, get the task message"
     assert len(response_list) == 1
     response = response_list[0].copy()
@@ -208,11 +207,7 @@ async def test_aio_tasks(apg_dispatcher, pg_control):
 
 @pytest.mark.asyncio
 async def test_task_discard(apg_dispatcher, pg_message):
-    messages = [
-        json.dumps(
-            {'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}
-        ) for i in range(10)
-    ]
+    messages = [json.dumps({'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}) for i in range(10)]
 
     await asyncio.gather(*[pg_message(msg) for msg in messages])
 

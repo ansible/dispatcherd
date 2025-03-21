@@ -13,13 +13,13 @@ stop-postgres:
 clean:
 	find . -type f -regex ".*\.py[co]$$" -delete
 	find . -type d -name "__pycache__" -delete
-	rm -rf dispatcher.egg-info/
+	rm -rf dispatcherd.egg-info/
 
 linters:
-	black dispatcher/
-	isort dispatcher/
-	flake8 dispatcher/
-	mypy dispatcher
+	black dispatcherd/
+	isort dispatcherd/
+	flake8 dispatcherd/
+	mypy dispatcherd
 
 demo:
 	docker compose up -d --wait

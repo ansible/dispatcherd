@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from dispatcher.producers import ScheduledProducer
+from dispatcherd.producers import ScheduledProducer
 
 
 class ItWorked(Exception):
@@ -25,12 +25,7 @@ async def run_schedules_for_a_while(producer):
 
 
 def test_scheduled_producer_with_options():
-    producer = ScheduledProducer({
-        'tests.data.methods.print_hello': {
-            'schedule': 0.1,
-            'on_duplicate': 'queue_one'
-        }
-    })
+    producer = ScheduledProducer({'tests.data.methods.print_hello': {'schedule': 0.1, 'on_duplicate': 'queue_one'}})
 
     loop = asyncio.get_event_loop()
     with pytest.raises(ItWorked):

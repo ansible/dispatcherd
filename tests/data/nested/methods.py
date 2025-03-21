@@ -1,5 +1,4 @@
-from dispatcher.publish import task
-
+from dispatcherd.publish import task
 from tests.data.nested.nested_registry import surprised_registry
 
 """

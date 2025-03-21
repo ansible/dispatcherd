@@ -1,6 +1,6 @@
 import pytest
 
-from dispatcher.utils import resolve_callable
+from dispatcherd.utils import resolve_callable
 
 
 def test_resolve_lamda_method():

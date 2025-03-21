@@ -92,7 +92,7 @@ class DispatcherMethod:
 
         obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
 
-        from dispatcher.factories import get_publisher_from_settings
+        from dispatcherd.factories import get_publisher_from_settings
 
         broker = get_publisher_from_settings(settings=settings)
 

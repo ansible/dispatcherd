@@ -1,6 +1,7 @@
 import json
-from dispatcher.config import setup
-from dispatcher.factories import generate_settings_schema
+
+from dispatcherd.config import setup
+from dispatcherd.factories import generate_settings_schema
 
 setup(file_path='dispatcher.yml')
 

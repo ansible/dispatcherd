@@ -1,11 +1,11 @@
-import time
 import asyncio
+import time
 from unittest import mock
 
 import pytest
 
-from dispatcher.service.pool import WorkerPool
-from dispatcher.service.process import ProcessManager
+from dispatcherd.service.pool import WorkerPool
+from dispatcherd.service.process import ProcessManager
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_scale_down_condition(test_settings):
 
     # Clear queue and set finished times to long ago
     pool.queuer.queued_messages = []  # queue has been fully worked through, no workers are busy
-    pool.last_used_by_ct = {i: time.monotonic() - 120. for i in range(30)}  # all work finished 120 seconds ago
+    pool.last_used_by_ct = {i: time.monotonic() - 120.0 for i in range(30)}  # all work finished 120 seconds ago
 
     # Outcome of this situation is expected to be a scale-down event
     assert pool.should_scale_down() is True
@@ -113,7 +113,7 @@ async def test_error_while_scaling_up(test_settings):
         await pool.scale_workers()
     assert len(pool.workers) == 1
 
-    with mock.patch('dispatcher.service.process.ProcessProxy.start', side_effect=RuntimeError):
+    with mock.patch('dispatcherd.service.process.ProcessProxy.start', side_effect=RuntimeError):
         await pool.manage_new_workers(asyncio.Lock())
 
     assert set([worker.status for worker in pool.workers]) == {'error'}

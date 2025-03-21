@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional,
 
 import psycopg
 
-from dispatcher.utils import resolve_callable
+from dispatcherd.utils import resolve_callable
 
 logger = logging.getLogger(__name__)
 

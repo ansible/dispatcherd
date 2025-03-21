@@ -2,13 +2,14 @@ import time
 
 import pytest
 
-from dispatcher.registry import InvalidMethod, DispatcherMethodRegistry, DispatcherMethod, UnregisteredMethod
+from dispatcherd.registry import DispatcherMethod, DispatcherMethodRegistry, InvalidMethod, UnregisteredMethod
 from tests.data.nested.nested_registry import surprised_registry
 
 
 def test_registry_ordinary_method(registry):
     def test_method():
         return
+
     registry.register(test_method)
     assert test_method in set(dmethod.fn for dmethod in registry.registry)
     assert 'test_registry.test_registry_ordinary_method.<locals>.test_method' in registry.lookup_dict
@@ -37,6 +38,7 @@ def test_no_objects(registry):
 
 def test_register_with_timeout(registry):
     "Tests that a timeout set at the task level will be submitted"
+
     def test_method():
         time.sleep(4)  # will not actually run
 

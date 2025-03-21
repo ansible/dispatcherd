@@ -1,20 +1,16 @@
 import contextlib
 import logging
-
-from typing import Callable, AsyncIterator
+from typing import AsyncIterator, Callable
 
 import pytest
-
 import pytest_asyncio
 
-from dispatcher.service.main import DispatcherMain
-from dispatcher.control import Control
-
-from dispatcher.brokers.pg_notify import Broker, acreate_connection, connection_save
-from dispatcher.registry import DispatcherMethodRegistry
-from dispatcher.config import DispatcherSettings
-from dispatcher.factories import from_settings, get_control_from_settings
-
+from dispatcherd.brokers.pg_notify import Broker, acreate_connection, connection_save
+from dispatcherd.config import DispatcherSettings
+from dispatcherd.control import Control
+from dispatcherd.factories import from_settings, get_control_from_settings
+from dispatcherd.registry import DispatcherMethodRegistry
+from dispatcherd.service.main import DispatcherMain
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +27,12 @@ BASIC_CONFIG = {
         "pg_notify": {
             "channels": CHANNELS,
             "config": {'conninfo': CONNECTION_STRING},
-            "sync_connection_factory": "dispatcher.brokers.pg_notify.connection_saver",
-            # "async_connection_factory": "dispatcher.brokers.pg_notify.async_connection_saver",
-            "default_publish_channel": "test_channel"
+            "sync_connection_factory": "dispatcherd.brokers.pg_notify.connection_saver",
+            # "async_connection_factory": "dispatcherd.brokers.pg_notify.async_connection_saver",
+            "default_publish_channel": "test_channel",
         }
     },
-    "pool": {
-        "pool_kwargs": {
-            "min_workers": 1,
-            "max_workers": 6
-        }
-    }
+    "pool": {"pool_kwargs": {"min_workers": 1, "max_workers": 6}},
 }
 
 
@@ -95,6 +86,7 @@ def pg_dispatcher() -> DispatcherMain:
 def test_settings():
     return DispatcherSettings(BASIC_CONFIG)
 
+
 @pytest_asyncio.fixture(
     loop_scope="function",
     scope="function",
@@ -145,6 +137,7 @@ async def pg_message(psycopg_conn) -> Callable:
         # Note on weirdness here, this broker will only be used for async publishing, so we give junk for synchronous connection
         broker = Broker(async_connection=psycopg_conn, default_publish_channel='test_channel', sync_connection_factory='tests.data.methods.something')
         await broker.apublish_message(channel=channel, message=message)
+
     return _rf
 
 

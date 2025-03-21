@@ -1,11 +1,11 @@
-import time
 import asyncio
+import time
 from unittest import mock
 
 import pytest
 
-from dispatcher.service.pool import WorkerPool
-from dispatcher.service.process import ProcessManager
+from dispatcherd.service.pool import WorkerPool
+from dispatcherd.service.process import ProcessManager
 
 
 @pytest.mark.asyncio

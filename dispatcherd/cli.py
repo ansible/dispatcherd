@@ -39,8 +39,8 @@ def setup_from_parser(parser) -> argparse.Namespace:
 
     logger.debug(f"Configured standard out logging at {args.log_level} level")
 
-    if os.getenv('DISPATCHER_CONFIG_FILE') and args.config == os.path.abspath(DEFAULT_CONFIG_FILE):
-        logger.info(f'Using config from environment variable DISPATCHER_CONFIG_FILE={os.getenv("DISPATCHER_CONFIG_FILE")}')
+    if os.getenv('DISPATCHERD_CONFIG_FILE') and args.config == os.path.abspath(DEFAULT_CONFIG_FILE):
+        logger.info(f'Using config from environment variable DISPATCHERD_CONFIG_FILE={os.getenv("DISPATCHERD_CONFIG_FILE")}')
         setup()
     else:
         logger.info(f'Using config from file {args.config}')

@@ -1,9 +1,9 @@
-from multiprocessing import Queue
 import os
+from multiprocessing import Queue
 
 import pytest
 
-from dispatcher.service.process import ProcessManager, ForkServerManager, ProcessProxy
+from dispatcherd.service.process import ForkServerManager, ProcessManager, ProcessProxy
 
 
 def test_pass_messages_to_worker():
@@ -55,7 +55,6 @@ def test_workers_have_different_pid(manager_cls, test_settings):
     msg1 = process_manager.finished_queue.get()
     msg2 = process_manager.finished_queue.get()
     assert set([msg1, msg2]) == set(['done value1 msg1', 'done value0 msg0'])
-
 
 
 def return_pid(settings, finished_queue, message_queue):

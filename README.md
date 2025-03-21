@@ -39,7 +39,7 @@ The decorator accepts some kwargs (like `queue` below) that will affect task beh
 see [docs/task_options.md](docs/task_options.md).
 
 ```python
-from dispatcher.publish import task
+from dispatcherd.publish import task
 
 @task(queue='test_channel')
 def print_hello():
@@ -50,7 +50,7 @@ Configure dispatcher somewhere in your import path or before running the service
 This tells dispatcher how to submit tasks to be ran.
 
 ```python
-from dispatcher.config import setup
+from dispatcherd.config import setup
 
 config = {
     "producers": {

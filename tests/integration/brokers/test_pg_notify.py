@@ -1,9 +1,9 @@
-import time
 import multiprocessing
+import time
 
 import pytest
 
-from dispatcher.brokers.pg_notify import Broker, create_connection, acreate_connection
+from dispatcherd.brokers.pg_notify import Broker, acreate_connection, create_connection
 
 
 def test_sync_connection_from_config_reuse(conn_config):
@@ -39,6 +39,7 @@ def _send_message(conn_config):
 def test_sync_listen_receive(conn_config):
     messages = []
     with multiprocessing.Pool(processes=1) as pool:
+
         def send_from_subprocess():
             pool.apply(_send_message, args=(conn_config,))
 
@@ -57,6 +58,7 @@ def test_sync_listen_receive_multi_message(conn_config):
     """Tests that the expected messages exit condition works, we get 3 messages, not just 1"""
     messages = []
     with multiprocessing.Pool(processes=1) as pool:
+
         def send_from_subprocess():
             pool.apply(_send_message, args=(conn_config,))
             pool.apply(_send_message, args=(conn_config,))
@@ -77,6 +79,7 @@ def test_get_message_then_timeout(conn_config):
     """Tests that the expected messages exit condition works, we get 3 messages, not just 1"""
     messages = []
     with multiprocessing.Pool(processes=1) as pool:
+
         def send_from_subprocess():
             pool.apply(_send_message, args=(conn_config,))
 
