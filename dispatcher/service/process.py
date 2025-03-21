@@ -99,7 +99,7 @@ class ProcessManager:
         message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
         return message
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         self.finished_queue.close()
 
 

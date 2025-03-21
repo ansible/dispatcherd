@@ -5,6 +5,7 @@ import signal
 import time
 from typing import Any, Iterator, Literal, Optional
 
+from ..protocols import PoolEvents as PoolEventsProtocol
 from ..protocols import PoolWorker as PoolWorkerProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
 from ..protocols import WorkerPool as WorkerPoolProtocol
@@ -150,7 +151,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         return None
 
 
-class PoolEvents:
+class PoolEvents(PoolEventsProtocol):
     "Benchmark tests have to re-create this because they use same object in different event loops"
 
     def __init__(self) -> None:
@@ -203,7 +204,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.read_results_task: Optional[asyncio.Task] = None
         self.management_task: Optional[asyncio.Task] = None
         # other internal asyncio objects
-        self.events: PoolEvents = PoolEvents()
+        self.events: PoolEventsProtocol = PoolEvents()
 
         # internal tracking variables
         self.workers = WorkerData()
