@@ -80,6 +80,10 @@ class Producer(Protocol):
         """Starts tasks which will eventually call DispatcherMain.process_message - how tasks originate in the service"""
         ...
 
+    def get_status_data(self) -> dict:
+        """Data for debugging commands"""
+        ...
+
     async def shutdown(self):
         """Stop producing tasks and clean house, a producer may be shut down independently from the main program"""
         ...
@@ -108,7 +112,7 @@ class PoolWorker(Protocol):
 
     def is_ready(self) -> bool: ...
 
-    def get_data(self) -> dict[str, Any]:
+    def get_status_data(self) -> dict[str, Any]:
         """Used for worker status control-and-reply command"""
         ...
 
@@ -174,6 +178,10 @@ class WorkerPool(Protocol):
         """Called by DispatcherMain after in the normal task lifecycle, pool will try to hand the task to a worker"""
         ...
 
+    def get_status_data(self) -> dict:
+        """Data for debugging commands"""
+        ...
+
     async def shutdown(self) -> None: ...
 
 
@@ -189,6 +197,7 @@ class DispatcherMain(Protocol):
     pool: WorkerPool
     delayed_messages: set
     fd_lock: asyncio.Lock  # Forking and locking may need to be serialized, which this does
+    producers: Iterable[Producer]
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""
@@ -206,4 +215,8 @@ class DispatcherMain(Protocol):
         self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
     ) -> tuple[Optional[str], Optional[str]]:
         """This is called by producers when a new request to run a task comes in"""
+        ...
+
+    def get_status_data(self) -> dict:
+        """Data for debugging commands"""
         ...

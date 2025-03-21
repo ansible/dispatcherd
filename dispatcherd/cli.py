@@ -8,6 +8,7 @@ import yaml
 from . import run_service
 from .config import setup
 from .factories import get_control_from_settings
+from .service import control_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def standalone() -> None:
 
 def control() -> None:
     parser = get_parser()
-    parser.add_argument('command', help='The control action to run.')
+    parser.add_argument('command', choices=[cmd for cmd in control_tasks.__all__], help='The control action to run.')
     parser.add_argument(
         '--task',
         type=str,

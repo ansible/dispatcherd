@@ -4,7 +4,7 @@ import logging
 
 from ..protocols import DispatcherMain
 
-__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status']
 
 
 logger = logging.getLogger(__name__)
@@ -55,11 +55,21 @@ async def _find_tasks(dispatcher: DispatcherMain, data: dict, cancel: bool = Fal
 
 
 async def running(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    """Information on running tasks managed by this dispatcherd service
+
+    Data may be used to filter the tasks of interest.
+    Keys and values in data correspond to expected key-values in the message,
+    but are limited to task, kwargs, args, and uuid.
+    """
     async with dispatcher.pool.workers.management_lock:
         return await _find_tasks(dispatcher=dispatcher, data=data)
 
 
 async def cancel(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    """Cancel all tasks that match the filter given by data
+
+    The protocol for the data filtering is the same as the running command.
+    """
     async with dispatcher.pool.workers.management_lock:
         return await _find_tasks(dispatcher=dispatcher, cancel=True, data=data)
 
@@ -71,6 +81,7 @@ def _stack_from_task(task: asyncio.Task, limit: int = 6) -> str:
 
 
 async def aio_tasks(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    """Information on the asyncio tasks running in the dispatcher main process"""
     ret = {}
     extra = {}
     if 'limit' in data:
@@ -83,11 +94,58 @@ async def aio_tasks(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
 
 
 async def alive(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Returns no information, used to get fast roll-call of instances"""
     return {}
 
 
 async def workers(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Information about subprocess workers"""
     ret = {}
     for worker in dispatcher.pool.workers:
-        ret[f'worker-{worker.worker_id}'] = worker.get_data()
+        ret[f'worker-{worker.worker_id}'] = worker.get_status_data()
+    return ret
+
+
+async def producers(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Information about the enabled task producers"""
+    ret = {}
+    for producer in dispatcher.producers:
+        ret[str(producer)] = producer.get_status_data()
+    return ret
+
+
+async def run(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Run a task. The control data should follow the standard message protocol.
+
+    You could just submit task data, as opposed to submitting a control task
+    with task data nested in control_data, which is what this is.
+    This might be useful if you:
+    - need to get a confirmation that your task has been received
+    - you need to start a task from another task
+    """
+    for producer in dispatcher.producers:
+        if hasattr(producer, 'submit_task'):
+            try:
+                await producer.submit_task(data)
+            except Exception as exc:
+                return {'error': str(exc)}
+            return {'ack': data}
+    return {'error': 'A ControlBroker producer is not enabled. Add it to the list of producers in the service config to use this.'}
+
+
+async def main(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Information about scalar quantities on the main or pool objects"""
+    ret = dispatcher.get_status_data()
+    ret["pool"] = dispatcher.pool.get_status_data()
+    return ret
+
+
+async def status(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Information from all other non-destructive commands nested in a sub-dictionary"""
+    ret = {}
+    for command in __all__:
+        if command in ('cancel', 'alive', 'status', 'run'):
+            continue
+        control_method = globals()[command]
+        ret[command] = await control_method(dispatcher=dispatcher, data={})
     return ret
