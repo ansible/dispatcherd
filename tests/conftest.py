@@ -1,7 +1,7 @@
 import contextlib
 import logging
 
-from typing import Callable, AsyncIterator
+from typing import Callable, AsyncIterator, Union
 
 import pytest
 
@@ -14,6 +14,7 @@ from dispatcher.brokers.pg_notify import Broker, acreate_connection, connection_
 from dispatcher.registry import DispatcherMethodRegistry
 from dispatcher.config import DispatcherSettings
 from dispatcher.factories import from_settings, get_control_from_settings
+from dispatcher.testing.asyncio import adispatcher_service
 
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,8 @@ BASIC_CONFIG = {
             "default_publish_channel": "test_channel"
         }
     },
-    "pool": {
-        "pool_kwargs": {
-            "min_workers": 1,
-            "max_workers": 6
-        }
+    "service": {
+        "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager']",
     }
 }
 
@@ -84,48 +82,21 @@ def conn_config():
 
 
 @pytest.fixture
-def pg_dispatcher() -> DispatcherMain:
-    # We can not reuse the connection between tests
-    config = BASIC_CONFIG.copy()
-    config['brokers']['pg_notify'].pop('async_connection_factory')
-    return DispatcherMain(config)
-
-
-@pytest.fixture
 def test_settings():
     return DispatcherSettings(BASIC_CONFIG)
 
 @pytest_asyncio.fixture(
     loop_scope="function",
     scope="function",
-    params=['ProcessManager', 'ForkServerManager'],
-    ids=["fork", "forkserver"],
+    params=['ProcessManager', 'ForkServerManager', 'SpawnServerManager'],
+    ids=["fork", "forkserver", "spawn"],
 )
 async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
-    dispatcher = None
-    try:
-        this_test_config = BASIC_CONFIG.copy()
-        this_test_config.setdefault('service', {})
-        this_test_config['service']['process_manager_cls'] = request.param
-        this_settings = DispatcherSettings(this_test_config)
-        dispatcher = from_settings(settings=this_settings)
-
-        await dispatcher.connect_signals()
-        await dispatcher.start_working()
-        await dispatcher.wait_for_producers_ready()
-        await dispatcher.pool.events.workers_ready.wait()
-
-        assert dispatcher.pool.finished_count == 0  # sanity
-        assert dispatcher.control_count == 0
-
+    this_test_config = BASIC_CONFIG.copy()
+    this_test_config.setdefault('service', {})
+    this_test_config['service']['process_manager_cls'] = request.param
+    async with adispatcher_service(this_test_config) as dispatcher:
         yield dispatcher
-    finally:
-        if dispatcher:
-            try:
-                await dispatcher.shutdown()
-                await dispatcher.cancel_tasks()
-            except Exception:
-                logger.exception('shutdown had error')
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
@@ -152,3 +123,16 @@ async def pg_message(psycopg_conn) -> Callable:
 def registry() -> DispatcherMethodRegistry:
     "Return a fresh registry, separate from the global one, for testing"
     return DispatcherMethodRegistry()
+
+
+@pytest.fixture
+def get_worker_data():
+    "General utility for processing control-with-reply response"
+    def _rf(response_list: list[dict[str,Union[str,dict]]]) -> dict:
+        "Given some control-and-response data, assuming 1 node, 1 entry, get the task message"
+        assert len(response_list) == 1
+        response = response_list[0].copy()
+        response.pop('node_id', None)
+        assert len(response) == 1
+        return list(response.values())[0]
+    return _rf

@@ -135,6 +135,20 @@ class WorkerData(Protocol):
     def get_by_id(self, worker_id: int) -> PoolWorker: ...
 
 
+class PoolEvents:
+    """
+    Container for events related to the WorkerPool
+
+    These have so far been events triggered _by_ the worker pool.
+    This is useful for writing tests or 3rd party customization of the main loop.
+    """
+
+    queue_cleared: asyncio.Event
+    work_cleared: asyncio.Event = asyncio.Event()
+    management_event: asyncio.Event = asyncio.Event()
+    workers_ready: asyncio.Event = asyncio.Event()
+
+
 class WorkerPool(Protocol):
     """
     Describes an interface for a pool managing task workers.
@@ -146,6 +160,8 @@ class WorkerPool(Protocol):
     workers: WorkerData
     queuer: Queuer
     blocker: Blocker
+    events: PoolEvents
+    finished_count: int
 
     async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
         """Start persistent asyncio tasks, including asychronously starting worker subprocesses"""

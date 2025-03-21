@@ -99,6 +99,9 @@ class ProcessManager:
         message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
         return message
 
+    def shutdown(self) -> None:
+        self.finished_queue.close()
+
 
 class ForkServerManager(ProcessManager):
     mp_context = 'forkserver'
@@ -106,3 +109,7 @@ class ForkServerManager(ProcessManager):
     def __init__(self, preload_modules: Optional[list[str]] = None, settings: LazySettings = global_settings):
         super().__init__(settings=settings)
         self.ctx.set_forkserver_preload(preload_modules if preload_modules else [])
+
+
+class SpawnServerManager(ProcessManager):
+    mp_context = 'spawn'
