@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import asyncio
 
 from typing import Callable, AsyncIterator
 
@@ -102,10 +103,10 @@ async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
         this_settings = DispatcherSettings(this_test_config)
         dispatcher = from_settings(settings=this_settings)
 
-        await dispatcher.connect_signals()
-        await dispatcher.start_working()
-        await dispatcher.wait_for_producers_ready()
-        await dispatcher.pool.events.workers_ready.wait()
+        await asyncio.wait_for(dispatcher.connect_signals(), timeout=1)
+        await asyncio.wait_for(dispatcher.start_working(), timeout=1)
+        await asyncio.wait_for(dispatcher.wait_for_producers_ready(), timeout=1)
+        await asyncio.wait_for(dispatcher.pool.events.workers_ready.wait(), timeout=1)
 
         assert dispatcher.pool.finished_count == 0  # sanity
         assert dispatcher.control_count == 0
