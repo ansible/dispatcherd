@@ -15,6 +15,7 @@ from dispatcher.brokers.pg_notify import Broker, acreate_connection, connection_
 from dispatcher.registry import DispatcherMethodRegistry
 from dispatcher.config import DispatcherSettings
 from dispatcher.factories import from_settings, get_control_from_settings
+from dispatcher.testing.asyncio import adispatcher_service
 
 
 logger = logging.getLogger(__name__)
@@ -92,30 +93,11 @@ def test_settings():
     ids=["fork", "forkserver", "spawn"],
 )
 async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
-    dispatcher = None
-    try:
-        this_test_config = BASIC_CONFIG.copy()
-        this_test_config.setdefault('service', {})
-        this_test_config['service']['process_manager_cls'] = request.param
-        this_settings = DispatcherSettings(this_test_config)
-        dispatcher = from_settings(settings=this_settings)
-
-        await asyncio.wait_for(dispatcher.connect_signals(), timeout=1)
-        await asyncio.wait_for(dispatcher.start_working(), timeout=1)
-        await asyncio.wait_for(dispatcher.wait_for_producers_ready(), timeout=1)
-        await asyncio.wait_for(dispatcher.pool.events.workers_ready.wait(), timeout=1)
-
-        assert dispatcher.pool.finished_count == 0  # sanity
-        assert dispatcher.control_count == 0
-
+    this_test_config = BASIC_CONFIG.copy()
+    this_test_config.setdefault('service', {})
+    this_test_config['service']['process_manager_cls'] = request.param
+    async with adispatcher_service(this_test_config) as dispatcher:
         yield dispatcher
-    finally:
-        if dispatcher:
-            try:
-                await dispatcher.shutdown()
-                await dispatcher.cancel_tasks()
-            except Exception:
-                logger.exception('shutdown had error')
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")

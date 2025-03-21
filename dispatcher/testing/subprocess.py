@@ -6,11 +6,9 @@ import sys
 import traceback
 from multiprocessing.context import BaseContext
 from types import ModuleType
-from typing import Any, AsyncGenerator, Union
+from typing import Union
 
-from ..config import DispatcherSettings
-from ..factories import from_settings
-from ..service.main import DispatcherMain
+from .asyncio import adispatcher_service
 
 logger = logging.getLogger(__name__)
 
@@ -26,31 +24,6 @@ class CommunicationItems:
         self.q_out: multiprocessing.Queue = context.Queue()
         self.main_events = main_events
         self.pool_events = pool_events
-
-
-@contextlib.asynccontextmanager
-async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, Any]:
-    dispatcher = None
-    try:
-        settings = DispatcherSettings(config)
-        dispatcher = from_settings(settings=settings)  # type: ignore[arg-type]
-
-        await asyncio.wait_for(dispatcher.connect_signals(), timeout=1)
-        await asyncio.wait_for(dispatcher.start_working(), timeout=1)
-        await asyncio.wait_for(dispatcher.wait_for_producers_ready(), timeout=1)
-        await asyncio.wait_for(dispatcher.pool.events.workers_ready.wait(), timeout=1)
-
-        assert dispatcher.pool.finished_count == 0  # sanity
-        assert dispatcher.control_count == 0
-
-        yield dispatcher
-    finally:
-        if dispatcher:
-            try:
-                await dispatcher.shutdown()
-                await dispatcher.cancel_tasks()
-            except Exception:
-                logger.exception('shutdown had error')
 
 
 async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
@@ -136,6 +109,13 @@ def dispatcher_service(config, main_events=(), pool_events=()):
         process.join(timeout=1)
         if process.is_alive():
             process.terminate()  # SIGTERM
+            process.join(timeout=1)
+
+            if process.is_alive():
+                print(f"Process {process.pid} still alive after SIGTERM, sending SIGKILL")
+                process.kill()
+                process.join(timeout=1)
+
         comms.q_in.close()
         comms.q_out.close()
         sys.stdout.flush()
