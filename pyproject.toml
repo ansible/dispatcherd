@@ -2,7 +2,7 @@
 Repository = "https://github.com/ansible/dispatcher"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=42", "setuptools_scm[toml]>=7"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,7 +11,8 @@ version = "0.1.0"
 description = "An asyncio-based dispatcher for tasks in a worker pool."
 readme = "README.md"
 authors = [{ name = "Alan Rominger", email = "arominge@redhat.com.com" }]
-license = { text = "MIT" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 keywords = ["asyncio", "multiprocessing", "dispatcher", "pg_notify", "python"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -23,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = ["pyyaml"]
+dynamic = ["version"]
 
 [project.scripts]
 dispatcherd = "dispatcher.cli:standalone"
@@ -43,6 +45,7 @@ include-package-data = true # Ensures package data is included
 
 [tool.setuptools_scm]
 version_scheme = "calver-by-date"
+local_scheme = "no-local-version"
 
 [tool.black]
 line-length = 160
