@@ -15,16 +15,17 @@ class BrokeredProducer(BaseProducer):
         self.dispatcher: Optional[DispatcherMain] = None
         super().__init__()
 
-    async def recycle(self):
+    async def recycle(self) -> None:
         await self.events.recycle_event.wait()
         logger.info('recycle event received, restarting producer')
         self.events.recycle_event.clear()
-        if self.production_task.done():
+        if self.production_task and self.production_task.done():
             self.production_task = None
         else:
             raise RuntimeError('Programming error - recycle should not be called with production running')
         await self.shutdown()
         await asyncio.sleep(1)
+        assert self.dispatcher
         await self.start_producing(self.dispatcher)
 
     async def start_producing(self, dispatcher: DispatcherMain) -> None:

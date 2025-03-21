@@ -5,7 +5,6 @@ import time
 import uuid
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
-
 import psycopg
 
 from ..protocols import BrokerSelfCheckStatus
@@ -70,11 +69,11 @@ class Broker:
         if not (config or sync_connection_factory or sync_connection):
             raise RuntimeError('Must specify either config or sync_connection_factory')
 
-        if not max_connection_idle_seconds:
-            raise RuntimeError('Must specify max_connection_idle_seconds')
-
-        if max_self_check_message_age_seconds > max_connection_idle_seconds:
-            raise RuntimeError('max_self_check_message_age_seconds must be smaller than max_connection_idle_seconds')
+        if max_connection_idle_seconds:
+            if max_self_check_message_age_seconds is None:
+                raise RuntimeError('max_self_check_message_age_seconds must be specified if health checks are enabled')
+            if max_self_check_message_age_seconds > max_connection_idle_seconds:
+                raise RuntimeError('max_self_check_message_age_seconds must be smaller than max_connection_idle_seconds')
 
         # Used to identify the broker in self check messages
         self.broker_id = f"broker_{str(uuid.uuid4()).replace('-', '_')}"
@@ -96,15 +95,15 @@ class Broker:
         else:
             self._config = {}
 
+        self.user_channels = channels
         # Generate a special channel for broker self checks
         self.self_check_channel = self.generate_self_check_channel_name()
-        if self.self_check_channel not in channels:
-            if isinstance(channels, list):
-                channels.append(self.self_check_channel)
-            elif isinstance(channels, tuple):
-                channels = channels + (self.self_check_channel,)
 
-        self.channels = channels
+        server_channels = list(channels)
+        if self.self_check_channel not in server_channels:
+            server_channels.append(self.self_check_channel)
+        self.channels = server_channels
+
         self.default_publish_channel = default_publish_channel
         self.self_check_status = BrokerSelfCheckStatus.IDLE
         self.last_self_check_message_time = time.monotonic()
@@ -125,7 +124,7 @@ class Broker:
             return channel
         elif self.default_publish_channel is not None:
             return self.default_publish_channel
-        elif len(self.channels) == 1:
+        elif len(self.user_channels) == 1:
             # de-facto default channel, because there is only 1
             return self.channels[0]
 
@@ -165,9 +164,10 @@ class Broker:
     async def initiate_self_check(self) -> None:
         if self.self_check_status == BrokerSelfCheckStatus.IN_PROGRESS:
             # another self-check message is in flight
-            raise RuntimeError(f'self check message for broker {self.broker_id} did not arrive in time')
+            delta = time.monotonic() - self.last_self_check_message_time
+            raise RuntimeError(f'self check message for broker {self.broker_id} did not arrive in {delta} seconds')
 
-        await self.apublish_message(self.self_check_channel, json.dumps({'self_check': True, 'task': f'lambda: "{self.broker_id}"'}))
+        await self.apublish_message(channel=self.self_check_channel, message=json.dumps({'self_check': True, 'task': f'lambda: "{self.broker_id}"'}))
         self.self_check_status = BrokerSelfCheckStatus.IN_PROGRESS
         self.last_self_check_message_time = time.monotonic()
 
@@ -175,16 +175,19 @@ class Broker:
         """Verify a received self check message: check if it was sent from the same node and
         is not outdated
         """
-        now = time.monotonic()
-        delta_seconds = now - self.last_self_check_message_time
-
         if self.broker_id not in message['task']:
             # sent from a different node, ignore it
+            logger.debug(f'Ignoring self-check message due to broker_id not matching, {message["task"]}!={self.broker_id}')
             return
+
+        now = time.monotonic()
+        assert self.last_self_check_message_time is not None
+        delta_seconds = now - self.last_self_check_message_time
 
         # request/response cycle completed, reset the status back to idle
         self.self_check_status = BrokerSelfCheckStatus.IDLE
 
+        assert self.max_self_check_message_age_seconds is not None
         if delta_seconds < self.max_self_check_message_age_seconds:
             logger.info(f'self check succeeded, message received after {round(delta_seconds, 2)} seconds, broker-id {self.broker_id}')
         else:
@@ -210,7 +213,9 @@ class Broker:
                     if self.notify_queue:
                         break
                 else:
-                    logger.info(f'no message received since {self.max_connection_idle_seconds} seconds, starting self check')
+                    logger.info(
+                        f'No message received since {self.max_connection_idle_seconds} seconds, starting self check to channel={self.self_check_channel}'
+                    )
                     await self.initiate_self_check()
 
                 self.notify_loop_active = False
@@ -246,6 +251,12 @@ class Broker:
             await self._async_connection.close()
             self._async_connection = None
             self.owns_async_connection = False
+
+        # Reset any server-related vars from __init__
+        self.self_check_status = BrokerSelfCheckStatus.IDLE
+        self.last_self_check_message_time = time.monotonic()
+        self.notify_loop_active = False
+        self.notify_queue = []
 
     # --- synchronous connection methods ---
 

@@ -6,14 +6,12 @@ import time
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
-from ..protocols import DispatcherMain as DispatcherMainProtocol
-from ..protocols import WorkerPool
 from ..producers import BrokeredProducer
-from ..protocols import Producer
+from ..protocols import DispatcherMain as DispatcherMainProtocol
+from ..protocols import Producer, WorkerPool
 from . import control_tasks
-from .asyncio_tasks import ensure_fatal
+from .asyncio_tasks import ensure_fatal, wait_for_any
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
-from ..utils import wait_for_any
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +232,23 @@ class DispatcherMain(DispatcherMainProtocol):
                 except asyncio.CancelledError:
                     pass
 
+    async def recycle_broker_producers(self) -> None:
+        """For any producer in a broken state (likely due to external factors beyond our control) recycle it"""
+        for producer in self.producers:
+            if producer.events.recycle_event.is_set():
+                await producer.recycle()
+                for task in producer.all_tasks():
+                    ensure_fatal(task, exit_event=producer.events.recycle_event)
+                logger.info('finished recycling of producer')
+
+    async def main_loop_wait(self) -> None:
+        """Wait for an event that requires some kind of action by the main loop"""
+        events = [self.events.exit_event]
+        for producer in self.producers:
+            events.append(producer.events.recycle_event)
+
+        await wait_for_any(events)
+
     async def main(self) -> None:
         await self.connect_signals()
 
@@ -243,24 +258,12 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
 
             while True:
-                events = [self.events.exit_event]
-                for producer in self.producers:
-                    events.append(producer.events.recycle_event)
-
-                await wait_for_any(events)
+                await self.main_loop_wait()
 
                 if self.events.exit_event.is_set():
-                    # If the exit event is set, terminate the process
-                    break
+                    break  # If the exit event is set, terminate the process
                 else:
-                    # Otherwise, one or some of the producers broke and we need to
-                    # recycle them
-                    for producer in self.producers:
-                        if producer.events.recycle_event.is_set():
-                            await producer.recycle()
-                            for task in producer.all_tasks():
-                                ensure_fatal(task, exit_event=producer.events.recycle_event)
-                            logger.info('finished recycling of producer')
+                    await self.recycle_broker_producers()  # Otherwise, one or some of the producers broke
 
         finally:
             await self.shutdown()
