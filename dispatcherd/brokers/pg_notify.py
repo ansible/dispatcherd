@@ -51,8 +51,8 @@ class Broker:
         async_connection: Optional[psycopg.AsyncConnection] = None,
         channels: Union[tuple, list] = (),
         default_publish_channel: Optional[str] = None,
-        max_connection_idle_seconds: Optional[int] = None,
-        max_self_check_message_age_seconds: Optional[int] = None,
+        max_connection_idle_seconds: Optional[int] = 30,
+        max_self_check_message_age_seconds: Optional[int] = 2,
     ) -> None:
         """
         config - kwargs to psycopg connect classes, if creating connection this way
