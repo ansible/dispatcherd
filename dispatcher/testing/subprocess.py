@@ -3,10 +3,10 @@ import contextlib
 import logging
 import multiprocessing
 import sys
+import traceback
 from multiprocessing.context import BaseContext
 from types import ModuleType
 from typing import Any, AsyncGenerator, Union
-import traceback
 
 from ..config import DispatcherSettings
 from ..factories import from_settings
