@@ -1,8 +1,8 @@
 import asyncio
+import json
 import logging
 import os
 import socket
-import json
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 from ..protocols import Broker as BrokerProtocol
@@ -51,9 +51,6 @@ def extract_json(message: str) -> Iterator[str]:
             pos = index
         except json.JSONDecodeError:
             break
-
-    return message[pos:].lstrip()
-
 
 
 class Broker(BrokerProtocol):
