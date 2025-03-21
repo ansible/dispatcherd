@@ -3,14 +3,13 @@ import json
 import logging
 import signal
 import time
-from asyncio import wait_for
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
 from ..protocols import DispatcherMain as DispatcherMainProtocol
-from ..protocols import Producer, WorkerPool
+from ..protocols import WorkerPool
 from ..producers import BrokeredProducer
-from ..protocols import Producer, BrokerSelfCheckStatus
+from ..protocols import Producer
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner

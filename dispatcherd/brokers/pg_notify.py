@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import threading
@@ -6,7 +5,6 @@ import time
 import uuid
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
-from datetime import datetime
 
 import psycopg
 
@@ -100,7 +98,7 @@ class Broker:
 
         # Generate a special channel for broker self checks
         self.self_check_channel = self.generate_self_check_channel_name()
-        if not self.self_check_channel in channels:
+        if self.self_check_channel not in channels:
             if isinstance(channels, list):
                 channels.append(self.self_check_channel)
             elif isinstance(channels, tuple):
