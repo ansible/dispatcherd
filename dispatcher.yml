@@ -12,7 +12,7 @@ brokers:
   pg_notify:
     config:
       conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777
-    sync_connection_factory: dispatcher.brokers.pg_notify.connection_saver
+    sync_connection_factory: dispatcherd.brokers.pg_notify.connection_saver
     # List of channels to listen on
     channels:
     - test_channel

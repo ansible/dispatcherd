@@ -1,28 +1,24 @@
-import logging
 import asyncio
+import logging
 
 import pytest
 
-from dispatcher.factories import from_settings
-from dispatcher.config import DispatcherSettings
+from dispatcherd.config import DispatcherSettings
+from dispatcherd.factories import from_settings
 
 
 @pytest.mark.asyncio
 async def test_on_start_tasks(caplog):
     dispatcher = None
     try:
-        settings = DispatcherSettings({
-            'version': 2,
-            'service': {
-                'pool_kwargs': {'max_workers': 2}
-            },
-            'brokers': {},  # do not need them for this test
-            'producers': {
-                'OnStartProducer': {
-                    'task_list': {'lambda: "confirmation_of_run"': {}}
-                }
+        settings = DispatcherSettings(
+            {
+                'version': 2,
+                'service': {'pool_kwargs': {'max_workers': 2}},
+                'brokers': {},  # do not need them for this test
+                'producers': {'OnStartProducer': {'task_list': {'lambda: "confirmation_of_run"': {}}}},
             }
-        })
+        )
         dispatcher = from_settings(settings=settings)
         assert dispatcher.pool.finished_count == 0
 

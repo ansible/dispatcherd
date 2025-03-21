@@ -1,6 +1,6 @@
-import time
 import asyncio
 import json
+import time
 
 import pytest
 

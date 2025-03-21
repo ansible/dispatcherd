@@ -1,18 +1,25 @@
 [project.urls]
-Repository = "https://github.com/ansible/dispatcher"
+Repository = "https://github.com/ansible/dispatcherd"
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dispatcher"
+name = "dispatcherd"
 version = "0.1.0"
 description = "An asyncio-based dispatcher for tasks in a worker pool."
 readme = "README.md"
 authors = [{ name = "Alan Rominger", email = "arominge@redhat.com.com" }]
 license = { text = "MIT" }
-keywords = ["asyncio", "multiprocessing", "dispatcher", "pg_notify", "python"]
+keywords = [
+    "asyncio",
+    "multiprocessing",
+    "dispatcher",
+    "dispatcherd",
+    "pg_notify",
+    "python",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -25,11 +32,11 @@ classifiers = [
 dependencies = ["pyyaml"]
 
 [project.scripts]
-dispatcherd = "dispatcher.cli:standalone"
-dispatcherctl = "dispatcher.cli:control"
+dispatcherd = "dispatcherd.cli:standalone"
+dispatcherctl = "dispatcherd.cli:control"
 
 [tool.setuptools.packages.find]
-include = ["dispatcher*"]
+include = ["dispatcherd*"]
 
 [tool.setuptools]
 include-package-data = true # Ensures package data is included

@@ -4,12 +4,10 @@ import json
 import logging
 import sys
 
-from dispatcher.factories import get_publisher_from_settings, get_control_from_settings
-from dispatcher.utils import MODULE_METHOD_DELIMITER
-from dispatcher.config import setup
-
-from tests.data.methods import sleep_function, sleep_discard, task_has_timeout, hello_world_binder
-
+from dispatcherd.config import setup
+from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
+from dispatcherd.utils import MODULE_METHOD_DELIMITER
+from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout
 
 # Setup the global config from the settings file shared with the service
 setup(file_path='dispatcher.yml')
@@ -103,14 +101,18 @@ def main():
 
     print('')
     print('showing delayed tasks in running list')
-    running_data = ctl.control_with_reply('running', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'}, expected_replies=expected_count)
+    running_data = ctl.control_with_reply(
+        'running', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'}, expected_replies=expected_count
+    )
     print(json.dumps(running_data, indent=2))
 
     print('')
     print('cancel a delayed task with no reply for demonstration')
     ctl.control('cancel', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'})  # NOTE: no reply
     print('confirmation that it has been canceled')
-    running_data = ctl.control_with_reply('running', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'}, expected_replies=expected_count)
+    running_data = ctl.control_with_reply(
+        'running', data={'task': f'tests.data.methods{MODULE_METHOD_DELIMITER}sleep_function'}, expected_replies=expected_count
+    )
     print(json.dumps(running_data, indent=2))
 
     print('')
@@ -122,9 +124,7 @@ def main():
     print('')
     print('demo of submitting discarding tasks')
     for i in range(10):
-        broker.publish_message(message=json.dumps(
-            {'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}
-        ))
+        broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}))
     print('demo of discarding task marked as discarding')
     for i in range(10):
         sleep_discard.apply_async(args=[2])
@@ -133,14 +133,10 @@ def main():
         sleep_function.apply_async(args=[3], on_duplicate='discard')
     print('demo of submitting waiting tasks')
     for i in range(10):
-        broker.publish_message(message=json.dumps(
-            {'task': 'lambda: __import__("time").sleep(10)', 'on_duplicate': 'serial', 'uuid': f'wait-{i}'}
-            ))
+        broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(10)', 'on_duplicate': 'serial', 'uuid': f'wait-{i}'}))
     print('demo of submitting queue-once tasks')
     for i in range(10):
-        broker.publish_message(message=json.dumps(
-            {'task': 'lambda: __import__("time").sleep(8)', 'on_duplicate': 'queue_one', 'uuid': f'queue_one-{i}'}
-        ))
+        broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(8)', 'on_duplicate': 'queue_one', 'uuid': f'queue_one-{i}'}))
 
     print('demo of task_has_timeout that times out due to decorator use')
     task_has_timeout.delay()

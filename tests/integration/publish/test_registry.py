@@ -2,8 +2,8 @@ from unittest import mock
 
 import pytest
 
-from dispatcher.publish import task
-from dispatcher.config import temporary_settings
+from dispatcherd.config import temporary_settings
+from dispatcherd.publish import task
 
 
 def test_apply_async_with_no_queue(registry, conn_config):
@@ -21,7 +21,7 @@ def test_apply_async_with_no_queue(registry, conn_config):
             dmethod.apply_async()
 
         # But providing a queue at time of submission works
-        with mock.patch('dispatcher.brokers.pg_notify.Broker.publish_message') as mock_publish_method:
+        with mock.patch('dispatcherd.brokers.pg_notify.Broker.publish_message') as mock_publish_method:
             dmethod.apply_async(queue='fooqueue')
         mock_publish_method.assert_called_once_with(channel='fooqueue', message=mock.ANY)
 

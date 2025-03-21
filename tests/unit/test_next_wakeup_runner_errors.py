@@ -1,6 +1,8 @@
 import time
+
 import pytest
-from dispatcher.service.next_wakeup_runner import NextWakeupRunner, HasWakeup
+
+from dispatcherd.service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 
 # Dummy object that implements HasWakeup.
@@ -11,14 +13,17 @@ class DummySchedule(HasWakeup):
     def next_wakeup(self) -> float:
         return self._wakeup_time
 
+
 # Dummy process_object that simulates successful processing by pushing wakeup time forward.
 async def dummy_process_object(schedule: DummySchedule) -> None:
     # Simulate processing by adding 10 seconds.
     schedule._wakeup_time += 10
 
+
 # Dummy process_object that raises an exception.
 async def failing_process_object(schedule: DummySchedule) -> None:
     raise ValueError("Processing error")
+
 
 @pytest.mark.asyncio
 async def test_process_wakeups_normal():
@@ -33,6 +38,7 @@ async def test_process_wakeups_normal():
     assert next_wakeup == schedule._wakeup_time
     # Also, since the schedule was processed, it should not return None.
     assert next_wakeup is not None
+
 
 @pytest.mark.asyncio
 async def test_process_wakeups_error_propagation():

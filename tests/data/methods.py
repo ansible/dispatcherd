@@ -1,6 +1,6 @@
 import time
 
-from dispatcher.publish import task
+from dispatcherd.publish import task
 
 
 @task(queue='test_channel')

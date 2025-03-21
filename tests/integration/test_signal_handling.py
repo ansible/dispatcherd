@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from dispatcher.publish import task
+from dispatcherd.publish import task
 
 
 @task(queue="test_channel")

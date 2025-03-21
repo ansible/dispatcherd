@@ -8,7 +8,7 @@ PYTHONPATH=$PYTHONPATH:tools/ python -c "from tools.test_methods import sleep_fu
 
 This will result in an error:
 
-> Dispatcher not configured, set DISPATCHER_CONFIG_FILE or call dispatcher.config.setup
+> Dispatcher not configured, set DISPATCHERD_CONFIG_FILE or call dispatcher.config.setup
 
 This errors because dispatcher does not know how to connect to a message broker.
 For the demo, that would be the postgres host, user, password, etc.,
@@ -36,10 +36,10 @@ are using the same configuration.
 
 ##### With Environment variable
 
-Alternatively, the `DISPATCHER_CONFIG_FILE` environment variable can point to a file. Example:
+Alternatively, the `DISPATCHERD_CONFIG_FILE` environment variable can point to a file. Example:
 
 ```
-DISPATCHER_CONFIG_FILE=dispatcher.yml dispatcherd
+DISPATCHERD_CONFIG_FILE=dispatcher.yml dispatcherd
 ```
 
 #### From a dictionary
@@ -98,7 +98,7 @@ Right now the only broker available is pg_notify.
 
 The sub-options become python `kwargs` passed to the broker class `Broker`.
 For now, you will just have to read the code to see what those options are
-at [dispatcher.brokers.pg_notify](dispatcher/brokers/pg_notify.py).
+at [dispatcherd.brokers.pg_notify](dispatcher/brokers/pg_notify.py).
 
 The broker classes have methods that allow for submitting messages
 and reading messages.
@@ -108,7 +108,7 @@ and reading messages.
 This configures the background task service.
 
 The `pool_kwargs` options will correspond to the `WorkerPool` class
-[dispatcher.pool](dispatcher/pool.py).
+[dispatcherd.pool](dispatcher/pool.py).
 Process management options will be added to this section later.
 
 These options are mainly concerned with worker
@@ -124,8 +124,9 @@ created. That means that tasks may be produced from the messaging
 system that the dispatcher service is listening to.
 
 The others are:
- - `ScheduledProducer` - submits tasks every certain number of seconds
- - `OnStartProducer` - runs tasks once after starting
+
+- `ScheduledProducer` - submits tasks every certain number of seconds
+- `OnStartProducer` - runs tasks once after starting
 
 #### Publish
 

@@ -1,11 +1,10 @@
 import json
 
+import pytest
 import yaml
 
-import pytest
-
-from dispatcher.config import DispatcherSettings, LazySettings, temporary_settings
-from dispatcher.factories import generate_settings_schema
+from dispatcherd.config import DispatcherSettings, LazySettings, temporary_settings
+from dispatcherd.factories import generate_settings_schema
 
 
 def test_settings_reference_unconfigured():

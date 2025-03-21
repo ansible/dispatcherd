@@ -23,7 +23,7 @@ services:
     environment:
       PATH: /dispatcherd/venv/bin:$PATH
       PYTHONPATH: .
-      DISPATCHER_CONFIG_FILE: /dispatcherd/dispatcher1.yml
+      DISPATCHERD_CONFIG_FILE: /dispatcherd/dispatcher1.yml
     command: dispatcherd
     depends_on:
       msg_postgres:
@@ -43,7 +43,7 @@ services:
     environment:
       PATH: /dispatcherd/venv/bin:$PATH
       PYTHONPATH: .
-      DISPATCHER_CONFIG_FILE: /dispatcherd/dispatcher2.yml
+      DISPATCHERD_CONFIG_FILE: /dispatcherd/dispatcher2.yml
     command: dispatcherd
     depends_on:
       msg_postgres:

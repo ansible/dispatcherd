@@ -1,9 +1,10 @@
 import asyncio
 import json
+
 import pytest
 
+from dispatcherd.config import temporary_settings
 from tests.data import methods as test_methods
-from dispatcher.config import temporary_settings
 
 
 # Function that alternates between valid queue names the dispatcher listens to
@@ -89,7 +90,7 @@ async def test_alternating_queue_names(apg_dispatcher, test_settings):
 
 def test_callable_queue_json_serializable():
     """Test that a callable queue is properly handled for JSON serialization"""
-    from dispatcher.registry import DispatcherMethod
+    from dispatcherd.registry import DispatcherMethod
 
     def test_func():
         pass

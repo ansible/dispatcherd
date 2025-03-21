@@ -1,13 +1,13 @@
 from unittest import mock
 
-from dispatcher.publish import task
-
 import pytest
+
+from dispatcherd.publish import task
 
 
 @pytest.fixture
 def mock_apply_async():
-    with mock.patch('dispatcher.registry.DispatcherMethod.apply_async') as apply_async:
+    with mock.patch('dispatcherd.registry.DispatcherMethod.apply_async') as apply_async:
         yield apply_async
 
 

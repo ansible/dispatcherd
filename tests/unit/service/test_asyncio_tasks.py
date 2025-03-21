@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from dispatcher.service.asyncio_tasks import ensure_fatal
+from dispatcherd.service.asyncio_tasks import ensure_fatal
 
 
 async def will_fail():

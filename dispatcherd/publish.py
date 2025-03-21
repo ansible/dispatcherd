@@ -45,7 +45,7 @@ def task(
 ) -> DispatcherDecorator:
     """
     Used to decorate a function or class so that it can be run asynchronously
-    via the task dispatcher.  Tasks can be simple functions:
+    via the task dispatcherd.  Tasks can be simple functions:
 
     @task()
     def add(a, b):
@@ -78,6 +78,6 @@ def task(
 
     # The registry kwarg changes where the registration is saved, mainly for testing
     # The on_duplicate kwarg controls behavior when multiple instances of the task running
-    # options are documented in dispatcher.utils.DuplicateBehavior
+    # options are documented in dispatcherd.utils.DuplicateBehavior
     """
     return DispatcherDecorator(registry, bind=bind, queue=queue, on_duplicate=on_duplicate, timeout=timeout)
