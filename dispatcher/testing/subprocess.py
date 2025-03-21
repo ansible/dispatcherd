@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 class CommunicationItems:
     """Various things used for communication between the parent process and the subprocess service
 
+    When using the dispatcher_service context manager, this is yielded to be used by tests.
+    Checking q_out can allow waiting for dispatcher events in synchronous code, like clearing of work queue.
+
     This will be passed in the call to the subprocess.
     """
 
@@ -27,6 +30,7 @@ class CommunicationItems:
 
 
 async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
+    """Replaces the DispatcherMain.main method, similar to how most asyncio tests work"""
     loop = asyncio.get_event_loop()
     async with adispatcher_service(config) as dispatcher:
         comms.q_out.put('ready')
@@ -54,7 +58,6 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
             for event_name, event in events.items():
                 if event.is_set():
                     comms.q_out.put(event_name)
-                    # await loop.run_in_executor(None, comms.q_out.put, event_name)
                 event.clear()
                 event_tasks[event_name] = asyncio.create_task(event.wait())
 
@@ -76,6 +79,7 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
 
 
 def subprocess_main(config, comms):
+    """The subprocess (synchronous) target for the testing dispatcherd service"""
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(asyncio_target(config, comms))
@@ -92,6 +96,11 @@ def subprocess_main(config, comms):
 
 @contextlib.contextmanager
 def dispatcher_service(config, main_events=(), pool_events=()):
+    """Testing utility to run a dispatcherd service as a subprocess
+
+    Note this is likely to have problems if mixed with code running asyncio loops.
+    It is mainly intended to be called from synchronous python.
+    """
     ctx = multiprocessing.get_context('fork')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
     process = multiprocessing.Process(target=subprocess_main, args=(config, comms))
