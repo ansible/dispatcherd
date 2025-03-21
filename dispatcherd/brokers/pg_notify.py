@@ -107,6 +107,7 @@ class Broker:
         self.channels = channels
         self.default_publish_channel = default_publish_channel
         self.self_check_status = BrokerSelfCheckStatus.IDLE
+        self.last_self_check_message_time = time.monotonic()
 
         # If we are in the notification loop (receiving messages),
         # then we have to break out before sending messages
@@ -164,21 +165,18 @@ class Broker:
     async def initiate_self_check(self) -> None:
         if self.self_check_status == BrokerSelfCheckStatus.IN_PROGRESS:
             # another self-check message is in flight
-            raise RuntimeError(f'failed to initiate self check for broker {self.broker_id}')
+            raise RuntimeError(f'self check message for broker {self.broker_id} did not arrive in time')
 
-        try:
-            await self.apublish_message(self.self_check_channel, json.dumps({'self_check': True, 'sent': time.time(), 'task': f'lambda: "{self.broker_id}"'}))
-            self.self_check_status = BrokerSelfCheckStatus.IN_PROGRESS
-        except Exception as error:
-            raise RuntimeError(f'failed to send self check message: {error}')
+        await self.apublish_message(self.self_check_channel, json.dumps({'self_check': True, 'task': f'lambda: "{self.broker_id}"'}))
+        self.self_check_status = BrokerSelfCheckStatus.IN_PROGRESS
+        self.last_self_check_message_time = time.monotonic()
 
     def verify_self_check(self, message: dict[str, Any]) -> None:
         """Verify a received self check message: check if it was sent from the same node and
         is not outdated
         """
-        now = time.time()
-        message_date = message['sent']
-        delta_seconds = now - message_date
+        now = time.monotonic()
+        delta_seconds = now - self.last_self_check_message_time
 
         if self.broker_id not in message['task']:
             # sent from a different node, ignore it
