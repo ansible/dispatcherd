@@ -29,5 +29,6 @@ producers:
   OnStartProducer:
     task_list:
       'lambda: print("This task runs on startup")': {}
+  ControlProducer:
 publish:
   default_broker: pg_notify

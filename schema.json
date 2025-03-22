@@ -10,6 +10,7 @@
     }
   },
   "producers": {
+    "ControlProducer": {},
     "ScheduledProducer": {
       "task_schedule": "dict[str, dict[str, typing.Union[int, str]]]"
     },

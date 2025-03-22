@@ -1,6 +1,6 @@
 import asyncio
 
-from ..protocols import Producer
+from ..protocols import Producer as ProducerProtocol
 
 
 class ProducerEvents:
@@ -8,8 +8,11 @@ class ProducerEvents:
         self.ready_event = asyncio.Event()
 
 
-class BaseProducer(Producer):
+class BaseProducer(ProducerProtocol):
 
     def __init__(self) -> None:
         self.events = ProducerEvents()
         self.produced_count = 0
+
+    def get_status_data(self) -> dict:
+        return {'produced_count': self.produced_count}
