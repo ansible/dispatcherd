@@ -1,5 +1,13 @@
 import asyncio
+from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
+
+
+class BrokerSelfCheckStatus(Enum):
+    """This enum represents the result of a broker self-check"""
+
+    IDLE = (1,)  # no self check is currently in progress
+    IN_PROGRESS = (2,)  # a self check is currently in progress
 
 
 class Broker(Protocol):
@@ -40,6 +48,10 @@ class Broker(Protocol):
         """Close the sychronous connection"""
         ...
 
+    def verify_self_check(self, message: dict[str, Any]) -> None:
+        """Verify a received self check message"""
+        ...
+
 
 class ProducerEvents(Protocol):
     """
@@ -49,6 +61,7 @@ class ProducerEvents(Protocol):
     """
 
     ready_event: asyncio.Event
+    recycle_event: asyncio.Event
 
 
 class Producer(Protocol):
@@ -71,6 +84,10 @@ class Producer(Protocol):
 
     def all_tasks(self) -> Iterable[asyncio.Task]:
         """Returns all asyncio tasks, which is relevant for task management, shutdown, triggered from main loop"""
+        ...
+
+    async def recycle(self) -> None:
+        """Restart the producer"""
         ...
 
 

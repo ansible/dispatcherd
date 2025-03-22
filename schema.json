@@ -6,7 +6,9 @@
       "async_connection_factory": "typing.Optional[str]",
       "sync_connection_factory": "typing.Optional[str]",
       "channels": "typing.Union[tuple, list]",
-      "default_publish_channel": "typing.Optional[str]"
+      "default_publish_channel": "typing.Optional[str]",
+      "max_connection_idle_seconds": "typing.Optional[int]",
+      "max_self_check_message_age_seconds": "typing.Optional[int]"
     }
   },
   "producers": {

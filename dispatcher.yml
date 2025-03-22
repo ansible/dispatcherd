@@ -11,7 +11,7 @@ service:
 brokers:
   pg_notify:
     config:
-      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777
+      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777 application_name=dispatcher_demo_run
     sync_connection_factory: dispatcherd.brokers.pg_notify.connection_saver
     # List of channels to listen on
     channels:
@@ -19,6 +19,8 @@ brokers:
     - test_channel2
     - test_channel3
     default_publish_channel: test_channel
+    max_connection_idle_seconds: 5
+    max_self_check_message_age_seconds: 2
 producers:
   ScheduledProducer:
     task_schedule:

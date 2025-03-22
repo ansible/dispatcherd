@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,3 +34,22 @@ def ensure_fatal(task: asyncio.Task, exit_event: Optional[asyncio.Event] = None)
             raise
 
     return task  # nicety so this can be used as a wrapper
+
+
+async def wait_for_any(events: Iterable[asyncio.Event]) -> int:
+    """
+    Wait for a list of events. If any of the events gets set, this function
+    will return
+    """
+    tasks = [asyncio.create_task(event.wait()) for event in events]
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    for i, task in enumerate(tasks):
+        if task in done:
+            return i
+
+    raise RuntimeError('Internal error - could done find any tasks that are done')

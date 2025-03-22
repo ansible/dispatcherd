@@ -6,10 +6,11 @@ import time
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
+from ..producers import BrokeredProducer
 from ..protocols import DispatcherMain as DispatcherMainProtocol
 from ..protocols import Producer, WorkerPool
 from . import control_tasks
-from .asyncio_tasks import ensure_fatal
+from .asyncio_tasks import ensure_fatal, wait_for_any
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,10 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
 
+        if 'self_check' in message:
+            if isinstance(producer, BrokeredProducer):
+                producer.broker.verify_self_check(message)
+
         # A client may provide a task uuid (hope they do it correctly), if not add it
         if 'uuid' not in message:
             message['uuid'] = f'internal-{self.received_count}'
@@ -208,12 +213,12 @@ class DispatcherMain(DispatcherMainProtocol):
                     await producer.start_producing(self)
                 except Exception:
                     logger.exception(f'Producer {producer} failed to start')
-                    self.events.exit_event.set()
+                    producer.events.recycle_event.set()
 
                 # TODO: recycle producer instead of raising up error
                 # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
-                    ensure_fatal(task, exit_event=self.events.exit_event)
+                    ensure_fatal(task, exit_event=producer.events.recycle_event)
 
     async def cancel_tasks(self) -> None:
         for task in asyncio.all_tasks():
@@ -227,6 +232,23 @@ class DispatcherMain(DispatcherMainProtocol):
                 except asyncio.CancelledError:
                     pass
 
+    async def recycle_broker_producers(self) -> None:
+        """For any producer in a broken state (likely due to external factors beyond our control) recycle it"""
+        for producer in self.producers:
+            if producer.events.recycle_event.is_set():
+                await producer.recycle()
+                for task in producer.all_tasks():
+                    ensure_fatal(task, exit_event=producer.events.recycle_event)
+                logger.info('finished recycling of producer')
+
+    async def main_loop_wait(self) -> None:
+        """Wait for an event that requires some kind of action by the main loop"""
+        events = [self.events.exit_event]
+        for producer in self.producers:
+            events.append(producer.events.recycle_event)
+
+        await wait_for_any(events)
+
     async def main(self) -> None:
         await self.connect_signals()
 
@@ -234,7 +256,15 @@ class DispatcherMain(DispatcherMainProtocol):
             await self.start_working()
 
             logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
-            await self.events.exit_event.wait()
+
+            while True:
+                await self.main_loop_wait()
+
+                if self.events.exit_event.is_set():
+                    break  # If the exit event is set, terminate the process
+                else:
+                    await self.recycle_broker_producers()  # Otherwise, one or some of the producers broke
+
         finally:
             await self.shutdown()
 

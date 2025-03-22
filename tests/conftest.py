@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 CHANNELS = ['test_channel', 'test_channel2', 'test_channel3']
 
 # Database connection details
-CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777"
+CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777 application_name=apg_test_server"
 
 BASIC_CONFIG = {
     "version": 2,
@@ -40,7 +40,8 @@ BASIC_CONFIG = {
 async def aconnection_for_test():
     conn = None
     try:
-        conn = await acreate_connection(conninfo=CONNECTION_STRING, autocommit=True)
+        conn_str = CONNECTION_STRING.replace('application_name=apg_test_server', 'application_name=apg_client')
+        conn = await acreate_connection(conninfo=conn_str, autocommit=True)
 
         # Make sure database is running to avoid deadlocks which can come
         # from using the loop provided by pytest asyncio
