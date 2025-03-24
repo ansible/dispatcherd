@@ -8,11 +8,22 @@ from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
 
 
+@pytest.fixture
+def pool_factory(test_settings):
+    def _factory(**kwargs_overrides):
+        pm = ProcessManager(settings=test_settings)
+        kwargs = dict(process_manager=pm, min_workers=5, max_workers=5)
+        kwargs.update(kwargs_overrides)
+        pool = WorkerPool(**kwargs)
+        return pool
+    return _factory
+
+
+
 @pytest.mark.asyncio
-async def test_scale_to_min(test_settings):
+async def test_scale_to_min(pool_factory):
     "Create 5 workers to fill up to the minimum"
-    pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=5)
+    pool = pool_factory(min_workers=5, max_workers=5)
     assert len(pool.workers) == 0
     await pool.scale_workers()
     assert len(pool.workers) == 5
@@ -20,10 +31,9 @@ async def test_scale_to_min(test_settings):
 
 
 @pytest.mark.asyncio
-async def test_scale_due_to_queue_pressure(test_settings):
+async def test_scale_due_to_queue_pressure(pool_factory):
     "Given 5 busy workers and 1 task in the queue, the scaler should add 1 more worker"
-    pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=10)
+    pool = pool_factory(min_workers=5, max_workers=10)
     await pool.scale_workers()
     for worker in pool.workers:
         worker.status = 'ready'  # a lie, for test
@@ -36,7 +46,7 @@ async def test_scale_due_to_queue_pressure(test_settings):
 
 
 @pytest.mark.asyncio
-async def test_initialized_workers_count_for_scaling(test_settings):
+async def test_initialized_workers_count_for_scaling(pool_factory):
     """If we have workers currently scaling up, and queued tasks, we should not scale more workers
 
     Scaling more workers would not actually get us to the task any faster, and could slow down the system.
@@ -44,8 +54,7 @@ async def test_initialized_workers_count_for_scaling(test_settings):
     because the workers have not yet started up.
     With task_ct < worker_ct, we should not scale additional workers right after startup.
     """
-    pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=10)
+    pool = pool_factory(min_workers=5, max_workers=10)
     await pool.scale_workers()
     assert len(pool.workers) == 5
     assert set([worker.status for worker in pool.workers]) == {'initialized'}
@@ -56,15 +65,14 @@ async def test_initialized_workers_count_for_scaling(test_settings):
 
 
 @pytest.mark.asyncio
-async def test_initialized_and_ready_but_scale(test_settings):
+async def test_initialized_and_ready_but_scale(pool_factory):
     """Consider you have 3 OnStart tasks but 2 min workers, you should scale up in this case
 
     This is a reversal from test_initialized_workers_count_for_scaling,
     as it shows a different case where scaling up beyond min_workers on startup is expected.
     That is, task_ct > worker_ct, on startup.
     """
-    pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=2, max_workers=10)
+    pool = pool_factory(min_workers=2, max_workers=10)
     await pool.scale_workers()
     assert len(pool.workers) == 2
 
@@ -75,10 +83,9 @@ async def test_initialized_and_ready_but_scale(test_settings):
 
 
 @pytest.mark.asyncio
-async def test_scale_down_condition(test_settings):
+async def test_scale_down_condition(pool_factory):
     """You have 3 workers due to past demand, but work finished long ago. Should scale down."""
-    pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=3)
+    pool = pool_factory(min_workers=1, max_workers=3)
 
     # Prepare for test by scaling up to the 3 max workers by adding demand
     pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 3 workers
@@ -103,10 +110,9 @@ async def test_scale_down_condition(test_settings):
 
 
 @pytest.mark.asyncio
-async def test_error_while_scaling_up(test_settings):
+async def test_error_while_scaling_up(pool_factory):
     """It is always possible that we fail to start workers due to OS errors. This should not error the whole program."""
-    pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=1)
+    pool = pool_factory(min_workers=1, max_workers=1)
 
     pool.queuer.queued_messages = [{'task': 'waiting.task'}]
     for i in range(3):
@@ -117,3 +123,16 @@ async def test_error_while_scaling_up(test_settings):
         await pool.manage_new_workers(asyncio.Lock())
 
     assert set([worker.status for worker in pool.workers]) == {'error'}
+
+
+@pytest.mark.asyncio
+async def test_shutdown_is_idepotent(pool_factory):
+    """Do some stuff to the pool that is a little weird, but still valid and should not break dispatcherd"""
+    pool = pool_factory()
+    lock = asyncio.Lock()
+    await pool.shutdown()  # weird to shutdown before starting, but okay
+
+    await pool.start_working(forking_lock=lock)
+
+    await pool.shutdown()
+    await pool.shutdown()  # weird to shutdown twice, but... just return

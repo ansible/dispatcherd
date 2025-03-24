@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import multiprocessing
 from multiprocessing.context import BaseContext
 from types import ModuleType
@@ -7,6 +8,8 @@ from typing import Any, Callable, Iterable, Optional, Union
 from ..config import LazySettings
 from ..config import settings as global_settings
 from ..worker.task import work_loop
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessProxy:
@@ -74,9 +77,17 @@ class ProcessManager:
 
     def __init__(self, settings: LazySettings = global_settings) -> None:
         self.ctx = multiprocessing.get_context(self.mp_context)
-        self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
+        self._finished_queue: Optional[multiprocessing.Queue] = self.ctx.Queue()
         self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    @property
+    def finished_queue(self) -> multiprocessing.Queue:
+        """The processor manager owns the lifecycle of the finished queue, so if pool is restarted we have to handle this"""
+        if self._finished_queue:
+            return self._finished_queue
+        self._finished_queue = self.ctx.Queue()
+        return self._finished_queue
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         if self._loop:
@@ -99,6 +110,12 @@ class ProcessManager:
         message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
         return message
 
+    def shutdown(self) -> None:
+        if self._finished_queue:
+            logger.debug('Closing finished queue')
+            self._finished_queue.close()
+            self._finished_queue = None
+
 
 class ForkServerManager(ProcessManager):
     mp_context = 'forkserver'
@@ -106,3 +123,7 @@ class ForkServerManager(ProcessManager):
     def __init__(self, preload_modules: Optional[list[str]] = None, settings: LazySettings = global_settings):
         super().__init__(settings=settings)
         self.ctx.set_forkserver_preload(preload_modules if preload_modules else [])
+
+
+class SpawnServerManager(ProcessManager):
+    mp_context = 'spawn'
