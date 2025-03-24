@@ -17,7 +17,7 @@ BASIC_CONFIG = {
         "pg_notify": {
             "channels": ['test_channel', 'test_channel2', 'test_channel3'],
             "config": {'conninfo': CONNECTION_STRING},
-            "sync_connection_factory": "dispatcher.brokers.pg_notify.connection_saver",
+            "sync_connection_factory": "dispatcherd.brokers.pg_notify.connection_saver",
             "default_publish_channel": "test_channel"
         }
     }
