@@ -53,7 +53,7 @@ class DispatcherMain(DispatcherMainProtocol):
         self.pool = pool
         self.producers = producers
 
-        # Identifer for this instance of the dispatcher service, sent in reply messages
+        # Identifer for this instance of the dispatcherd service, sent in reply messages
         if node_id:
             self.node_id = node_id
         else:
@@ -255,7 +255,7 @@ class DispatcherMain(DispatcherMainProtocol):
         try:
             await self.start_working()
 
-            logger.info(f'Dispatcher node_id={self.node_id} running forever, or until shutdown command')
+            logger.info(f'Dispatcherd node_id={self.node_id} running forever, or until shutdown command')
 
             while True:
                 await self.main_loop_wait()
@@ -270,4 +270,4 @@ class DispatcherMain(DispatcherMainProtocol):
 
             await self.cancel_tasks()
 
-        logger.debug('Dispatcher loop fully completed')
+        logger.debug('Dispatcherd loop fully completed')

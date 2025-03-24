@@ -42,7 +42,7 @@ include = ["dispatcherd*"]
 include-package-data = true # Ensures package data is included
 
 [tool.setuptools.package-data]
-"dispatcher" = ["LICENSE", "README.md"]
+"dispatcherd" = ["LICENSE", "README.md"]
 
 # You need psycopg, but this will not help you to install it
 

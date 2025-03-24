@@ -1,6 +1,6 @@
 ## Design Notes
 
-Many of the specific choices made in the dispatcher design are to enable pg_notify use.
+Many of the specific choices made in the dispatcherd design are to enable pg_notify use.
 The advantage of using pg_notify is that you get an extremely simple topology.
 Imagine a web and a task runner service, invoked separately, using postgres.
 
@@ -15,7 +15,7 @@ A-->C
 B-->C
 ```
 
-However, pg_notify is not a true queue, and this drives the design of the dispatcher,
+However, pg_notify is not a true queue, and this drives the design of the dispatcherd,
 having its main process listening for messages and farming the work out to worker subprocesses.
 
 This helps with pg_notify use, but still doesn't solve all the problems,
@@ -81,7 +81,6 @@ This is also done in this library, and diverges from AWX practice.
 In AWX dispatcher, a full queue may put messages into individual worker IPCs.
 This caused bad results, like delaying tasks due to long-running jobs,
 while the pool had many other workers free up in the mean time.
-
 
 ### Worker Task Cancelation Signals
 

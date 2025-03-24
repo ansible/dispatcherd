@@ -11,7 +11,7 @@ def test_settings_reference_unconfigured():
     settings = LazySettings()
     with pytest.raises(Exception) as exc:
         settings.brokers
-    assert 'Dispatcher not configured' in str(exc)
+    assert 'Dispatcherd not configured' in str(exc)
 
 
 def test_configured_settings():

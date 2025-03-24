@@ -50,4 +50,4 @@ class Queuer(QueuerProtocol):
         """Just write log messages about what backed up work we will lose"""
         if self.queued_messages:
             uuids = [message.get('uuid', '<unknown>') for message in self.queued_messages]
-            logger.error(f'Dispatcher shut down with queued work, uuids: {uuids}')
+            logger.error(f'Dispatcherd shut down with queued work, uuids: {uuids}')

@@ -1,9 +1,9 @@
 <!-- License Badge -->
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcher/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ansible/dispatcherd/blob/main/LICENSE)
 
 ## Dispatcherd
 
-The dispatcher is a service to run python tasks in subprocesses,
+The dispatcherd is a service to run python tasks in subprocesses,
 designed specifically to work well with pg_notify,
 but intended to be extensible to other message delivery means.
 Its philosophy is to have a limited scope
@@ -19,21 +19,21 @@ Licensed under [Apache Software License 2.0](LICENSE)
 ### Usage
 
 You have a postgres server configured and a python project.
-You will use dispatcher to trigger a background task over pg_notify.
-Both your *background dispatcher service* and your *task publisher* process must have
+You will use dispatcherd to trigger a background task over pg_notify.
+Both your *background dispatcherd service* and your *task publisher* process must have
 python configured so that your task is importable. Instructions are broken into 3 steps:
 
-1. **Library** - Configure dispatcher, mark the python methods you will run with it
-2. **Dispatcher service** - Start your background task service, it will start listening
+1. **Library** - Configure dispatcherd, mark the python methods you will run with it
+2. **dispatcherd service** - Start your background task service, it will start listening
 3. **Publisher** - From some other script, submit tasks to be ran
 
 In the "Manual Demo" section, an runnable example of this is given.
 
 #### Library
 
-The dispatcher `@task()` decorator is used to register tasks.
+The dispatcherd `@task()` decorator is used to register tasks.
 The [tests/data/methods.py](tests/data/methods.py) module defines some
-dispatcher tasks.
+dispatcherd tasks.
 
 The decorator accepts some kwargs (like `queue` below) that will affect task behavior,
 see [docs/task_options.md](docs/task_options.md).
@@ -46,8 +46,8 @@ def print_hello():
     print('hello world!!')
 ```
 
-Configure dispatcher somewhere in your import path or before running the service.
-This tells dispatcher how to submit tasks to be ran.
+Configure dispatcherd somewhere in your import path or before running the service.
+This tells dispatcherd how to submit tasks to be ran.
 
 ```python
 from dispatcherd.config import setup
@@ -73,19 +73,19 @@ see the section [config](docs/config.md) docs.
 The `queue` passed to `@task` needs to match a pg_notify channel in the `config`.
 It is often useful to have different workers listen to different sets of channels.
 
-#### Dispatcher service
+#### dispatcherd service
 
-The dispatcher service needs to be running before you submit tasks.
+The dispatcherd service needs to be running before you submit tasks.
 This does not make any attempts at message durability or confirmation.
 If you submit a task in an outage of the service, it will be dropped.
 
-There are 2 ways to run the dispatcher service:
+There are 2 ways to run the dispatcherd service:
 
 - Importing and running (code snippet below)
 - A CLI entrypoint `dispatcherd` for demo purposes
 
 ```python
-from dispatcher import run_service
+from dispatcherd import run_service
 
 # After the setup() method has been called
 
@@ -101,7 +101,7 @@ from the `test_methods` python module.
 This method does not take any args or kwargs, but if it did, you would
 pass those directly as in, `.delay(*args, **kwargs)`.
 
-The following code will submit `print_hello` to run in the background dispatcher service.
+The following code will submit `print_hello` to run in the background dispatcherd service.
 
 ```python
 from test_methods import print_hello
@@ -149,7 +149,7 @@ Ctl+c to stop that server.
 
 #### Two nodes in background
 
-The following will start up postgres, then start up 2 dispatcher services.
+The following will start up postgres, then start up 2 dispatcherd services.
 It should take a few seconds, mainly waiting for postgres.
 
 ```
@@ -204,7 +204,7 @@ As a part of doing the split, we also want to resolve a number of
 long-standing design and sustainability issues, thus, asyncio.
 For a little more background see [docs/design_notes.md](docs/design_notes.md).
 
-There is documentation of the message formats used by the dispatcher
+There is documentation of the message formats used by the dispatcherd
 in [docs/message_formats.md](docs/message_formats.md). Some of these are internal,
 but some messages are what goes over the user-defined brokers (pg_notify).
 You can trigger tasks using your own "publisher" code as an alternative
@@ -223,7 +223,7 @@ Refer to the [Contributing guide](docs/contributing.md) for further information.
 
 ## Communication
 
-See the [Communication](https://github.com/ansible/dispatcher/blob/main/docs/contributing.md#communication) section of the
+See the [Communication](https://github.com/ansible/dispatcherd/blob/main/docs/contributing.md#communication) section of the
 Contributing guide to find out how to get help and contact us.
 
 For more information about getting in touch, see the
@@ -231,4 +231,4 @@ For more information about getting in touch, see the
 
 ## Credits
 
-Dispatcher is sponsored by [Red Hat, Inc](https://www.redhat.com).
+Dispatcherd is sponsored by [Red Hat, Inc](https://www.redhat.com).
