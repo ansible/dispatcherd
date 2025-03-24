@@ -13,7 +13,7 @@ from ..utils import resolve_callable
 logger = logging.getLogger(__name__)
 
 
-"""This module exists under the theory that dispatcher messaging should be swappable
+"""This module exists under the theory that dispatcherd messaging should be swappable
 
 to different message busses eventually.
 That means that the main code should never import psycopg.
@@ -332,7 +332,7 @@ def connection_saver(**config) -> psycopg.Connection:  # type: ignore[no-untyped
     This mimics the behavior of Django for tests and demos
     Philosophically, this is used by an application that uses an ORM,
     or otherwise has its own connection management logic.
-    Dispatcher does not manage connections, so this a simulation of that.
+    Dispatcherd does not manage connections, so this a simulation of that.
 
     Uses a thread lock to ensure thread safety.
     """
@@ -348,7 +348,7 @@ async def async_connection_saver(**config) -> psycopg.AsyncConnection:  # type: 
     This mimics the behavior of Django for tests and demos
     Philosophically, this is used by an application that uses an ORM,
     or otherwise has its own connection management logic.
-    Dispatcher does not manage connections, so this a simulation of that.
+    Dispatcherd does not manage connections, so this a simulation of that.
 
     Uses a thread lock to ensure thread safety.
     """

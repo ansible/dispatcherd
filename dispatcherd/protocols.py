@@ -21,7 +21,7 @@ class Broker(Protocol):
     async def aprocess_notify(
         self, connected_callback: Optional[Optional[Callable[[], Coroutine[Any, Any, None]]]] = None
     ) -> AsyncGenerator[tuple[str, str], None]:
-        """The generator of messages from the broker for the dispatcher service
+        """The generator of messages from the broker for the dispatcherd service
 
         The producer iterates this to produce tasks.
         This uses the async connection of the broker.
@@ -29,7 +29,7 @@ class Broker(Protocol):
         yield ('', '')  # yield affects CPython type https://github.com/python/mypy/pull/18422
 
     async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:
-        """Asynchronously send a message to the broker, used by dispatcher service for reply messages"""
+        """Asynchronously send a message to the broker, used by dispatcherd service for reply messages"""
         ...
 
     async def aclose(self) -> None:
@@ -177,7 +177,7 @@ class WorkerPool(Protocol):
 
 class DispatcherMain(Protocol):
     """
-    Describes the primary dispatcher interface.
+    Describes the primary dispatcherd interface.
 
     This interface defines the contract for the overall task dispatching service,
     including coordinating task processing, managing the worker pool, and

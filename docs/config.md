@@ -1,4 +1,4 @@
-## Dispatcher Configuration
+## dispatcherd Configuration
 
 Why is configuration needed? Consider doing this, which uses the demo content:
 
@@ -8,9 +8,9 @@ PYTHONPATH=$PYTHONPATH:tools/ python -c "from tools.test_methods import sleep_fu
 
 This will result in an error:
 
-> Dispatcher not configured, set DISPATCHERD_CONFIG_FILE or call dispatcher.config.setup
+> Dispatcherd not configured, set DISPATCHERD_CONFIG_FILE or call dispatcherd.config.setup
 
-This errors because dispatcher does not know how to connect to a message broker.
+This errors because dispatcherd does not know how to connect to a message broker.
 For the demo, that would be the postgres host, user, password, etc.,
 as well as the pg_notify channel to send the message to.
 
@@ -23,7 +23,7 @@ The demo runs using the `dispatcher.yml` config file at the top-level of this re
 You can do the same thing in python by:
 
 ```python
-from dispatcher.config import setup
+from dispatcherd.config import setup
 
 setup(file_path='dispatcher.yml')
 ```
@@ -54,7 +54,7 @@ At the top-level, config is broken down by either the process that uses that sec
 or brokers, which is a shared resources used by multiple processes.
 
 At the level below that, the config gives instructions for creating python objects.
-The module `dispatcher.factories` has the task of creating those objects from settings.
+The module `dispatcherd.factories` has the task of creating those objects from settings.
 The design goal is to have a little possible divergence from the settings structure
 and the class structure in the code.
 
@@ -98,7 +98,7 @@ Right now the only broker available is pg_notify.
 
 The sub-options become python `kwargs` passed to the broker class `Broker`.
 For now, you will just have to read the code to see what those options are
-at [dispatcherd.brokers.pg_notify](dispatcher/brokers/pg_notify.py).
+at [dispatcherd.brokers.pg_notify](dispatcherd/brokers/pg_notify.py).
 
 The broker classes have methods that allow for submitting messages
 and reading messages.
@@ -108,7 +108,7 @@ and reading messages.
 This configures the background task service.
 
 The `pool_kwargs` options will correspond to the `WorkerPool` class
-[dispatcherd.pool](dispatcher/pool.py).
+[dispatcherd.pool](dispatcherd/pool.py).
 Process management options will be added to this section later.
 
 These options are mainly concerned with worker
@@ -117,11 +117,11 @@ like worker count, etc.
 
 #### Producers
 
-These are "producers of tasks" in the dispatcher service.
+These are "producers of tasks" in the dispatcherd service.
 
 For every listed broker, a `BrokeredProducer` is automatically
 created. That means that tasks may be produced from the messaging
-system that the dispatcher service is listening to.
+system that the dispatcherd service is listening to.
 
 The others are:
 

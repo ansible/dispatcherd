@@ -106,7 +106,7 @@ class UnregisteredMethod(DispatcherMethod):
     def __init__(self, task: str) -> None:
         fn = resolve_callable(task)
         if fn is None:
-            raise ImportError(f'Dispatcher could not import provided identifier: {task}')
+            raise ImportError(f'Dispatcherd could not import provided identifier: {task}')
         super().__init__(fn)
 
 

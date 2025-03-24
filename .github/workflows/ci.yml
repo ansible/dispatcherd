@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: ${{ matrix.py_version }}
 
-      - name: Install dispatcher
+      - name: Install dispatcherd
         run: pip install -e .[pg_notify]
       - run: make postgres
       - run: pip install pytest pytest-asyncio

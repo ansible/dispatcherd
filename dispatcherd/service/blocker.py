@@ -93,4 +93,4 @@ class Blocker(BlockerProtocol):
         self.shutting_down = True
         if self.blocked_messages:
             uuids = [message.get('uuid', '<unknown>') for message in self.blocked_messages]
-            logger.error(f'Dispatcher shut down with blocked work, uuids: {uuids}')
+            logger.error(f'Dispatcherd shut down with blocked work, uuids: {uuids}')

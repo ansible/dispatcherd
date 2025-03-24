@@ -16,7 +16,7 @@ DEFAULT_CONFIG_FILE = 'dispatcher.yml'
 
 
 def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CLI entrypoint for dispatcher, mainly intended for testing.")
+    parser = argparse.ArgumentParser(description="CLI entrypoint for dispatcherd, mainly intended for testing.")
     parser.add_argument(
         '--log-level',
         type=str,
@@ -28,7 +28,7 @@ def get_parser() -> argparse.ArgumentParser:
         '--config',
         type=os.path.abspath,
         default=DEFAULT_CONFIG_FILE,
-        help='Path to dispatcher config.',
+        help='Path to dispatcherd config.',
     )
     return parser
 
