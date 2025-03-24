@@ -6,10 +6,10 @@ from typing import AsyncIterator, Callable
 import pytest
 import pytest_asyncio
 
-from dispatcher.config import DispatcherSettings
-from dispatcher.control import Control
-from dispatcher.factories import from_settings, get_control_from_settings, get_publisher_from_settings
-from dispatcher.protocols import DispatcherMain
+from dispatcherd.config import DispatcherSettings
+from dispatcherd.control import Control
+from dispatcherd.factories import from_settings, get_control_from_settings, get_publisher_from_settings
+from dispatcherd.protocols import DispatcherMain
 
 logger = logging.getLogger(__name__)
 

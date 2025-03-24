@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from dispatcher.brokers.socket import Broker
+from dispatcherd.brokers.socket import Broker
 
 
 @pytest.fixture
