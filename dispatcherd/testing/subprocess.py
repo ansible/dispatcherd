@@ -72,7 +72,7 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
                 print('shutting down pool server')
                 for event in events.values():
                     event.set()  # close out other tasks
-                await dispatcher.shutdown()
+                # NOTE: the context manager calls .shutdown
                 break
             else:
                 eval(message)
