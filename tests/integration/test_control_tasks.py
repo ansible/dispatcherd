@@ -44,7 +44,7 @@ def pg_control():
 
 def test_run_lambda_function(pg_dispatcher, pg_broker):
     pg_broker.publish_message(message='lambda: "This worked!"')
-    message = pg_dispatcher.q_out.get()
+    message = pg_dispatcher.q_out.get(timeout=1)
     assert message == 'work_cleared'
 
 
@@ -70,7 +70,7 @@ def test_cancel_task(pg_dispatcher, pg_broker, pg_control, get_worker_data):
     assert canceled_message['uuid'] == 'foobar'
 
     start = time.time()
-    status = pg_dispatcher.q_out.get()
+    status = pg_dispatcher.q_out.get(timeout=1)
     assert status == 'work_cleared'
     delta = time.time() - start
     assert delta < 1.0  # less than sleep in test
