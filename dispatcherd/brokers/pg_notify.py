@@ -7,10 +7,9 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional,
 
 import psycopg
 
+from ..protocols import Broker as BrokerProtocol
 from ..protocols import BrokerSelfCheckStatus
 from ..utils import resolve_callable
-
-from ..protocols import Broker as BrokerProtocol
 
 logger = logging.getLogger(__name__)
 
