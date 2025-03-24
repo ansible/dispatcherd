@@ -14,6 +14,7 @@ clean:
 	find . -type f -regex ".*\.py[co]$$" -delete
 	find . -type d -name "__pycache__" -delete
 	rm -rf dispatcherd.egg-info/
+	rm -rf dist/
 
 linters:
 	black dispatcherd/
