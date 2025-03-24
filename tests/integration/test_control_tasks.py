@@ -1,12 +1,12 @@
 import pytest
 import json
-from typing import Union, Generator
+from typing import Generator
 import time
 
-from dispatcher.testing.subprocess import dispatcher_service, CommunicationItems
-from dispatcher.factories import get_publisher_from_settings, get_control_from_settings
-from dispatcher.config import DispatcherSettings
-from dispatcher.protocols import Broker
+from dispatcherd.testing.subprocess import dispatcher_service, CommunicationItems
+from dispatcherd.factories import get_publisher_from_settings, get_control_from_settings
+from dispatcherd.config import DispatcherSettings
+from dispatcherd.protocols import Broker
 
 from tests.conftest import CONNECTION_STRING
 
