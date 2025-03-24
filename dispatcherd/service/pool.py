@@ -117,7 +117,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
             return  # it's effectively already canceled/not running
         os.kill(self.process.pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
 
-    def get_data(self) -> dict[str, Any]:
+    def get_status_data(self) -> dict[str, Any]:
         return {
             'worker_id': self.worker_id,
             'pid': self.process.pid,
@@ -240,6 +240,13 @@ class WorkerPool(WorkerPoolProtocol):
     @property
     def received_count(self) -> int:
         return self.processed_count + self.queuer.count() + self.blocker.count() + sum(1 for w in self.workers if w.current_task)
+
+    def get_status_data(self) -> dict[str, Any]:
+        return {
+            "next_worker_id": self.next_worker_id,
+            "finished_count": self.finished_count,
+            "canceled_count": self.canceled_count,
+        }
 
     async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
         self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'), exit_event=exit_event)
