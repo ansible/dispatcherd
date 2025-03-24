@@ -5,8 +5,8 @@ import signal
 from typing import Iterable, Optional, Union
 from uuid import uuid4
 
-from ..protocols import Delayer as DelayerProtocol
 from ..producers import BrokeredProducer
+from ..protocols import Delayer as DelayerProtocol
 from ..protocols import DispatcherMain as DispatcherMainProtocol
 from ..protocols import Producer, WorkerPool
 from . import control_tasks
