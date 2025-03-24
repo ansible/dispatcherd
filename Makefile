@@ -15,6 +15,7 @@ clean:
 	find . -type d -name "__pycache__" -delete
 	rm -rf dispatcherd.egg-info/
 	rm -rf dist/
+	find . -mindepth 1 -type d -empty -delete
 
 linters:
 	black dispatcherd/
