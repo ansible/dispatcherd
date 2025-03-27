@@ -164,23 +164,25 @@ class DispatcherMain(DispatcherMainProtocol):
             return await self.process_message_internal(message, producer=producer)
         return (None, None)
 
-    async def run_control_action(self, action: str, control_data: Optional[dict] = None, reply_to: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
-        return_data = {}
-
-        # Get the result
+    async def get_control_result(self, action: str, control_data: Optional[dict] = None) -> dict:
+        self.control_count += 1
         if (not hasattr(control_tasks, action)) or action.startswith('_'):
-            logger.warning(f'Got invalid control request {action}, control_data: {control_data}, reply_to: {reply_to}')
-            if reply_to:
-                return_data = {'error': f'No control method {action}'}
+            logger.warning(f'Got invalid control request {action}, control_data: {control_data}')
+            return {'error': f'No control method {action}'}
         else:
             method = getattr(control_tasks, action)
             if control_data is None:
                 control_data = {}
-            return_data = await method(dispatcher=self, data=control_data)
+            return await method(dispatcher=self, data=control_data)
+
+    async def run_control_action(self, action: str, control_data: Optional[dict] = None, reply_to: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+        return_data = {}
+
+        # Get the result
+        return_data = await self.get_control_result(action=action, control_data=control_data)
 
         # Identify the current node in the response
         return_data['node_id'] = self.node_id
-        self.control_count += 1
 
         # Give Nones for no reply, or the reply
         if reply_to:
@@ -201,7 +203,7 @@ class DispatcherMain(DispatcherMainProtocol):
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         try:
-            await self.pool.start_working(self.fd_lock, exit_event=self.events.exit_event)
+            await self.pool.start_working(self, exit_event=self.events.exit_event)
         except Exception:
             logger.exception(f'Pool {self.pool} failed to start working')
             self.events.exit_event.set()
