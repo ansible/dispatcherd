@@ -20,7 +20,7 @@ class Broker(Protocol):
 
     async def aprocess_notify(
         self, connected_callback: Optional[Optional[Callable[[], Coroutine[Any, Any, None]]]] = None
-    ) -> AsyncGenerator[tuple[str, str], None]:
+    ) -> AsyncGenerator[tuple[Union[int, str], str], None]:
         """The generator of messages from the broker for the dispatcherd service
 
         The producer iterates this to produce tasks.
@@ -28,7 +28,7 @@ class Broker(Protocol):
         """
         yield ('', '')  # yield affects CPython type https://github.com/python/mypy/pull/18422
 
-    async def apublish_message(self, channel: Optional[str] = None, message: str = '') -> None:
+    async def apublish_message(self, channel: Optional[str] = None, origin: Union[int, str, None] = None, message: str = '') -> None:
         """Asynchronously send a message to the broker, used by dispatcherd service for reply messages"""
         ...
 
@@ -36,7 +36,9 @@ class Broker(Protocol):
         """Close the asynchronous connection, used by service, and optionally by publishers"""
         ...
 
-    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
+    def process_notify(
+        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
+    ) -> Iterator[tuple[Union[int, str], str]]:
         """Synchronous method to generate messages from broker, used for synchronous control-and-reply"""
         ...
 

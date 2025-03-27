@@ -88,37 +88,46 @@ def test_settings():
     return DispatcherSettings(BASIC_CONFIG)
 
 
+@pytest.fixture
+def adispatcher_factory():
+    @contextlib.asynccontextmanager
+    async def _rf(config):
+        dispatcher = None
+        try:
+            settings = DispatcherSettings(config)
+            dispatcher = from_settings(settings=settings)
+
+            await dispatcher.connect_signals()
+            await dispatcher.start_working()
+            await dispatcher.wait_for_producers_ready()
+            await dispatcher.pool.events.workers_ready.wait()
+
+            assert dispatcher.pool.finished_count == 0  # sanity
+            assert dispatcher.control_count == 0
+
+            yield dispatcher
+        finally:
+            if dispatcher:
+                try:
+                    await dispatcher.shutdown()
+                    await dispatcher.cancel_tasks()
+                except Exception:
+                    logger.exception('shutdown had error')
+    return _rf
+
+
 @pytest_asyncio.fixture(
     loop_scope="function",
     scope="function",
     params=['ProcessManager', 'ForkServerManager'],
     ids=["fork", "forkserver"],
 )
-async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
-    dispatcher = None
-    try:
-        this_test_config = BASIC_CONFIG.copy()
-        this_test_config.setdefault('service', {})
-        this_test_config['service']['process_manager_cls'] = request.param
-        this_settings = DispatcherSettings(this_test_config)
-        dispatcher = from_settings(settings=this_settings)
-
-        await dispatcher.connect_signals()
-        await dispatcher.start_working()
-        await dispatcher.wait_for_producers_ready()
-        await dispatcher.pool.events.workers_ready.wait()
-
-        assert dispatcher.pool.finished_count == 0  # sanity
-        assert dispatcher.control_count == 0
-
+async def apg_dispatcher(request, adispatcher_factory) -> AsyncIterator[DispatcherMain]:
+    this_test_config = BASIC_CONFIG.copy()
+    this_test_config.setdefault('service', {})
+    this_test_config['service']['process_manager_cls'] = request.param
+    async with adispatcher_factory(this_test_config) as dispatcher:
         yield dispatcher
-    finally:
-        if dispatcher:
-            try:
-                await dispatcher.shutdown()
-                await dispatcher.cancel_tasks()
-            except Exception:
-                logger.exception('shutdown had error')
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")

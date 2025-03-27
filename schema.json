@@ -9,6 +9,9 @@
       "default_publish_channel": "typing.Optional[str]",
       "max_connection_idle_seconds": "typing.Optional[int]",
       "max_self_check_message_age_seconds": "typing.Optional[int]"
+    },
+    "socket": {
+      "socket_path": "<class 'str'>"
     }
   },
   "producers": {
@@ -28,13 +31,13 @@
       "worker_stop_wait": "<class 'float'>",
       "worker_removal_wait": "<class 'float'>"
     },
+    "main_kwargs": {
+      "node_id": "typing.Optional[str]"
+    },
     "process_manager_kwargs": {
       "preload_modules": "typing.Optional[list[str]]"
     },
-    "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager']",
-    "main_kwargs": {
-      "node_id": "typing.Optional[str]"
-    }
+    "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager']"
   },
   "publish": {
     "default_broker": "str"
