@@ -36,7 +36,7 @@ class Blocker(BlockerProtocol):
     def remove_task(self, message: dict) -> None:
         self.blocked_messages.remove(message)
 
-    def process_task(self, message: dict) -> Optional[dict]:
+    async def process_task(self, message: dict) -> Optional[dict]:
         """If task is blocked, it is consumed here and None is returned, if not blocked, return message as-is
 
         Consuming the message may mean discarding it, or it may mean holding it until it is unblocked.

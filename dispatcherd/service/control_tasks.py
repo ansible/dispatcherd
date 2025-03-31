@@ -43,13 +43,13 @@ async def _find_tasks(dispatcher: DispatcherMain, data: dict, cancel: bool = Fal
                 logger.warning(f'Canceling task in pool queue: {message}')
                 dispatcher.pool.queuer.remove_task(message)
             ret[f'queued-{i}'] = message
-    for i, capsule in enumerate(dispatcher.delayed_messages.copy()):
+    for i, capsule in enumerate(list(dispatcher.delayer)):
         if task_filter_match(capsule.message, data):
             if cancel:
                 uuid = capsule.message.get('uuid', '<unknown>')
                 logger.warning(f'Canceling delayed task (uuid={uuid})')
                 capsule.has_ran = True  # make sure we do not run by accident
-                dispatcher.delayed_messages.remove(capsule)
+                dispatcher.delayer.remove_capsule(capsule)
             ret[f'delayed-{i}'] = capsule.message
     return ret
 
