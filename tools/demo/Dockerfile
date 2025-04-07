@@ -8,6 +8,9 @@ RUN python3 -m venv /dispatcherd/venv
 
 RUN echo $pwd
 
+# Git is necessary because of setuptools-scm
+RUN apk add --no-cache git
+
 COPY . ./src
 
 RUN /dispatcherd/venv/bin/pip3 install -e ./src[pg_notify] --verbose
