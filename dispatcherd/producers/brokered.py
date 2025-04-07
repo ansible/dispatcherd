@@ -29,7 +29,8 @@ class BrokeredProducer(BaseProducer):
         await self.start_producing(self.dispatcher)
 
     def __str__(self) -> str:
-        return f'brokered-producer-{self.broker}'
+        broker_module = self.broker.__module__.rsplit('.', 1)[-1]
+        return f'{broker_module}-producer'
 
     async def start_producing(self, dispatcher: DispatcherMain) -> None:
         self.production_task = asyncio.create_task(self.produce_forever(dispatcher), name=f'{self.broker.__module__}_production')

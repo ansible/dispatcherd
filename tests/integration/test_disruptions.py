@@ -6,6 +6,8 @@ import psycopg
 
 from tests.conftest import CONNECTION_STRING
 
+from dispatcherd.producers.brokered import BrokeredProducer
+
 
 # Change the application_name so that when we run this test we will not kill the connection for the test itself
 THIS_TEST_STR = CONNECTION_STRING.replace('application_name=apg_test_server', 'application_name=do_not_delete_me')
@@ -13,8 +15,9 @@ THIS_TEST_STR = CONNECTION_STRING.replace('application_name=apg_test_server', 'a
 
 @pytest.mark.asyncio
 async def test_sever_pg_connection(apg_dispatcher, pg_message):
-    assert len(apg_dispatcher.producers) == 1
-    apg_dispatcher.producers[0].events.ready_event.clear()
+    brokered_producers = [producer for producer in apg_dispatcher.producers if isinstance(producer, BrokeredProducer)]
+    assert len(brokered_producers) == 1
+    brokered_producers[0].events.ready_event.clear()
 
     query = """
     SELECT pid, usename, application_name, backend_start, state
@@ -48,7 +51,7 @@ async def test_sever_pg_connection(apg_dispatcher, pg_message):
     await apg_dispatcher.recycle_broker_producers()
 
     # Continue method after the producers are ready, an effect of the recycle
-    ready_event_task = asyncio.create_task(apg_dispatcher.producers[0].events.ready_event.wait(), name='test_ready_event')
+    ready_event_task = asyncio.create_task(brokered_producers[0].events.ready_event.wait(), name='test_ready_event')
     await asyncio.wait_for(ready_event_task, timeout=5)
 
     # Submitting a new task should now work

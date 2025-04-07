@@ -75,6 +75,15 @@ right now it offers:
 
 - `uuid` - the internal id of this task call in dispatcher
 - `worker_id` - the id of the worker running this task
+- `control` - runs a control-and-reply command against its own parent process
+
+Using the `dispatcher.control` interface on the bound object is
+an more efficient alternative to communication over the broker.
+It also allows tasks to dispatch follow-up tasks in the local service.
+
+More complex examples can be found in `tests.data.methods`.
+The `schedules_another_task` example shows how this can be used
+to have a task start another task.
 
 #### Queue
 

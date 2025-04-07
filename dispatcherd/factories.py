@@ -46,6 +46,8 @@ def producers_from_settings(settings: LazySettings = global_settings) -> Iterabl
         producer_objects.append(producer)
 
     for producer_cls, producer_kwargs in settings.producers.items():
+        if producer_kwargs is None:
+            producer_kwargs = {}
         producer_objects.append(getattr(producers, producer_cls)(**producer_kwargs))
 
     return producer_objects

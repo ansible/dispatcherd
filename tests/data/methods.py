@@ -57,4 +57,10 @@ class RunJob:
 @task(bind=True)
 def prints_running_tasks(binder):
     r = binder.control('running')
-    print(r)
+    print(f'Obtained data on running tasks, result:\n{r}')
+
+
+@task(bind=True)
+def schedules_another_task(binder):
+    r = binder.control('run', data={'task': 'tests.data.methods.print_hello'})
+    print(f'Scheduled another task, result: {r}')
