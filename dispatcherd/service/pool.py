@@ -5,6 +5,7 @@ import signal
 import time
 from typing import Any, Iterator, Literal, Optional
 
+from ..protocols import DispatcherMain
 from ..protocols import PoolWorker as PoolWorkerProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
 from ..protocols import WorkerPool as WorkerPoolProtocol
@@ -198,6 +199,9 @@ class WorkerPool(WorkerPoolProtocol):
         self.max_workers = max_workers
         self.process_manager = process_manager
 
+        # will fill in when we start working
+        self.dispatcher: Optional[DispatcherMain] = None
+
         # internal asyncio tasks
         self.read_results_task: Optional[asyncio.Task] = None
         self.management_task: Optional[asyncio.Task] = None
@@ -241,9 +245,12 @@ class WorkerPool(WorkerPoolProtocol):
     def received_count(self) -> int:
         return self.processed_count + self.queuer.count() + self.blocker.count() + sum(1 for w in self.workers if w.current_task)
 
-    async def start_working(self, forking_lock: asyncio.Lock, exit_event: Optional[asyncio.Event] = None) -> None:
+    async def start_working(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
+        self.dispatcher = dispatcher
         self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'), exit_event=exit_event)
-        self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(forking_lock=forking_lock), name='management_task'), exit_event=exit_event)
+        self.management_task = ensure_fatal(
+            asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task'), exit_event=exit_event
+        )
         self.timeout_runner.exit_event = exit_event
 
     def get_running_count(self) -> int:
@@ -588,6 +595,17 @@ class WorkerPool(WorkerPoolProtocol):
                 else:
                     self.events.management_event.set()
                     logger.debug(f"Worker {worker_id} sent exit signal.")
+
+            elif event == 'control':
+                action = message.get('command', 'unknown')
+                try:
+                    return_data = await self.dispatcher.get_control_result(  # type: ignore[union-attr]
+                        str(action), control_data=message.get('control_data', {})  # type: ignore[var-annotated,arg-type]
+                    )
+                except Exception:
+                    logger.exception('Error with control request from worker task')
+
+                worker.process.message_queue.put(return_data)
 
             elif event == 'done':
                 await self.process_finished(worker, message)
