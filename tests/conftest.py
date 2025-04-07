@@ -32,6 +32,7 @@ BASIC_CONFIG = {
             "default_publish_channel": "test_channel",
         }
     },
+    "producers": {"ControlProducer": {}},
     "pool": {"pool_kwargs": {"min_workers": 1, "max_workers": 6}},
 }
 

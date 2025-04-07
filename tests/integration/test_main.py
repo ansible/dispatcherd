@@ -227,6 +227,16 @@ async def test_aio_tasks(apg_dispatcher, pg_control):
 
 
 @pytest.mark.asyncio
+async def test_task_starts_another_task(apg_dispatcher, test_settings):
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    test_methods.schedules_another_task.apply_async(settings=test_settings)
+    await asyncio.wait_for(clearing_task, timeout=3)
+
+    pool = apg_dispatcher.pool
+    assert [pool.finished_count, apg_dispatcher.control_count] == [2, 1]  # Task ran another task via a control command
+
+
+@pytest.mark.asyncio
 async def test_task_discard(apg_dispatcher, pg_message):
     messages = [json.dumps({'task': 'lambda: __import__("time").sleep(9)', 'on_duplicate': 'discard', 'uuid': f'dscd-{i}'}) for i in range(10)]
 

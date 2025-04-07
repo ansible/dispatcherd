@@ -130,7 +130,7 @@ async def run(dispatcher: DispatcherMain, data: dict) -> dict:
             except Exception as exc:
                 return {'error': str(exc)}
             return {'ack': data}
-    return {'error': 'A ControlBroker producer is not enabled. Add it to the list of producers in the service config to use this.'}
+    return {'error': 'A ControlProducer producer is not enabled. Add it to the list of producers in the service config to use this.'}
 
 
 async def main(dispatcher: DispatcherMain, data: dict) -> dict:
