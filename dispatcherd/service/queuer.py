@@ -24,7 +24,11 @@ class Queuer(QueuerProtocol):
                 return candidate_worker
         return None
 
-    def running_tasks(self) -> Iterator[dict]:
+    def active_tasks(self) -> Iterator[dict]:
+        """Iterable of all tasks currently running, or eligable to be ran right away"""
+        for task in self.queued_messages:
+            yield task
+
         for worker in self.workers:
             if worker.current_task:
                 yield worker.current_task

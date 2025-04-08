@@ -28,7 +28,7 @@ class Blocker(BlockerProtocol):
         return False
 
     def already_running(self, message: dict) -> bool:
-        return self._duplicate_in_list(message, self.queuer.running_tasks())
+        return self._duplicate_in_list(message, self.queuer.active_tasks())
 
     def already_queued(self, message: dict) -> bool:
         return self._duplicate_in_list(message, self.blocked_messages)
@@ -78,10 +78,10 @@ class Blocker(BlockerProtocol):
         return message
 
     def pop_unblocked_messages(self) -> list[dict]:
-        now_unblocked = []
+        now_unblocked: list[dict] = []
         for message in self.blocked_messages.copy():
-            # All forms of blocking require task to not be running or queued in order to release
-            if not (self.already_running(message) or self.already_queued(message)):
+            # All forms of blocking require task to not be running or queued or in the newly-released list in order to release
+            if not (self.already_running(message) or self._duplicate_in_list(message, now_unblocked)):
                 now_unblocked.append(message)
                 self.blocked_messages.remove(message)
         return now_unblocked
