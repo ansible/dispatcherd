@@ -110,7 +110,14 @@ class PoolWorker(Protocol):
 
     async def start_task(self, message: dict) -> None: ...
 
+    @property
     def is_ready(self) -> bool: ...
+
+    @property
+    def counts_for_capacity(self) -> bool: ...
+
+    @property
+    def expected_alive(self) -> bool: ...
 
     def get_status_data(self) -> dict[str, Any]:
         """Used for worker status control-and-reply command"""

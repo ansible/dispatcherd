@@ -34,10 +34,6 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.status: Literal['initialized', 'spawned', 'starting', 'ready', 'stopping', 'exited', 'error', 'retired'] = 'initialized'
         self.exit_msg_event = asyncio.Event()
 
-    def is_ready(self) -> bool:
-        """Worker is ready to receive task requests"""
-        return bool(self.status == 'ready')
-
     async def start(self) -> None:
         if self.status != 'initialized':
             logger.error(f'Worker {self.worker_id} status is not initialized, can not start, status={self.status}')
@@ -53,8 +49,24 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.status = 'starting'  # Not ready until it sends callback message
 
     @property
+    def is_ready(self) -> bool:
+        """Worker is ready to receive task requests"""
+        return bool(self.status == 'ready')
+
+    @property
     def counts_for_capacity(self) -> bool:
+        """Worker is ready to accept work or may become ready very soon, relevant for scale-up decisions"""
         return bool(self.status in ('initialized', 'spawned', 'starting', 'ready'))
+
+    @property
+    def expected_alive(self) -> bool:
+        """Worker is expected to have an active process"""
+        return bool(self.status in ('starting', 'ready'))
+
+    @property
+    def inactive(self) -> bool:
+        """No further shutdown or callback messages are expected from this worker"""
+        return bool(self.status in ('exited', 'error', 'initialized'))
 
     async def start_task(self, message: dict) -> None:
         self.current_task = message  # NOTE: this marks this worker as busy
@@ -135,11 +147,6 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.current_task = None
         self.started_at = None
         self.finished_count += 1
-
-    @property
-    def inactive(self) -> bool:
-        "Return True if no further shutdown or callback messages are expected from this worker"
-        return self.status in ['exited', 'error', 'initialized']
 
     def next_wakeup(self) -> Optional[float]:
         """Used by next-run-runner for setting wakeups for task timeouts"""
@@ -348,7 +355,7 @@ class WorkerPool(WorkerPoolProtocol):
         remove_ids = []
         for worker in current_workers:
             # Check if the worker has died unexpectedly.
-            if worker.status not in ['retired', 'error', 'exited', 'initialized', 'spawned'] and not worker.process.is_alive():
+            if worker.expected_alive and not worker.process.is_alive():
                 logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
 
                 if worker.current_task:
