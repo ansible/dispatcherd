@@ -132,7 +132,6 @@ async def test_error_while_scaling_up(pool_factory):
 async def test_shutdown_is_idepotent(pool_factory):
     """Do some stuff to the pool that is a little weird, but still valid and should not break dispatcherd"""
     pool = pool_factory()
-    lock = asyncio.Lock()
     await pool.shutdown()  # weird to shutdown before starting, but okay
 
     await pool.start_working(dispatcher=DispatcherMain(producers=(), pool=pool))
