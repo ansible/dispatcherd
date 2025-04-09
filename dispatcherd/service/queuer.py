@@ -20,7 +20,7 @@ class Queuer(QueuerProtocol):
 
     def get_free_worker(self) -> Optional[PoolWorker]:
         for candidate_worker in self.workers:
-            if (not candidate_worker.current_task) and candidate_worker.is_ready():
+            if (not candidate_worker.current_task) and candidate_worker.is_ready:
                 return candidate_worker
         return None
 
