@@ -2,15 +2,18 @@ import asyncio
 import time
 from unittest import mock
 
+from typing import Callable
+
 import pytest
 
 from dispatcherd.service.pool import WorkerPool
+from dispatcherd.service.main import DispatcherMain
 from dispatcherd.service.process import ProcessManager
 
 
 @pytest.fixture
-def pool_factory(test_settings):
-    def _factory(**kwargs_overrides):
+def pool_factory(test_settings) -> Callable[..., WorkerPool]:
+    def _factory(**kwargs_overrides) -> WorkerPool:
         pm = ProcessManager(settings=test_settings)
         kwargs = dict(process_manager=pm, min_workers=5, max_workers=5)
         kwargs.update(kwargs_overrides)
@@ -132,7 +135,7 @@ async def test_shutdown_is_idepotent(pool_factory):
     lock = asyncio.Lock()
     await pool.shutdown()  # weird to shutdown before starting, but okay
 
-    await pool.start_working(forking_lock=lock)
+    await pool.start_working(dispatcher=DispatcherMain(producers=(), pool=pool))
 
     await pool.shutdown()
     await pool.shutdown()  # weird to shutdown twice, but... just return
