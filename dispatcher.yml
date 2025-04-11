@@ -8,6 +8,8 @@ service:
     scaledown_wait: 15  # seconds
   main_kwargs:
     node_id: demo-server-a
+  metrics_kwargs:
+    log_level: debug
 brokers:
   pg_notify:
     config:

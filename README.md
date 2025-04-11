@@ -235,144 +235,32 @@ Dispatcherd is sponsored by [Red Hat, Inc](https://www.redhat.com).
 
 ## Metrics
 
-Start the dispatcher.
+You can run a demo of the metrics server. In your first terminal tab, run:
 
 ```
-pip install prometheus_client
+pip install .[pg_notify,metrics]
+dispatcherd
+```
 
-$ curl http://localhost:8070
+In another tab run:
 
+```
 curl http://localhost:8070
+```
+
+This should report metrics in the following general format:
+
+```
+$ curl http://localhost:8070
 # HELP dispatcher_messages_received_total Number of messages received by dispatchermain
 # TYPE dispatcher_messages_received_total counter
-dispatcher_messages_received_total 88.0
+dispatcher_messages_received_total 263.0
 # HELP dispatcher_control_messages_count_total Number of control messages received.
 # TYPE dispatcher_control_messages_count_total counter
-dispatcher_control_messages_count_total 10.0
-# HELP dispatcher_worker_created_at Creation time of worker
-# TYPE dispatcher_worker_created_at gauge
-dispatcher_worker_created_at{worker_index="0"} 286576.365272104
-dispatcher_worker_created_at{worker_index="1"} 286576.365368035
-dispatcher_worker_created_at{worker_index="2"} 286578.814706941
-dispatcher_worker_created_at{worker_index="3"} 286578.817639637
-dispatcher_worker_created_at{worker_index="4"} 286578.820265243
-dispatcher_worker_created_at{worker_index="5"} 286578.822075874
-dispatcher_worker_created_at{worker_index="6"} 286578.824725725
-dispatcher_worker_created_at{worker_index="7"} 286578.837810563
-dispatcher_worker_created_at{worker_index="8"} 286578.844329095
-dispatcher_worker_created_at{worker_index="9"} 286578.863277972
-dispatcher_worker_created_at{worker_index="10"} 286578.878555905
-dispatcher_worker_created_at{worker_index="11"} 286579.36656921
-# HELP dispatcher_worker_finished_count Finished count of tasks by the worker
-# TYPE dispatcher_worker_finished_count gauge
-dispatcher_worker_finished_count{worker_index="0"} 2.0
-dispatcher_worker_finished_count{worker_index="1"} 1.0
-dispatcher_worker_finished_count{worker_index="2"} 1.0
-dispatcher_worker_finished_count{worker_index="3"} 7.0
-dispatcher_worker_finished_count{worker_index="4"} 8.0
-dispatcher_worker_finished_count{worker_index="5"} 1.0
-dispatcher_worker_finished_count{worker_index="6"} 0.0
-dispatcher_worker_finished_count{worker_index="7"} 0.0
-dispatcher_worker_finished_count{worker_index="8"} 0.0
-dispatcher_worker_finished_count{worker_index="9"} 2.0
-dispatcher_worker_finished_count{worker_index="10"} 1.0
-dispatcher_worker_finished_count{worker_index="11"} 1.0
-# HELP dispatcher_worker_status Status of worker.
-# TYPE dispatcher_worker_status gauge
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="0"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="0"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="1"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="1"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="2"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="2"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="3"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="3"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="4"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="4"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="5"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="5"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="6"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="6"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="7"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="7"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="8"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="8"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="9"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="9"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="10"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="10"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="error",worker_index="11"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="exited",worker_index="11"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="initialized",worker_index="11"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="ready",worker_index="11"} 1.0
-dispatcher_worker_status{dispatcher_worker_status="retired",worker_index="11"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="spawned",worker_index="11"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="starting",worker_index="11"} 0.0
-dispatcher_worker_status{dispatcher_worker_status="stopping",worker_index="11"} 0.0
+dispatcher_control_messages_count_total 0.0
+# HELP dispatcher_worker_count_total Number of workers running.
+# TYPE dispatcher_worker_count_total counter
+dispatcher_worker_count_total 3.0
 ```
+
+We expect to add more metrics in the future.

@@ -24,9 +24,9 @@ jobs:
           python-version: ${{ matrix.py_version }}
 
       - name: Install dispatcherd
-        run: pip install -e .[pg_notify]
+        run: pip install -e .[pg_notify,metrics]
       - run: make postgres
-      - run: pip install pytest pytest-asyncio
+      - run: pip install pytest pytest-asyncio httpx
       - run: pytest tests/unit tests/integration -vv -s
 
   black:
@@ -60,7 +60,7 @@ jobs:
           show-progress: false
 
       - run: pip install mypy
-      - run: pip install -e .[pg_notify]
+      - run: pip install -e .[pg_notify,metrics]
       - run: python3 -m pip install types-PyYAML
       - run: mypy dispatcherd
 
