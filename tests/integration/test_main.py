@@ -6,6 +6,7 @@ from typing import Union
 import pytest
 
 from dispatcherd.config import temporary_settings
+from dispatcherd.service.control_tasks import _stack_from_task
 from tests.data import methods as test_methods
 
 SLEEP_METHOD = 'lambda: __import__("time").sleep(0.1)'
@@ -293,3 +294,18 @@ async def test_scale_up(apg_dispatcher, test_settings):
             break
     else:
         assert f'Never scaled up to expected 6 workers, have: {apg_dispatcher.pool.workers}'
+
+
+@pytest.mark.asyncio
+async def test_tasks_are_named(apg_dispatcher):
+    wait_task = asyncio.create_task(apg_dispatcher.main_loop_wait(), name='this_is_for_test')
+
+    current_task = asyncio.current_task()
+    for task in asyncio.all_tasks():
+        if task is current_task:
+            continue
+        task_name = task.get_name()
+        assert not task_name.startswith('Task-'), _stack_from_task(task)
+
+    apg_dispatcher.events.exit_event.set()
+    await wait_task

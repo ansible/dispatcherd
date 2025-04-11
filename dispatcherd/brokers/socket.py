@@ -77,6 +77,9 @@ class Broker(BrokerProtocol):
         client = Client(self.client_ct, reader, writer)
         self.clients[self.client_ct] = client
         self.client_ct += 1
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            current_task.set_name(f'socket_client_task_{client.client_id}')
         logger.info(f'Socket client_id={client.client_id} is connected')
 
         try:
