@@ -73,6 +73,14 @@ class Broker(BrokerProtocol):
     def __str__(self) -> str:
         return f'socket-broker-{self.socket_path}'
 
+    async def _named_wait(self, event: asyncio.Event, id: int) -> None:
+        """Add a name to waiting task so it is visible via debugging commands"""
+        current_task = asyncio.current_task()
+        if current_task:
+            current_task.set_name(f'internal_wait_for_client_{id}')
+
+        await event.wait()
+
     async def _add_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         client = Client(self.client_ct, reader, writer)
         self.clients[self.client_ct] = client
@@ -92,7 +100,7 @@ class Broker(BrokerProtocol):
                 await self.incoming_queue.put((client.client_id, message))
                 # Wait for caller to potentially fill a reply queue
                 # this should realistically never take more than a trivial amount of time
-                await asyncio.wait_for(client.yield_clear.wait(), timeout=2)
+                await asyncio.wait_for(self._named_wait(client.yield_clear, client.client_id), timeout=2)
                 client.yield_clear.clear()
                 await client.send_replies()
         except asyncio.TimeoutError:
