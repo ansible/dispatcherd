@@ -3,13 +3,14 @@ import logging
 from typing import Iterable, Optional, Union
 
 from ..protocols import Broker, DispatcherMain
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
 
 
 class BrokeredProducer(BaseProducer):
-    def __init__(self, broker: Broker) -> None:
+    def __init__(self, broker: Broker, shared: SharedAsyncObjectsProtocol) -> None:
         self.production_task: Optional[asyncio.Task] = None
         self.broker = broker
         self.dispatcher: Optional[DispatcherMain] = None

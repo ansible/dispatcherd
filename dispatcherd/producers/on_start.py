@@ -3,13 +3,14 @@ import logging
 from typing import Union
 
 from ..protocols import DispatcherMain
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
 
 
 class OnStartProducer(BaseProducer):
-    def __init__(self, task_list: dict[str, dict[str, Union[int, str]]]):
+    def __init__(self, task_list: dict[str, dict[str, Union[int, str]]], shared: SharedAsyncObjectsProtocol):
         self.task_list = task_list
         super().__init__()
 

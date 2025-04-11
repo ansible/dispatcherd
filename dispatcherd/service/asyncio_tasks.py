@@ -2,7 +2,18 @@ import asyncio
 import logging
 from typing import Iterable, Optional
 
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
+
 logger = logging.getLogger(__name__)
+
+
+class SharedAsyncObjects(SharedAsyncObjectsProtocol):
+    def __init__(self) -> None:
+        # General exit event for program
+        self.exit_event = asyncio.Event()
+        # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
+        # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
+        self.forking_and_connecting_lock = asyncio.Lock()
 
 
 class CallbackHolder:

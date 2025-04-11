@@ -9,19 +9,14 @@ from uuid import uuid4
 
 from ..producers import BrokeredProducer
 from ..protocols import DispatcherMain as DispatcherMainProtocol
-from ..protocols import Producer, WorkerPool
+from ..protocols import Producer
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
+from ..protocols import WorkerPool
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal, wait_for_any
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 logger = logging.getLogger(__name__)
-
-
-class DispatcherEvents:
-    "Benchmark tests have to re-create this because they use same object in different event loops"
-
-    def __init__(self) -> None:
-        self.exit_event: asyncio.Event = asyncio.Event()
 
 
 class DelayCapsule(HasWakeup):
@@ -40,19 +35,16 @@ class DelayCapsule(HasWakeup):
 
 
 class DispatcherMain(DispatcherMainProtocol):
-    def __init__(self, producers: Iterable[Producer], pool: WorkerPool, node_id: Optional[str] = None):
+    def __init__(self, producers: Iterable[Producer], pool: WorkerPool, shared: SharedAsyncObjectsProtocol, node_id: Optional[str] = None):
         self.delayed_messages: set[DelayCapsule] = set()
         self.received_count = 0
         self.control_count = 0
-        self.shutting_down = False
-        # Lock for file descriptor mgmnt - hold lock when forking or connecting, to avoid DNS hangs
-        # psycopg is well-behaved IFF you do not connect while forking, compare to AWX __clean_on_fork__
-        self.fd_lock = asyncio.Lock()
 
         # Save the associated dispatcher objects, usually created by factories
         # expected that these are not yet running any tasks
         self.pool = pool
         self.producers = producers
+        self.shared = shared
 
         # Identifer for this instance of the dispatcherd service, sent in reply messages
         if node_id:
@@ -60,14 +52,11 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             self.node_id = str(uuid4())
 
-        self.events: DispatcherEvents = DispatcherEvents()
-
-        self.delayed_runner = NextWakeupRunner(self.delayed_messages, self.process_delayed_task, name='delayed_task_runner')
-        self.delayed_runner.exit_event = self.events.exit_event
+        self.delayed_runner = NextWakeupRunner(self.delayed_messages, self.process_delayed_task, shared=shared, name='delayed_task_runner')
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
-        self.events.exit_event.set()
+        self.shared.exit_event.set()
 
     def get_status_data(self) -> dict[str, Any]:
         return {"received_count": self.received_count, "control_count": self.control_count, "pid": getpid()}
@@ -88,7 +77,6 @@ class DispatcherMain(DispatcherMainProtocol):
             loop.add_signal_handler(sig, self.receive_signal)
 
     async def shutdown(self) -> None:
-        self.shutting_down = True
         logger.debug("Shutting down, starting with producers.")
         for producer in self.producers:
             try:
@@ -97,7 +85,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 logger.exception('Producer task had error')
 
         # Handle delayed tasks and inform user
-        await self.delayed_runner.shutdown()
+        await self.delayed_runner.kick()  # to process shutdown
         for capsule in self.delayed_messages:
             logger.warning(f'Abandoning delayed task (due to shutdown) to run in {capsule.delay}, message={capsule.message}')
         self.delayed_messages = set()
@@ -109,7 +97,7 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.exception('Pool manager encountered error')
 
         logger.debug('Setting event to exit main loop')
-        self.events.exit_event.set()
+        self.shared.exit_event.set()
 
     async def connected_callback(self, producer: Producer) -> None:
         return
@@ -208,12 +196,12 @@ class DispatcherMain(DispatcherMainProtocol):
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         try:
-            await self.pool.start_working(self, exit_event=self.events.exit_event)
+            await self.pool.start_working(self)
         except Exception:
             logger.exception(f'Pool {self.pool} failed to start working')
-            self.events.exit_event.set()
+            self.shared.exit_event.set()
 
-        async with self.fd_lock:  # lots of connecting going on here
+        async with self.shared.forking_and_connecting_lock:  # lots of connecting going on here
             for producer in self.producers:
                 logger.debug(f'Starting task production from {producer}')
                 try:
@@ -250,7 +238,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def main_loop_wait(self) -> None:
         """Wait for an event that requires some kind of action by the main loop"""
-        events = [self.events.exit_event]
+        events = [self.shared.exit_event]
         for producer in self.producers:
             events.append(producer.events.recycle_event)
 
@@ -267,7 +255,7 @@ class DispatcherMain(DispatcherMainProtocol):
             while True:
                 await self.main_loop_wait()
 
-                if self.events.exit_event.is_set():
+                if self.shared.exit_event.is_set():
                     break  # If the exit event is set, terminate the process
                 else:
                     await self.recycle_broker_producers()  # Otherwise, one or some of the producers broke

@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from ..protocols import DispatcherMain
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ class ControlProducer(BaseProducer):
     Indirectly, this also allows tasks to start other tasks.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, shared: SharedAsyncObjectsProtocol) -> None:
         self.dispatcher: Optional[DispatcherMain] = None
         super().__init__()
 
