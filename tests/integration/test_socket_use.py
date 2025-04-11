@@ -88,7 +88,7 @@ async def test_simple_control_and_reply(asock_dispatcher, sock_control):
 
 
 @pytest.mark.asyncio
-async def test_socket_tasks_are_named(asock_dispatcher, sock_control):
+async def test_socket_tasks_are_named(asock_dispatcher, sock_control, python312):
     loop = asyncio.get_event_loop()
 
     def aio_tasks_cmd():

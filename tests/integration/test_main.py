@@ -297,7 +297,7 @@ async def test_scale_up(apg_dispatcher, test_settings):
 
 
 @pytest.mark.asyncio
-async def test_tasks_are_named(apg_dispatcher):
+async def test_tasks_are_named(apg_dispatcher, python312):
     wait_task = asyncio.create_task(apg_dispatcher.main_loop_wait(), name='this_is_for_test')
 
     current_task = asyncio.current_task()
