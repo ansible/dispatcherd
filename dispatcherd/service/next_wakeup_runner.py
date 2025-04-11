@@ -4,6 +4,7 @@ import time
 from abc import abstractmethod
 from typing import Any, Callable, Coroutine, Iterable, Optional
 
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from .asyncio_tasks import ensure_fatal, named_wait
 
 logger = logging.getLogger(__name__)
@@ -39,16 +40,14 @@ class NextWakeupRunner:
         self,
         wakeup_objects: Iterable[HasWakeup],
         process_object: Callable[[Any], Coroutine[Any, Any, None]],
+        shared: SharedAsyncObjectsProtocol,
         name: Optional[str] = None,
-        exit_event: Optional[asyncio.Event] = None,
     ) -> None:
         self.wakeup_objects = wakeup_objects
         self.process_object_callback = process_object
         self.asyncio_task: Optional[asyncio.Task] = None
         self.kick_event = asyncio.Event()
-        self.shutting_down: bool = False
-        # If we hit errors, will set this to tell main program to exit, not expected to be present at __init__
-        self.exit_event: Optional[asyncio.Event] = exit_event
+        self.shared = shared
         if name is None:
             method_name = getattr(process_object, '__name__', str(process_object))
             self.name = f'next-run-manager-of-{method_name}'
@@ -86,7 +85,7 @@ class NextWakeupRunner:
         return future_wakeup
 
     async def background_task(self) -> None:
-        while not self.shutting_down:
+        while not self.shared.exit_event.is_set():
             now_time = time.monotonic()
             next_wakeup = await self.process_wakeups(now_time)
             if next_wakeup is None:
@@ -110,7 +109,8 @@ class NextWakeupRunner:
     def mk_new_task(self) -> None:
         """Should only be called if a task is not currently running"""
         self.asyncio_task = asyncio.create_task(self.background_task(), name=self.name)
-        ensure_fatal(self.asyncio_task, exit_event=self.exit_event)
+        # NOTE: passing the exit_event means that this new task may set it for unexpected errors
+        ensure_fatal(self.asyncio_task, exit_event=self.shared.exit_event)
 
     async def kick(self) -> None:
         """Initiates the asyncio task to wake up at the next run time
@@ -132,7 +132,3 @@ class NextWakeupRunner:
         if self.asyncio_task:
             return [self.asyncio_task]
         return []
-
-    async def shutdown(self) -> None:
-        self.shutting_down = True
-        await self.kick()

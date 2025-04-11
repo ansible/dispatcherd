@@ -7,6 +7,7 @@ from typing import Any, Iterator, Literal, Optional
 
 from ..protocols import DispatcherMain
 from ..protocols import PoolWorker as PoolWorkerProtocol
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
 from ..protocols import WorkerPool as WorkerPoolProtocol
 from .asyncio_tasks import ensure_fatal
@@ -195,6 +196,7 @@ class WorkerPool(WorkerPoolProtocol):
     def __init__(
         self,
         process_manager: ProcessManager,
+        shared: SharedAsyncObjectsProtocol,
         min_workers: int = 1,
         max_workers: int = 4,
         scaledown_wait: float = 15.0,
@@ -205,9 +207,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.min_workers = min_workers
         self.max_workers = max_workers
         self.process_manager = process_manager
-
-        # will fill in when we start working
-        self.dispatcher: Optional[DispatcherMain] = None
+        self.shared = shared
 
         # internal asyncio tasks
         self.read_results_task: Optional[asyncio.Task] = None
@@ -218,13 +218,12 @@ class WorkerPool(WorkerPoolProtocol):
         # internal tracking variables
         self.workers = WorkerData()
         self.next_worker_id = 0
-        self.shutting_down = False
         self.finished_count: int = 0
         self.canceled_count: int = 0
         self.shutdown_timeout = 3
 
         # the timeout runner keeps its own task
-        self.timeout_runner = NextWakeupRunner(self.workers, self.cancel_worker, name='worker_timeout_manager')
+        self.timeout_runner = NextWakeupRunner(self.workers, self.cancel_worker, shared=shared, name='worker_timeout_manager')
 
         # Track the last time we used X number of workers, like
         # {
@@ -259,13 +258,12 @@ class WorkerPool(WorkerPoolProtocol):
             "canceled_count": self.canceled_count,
         }
 
-    async def start_working(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
-        self.dispatcher = dispatcher
-        self.read_results_task = ensure_fatal(asyncio.create_task(self.read_results_forever(), name='results_task'), exit_event=exit_event)
-        self.management_task = ensure_fatal(
-            asyncio.create_task(self.manage_workers(forking_lock=dispatcher.fd_lock), name='management_task'), exit_event=exit_event
+    async def start_working(self, dispatcher: DispatcherMain) -> None:
+        # NOTE: any of these critical tasks throwing unexpected errors should halt program by setting exit_event
+        self.read_results_task = ensure_fatal(
+            asyncio.create_task(self.read_results_forever(dispatcher=dispatcher), name='results_task'), exit_event=self.shared.exit_event
         )
-        self.timeout_runner.exit_event = exit_event
+        self.management_task = ensure_fatal(asyncio.create_task(self.manage_workers(), name='management_task'), exit_event=self.shared.exit_event)
 
     def get_running_count(self) -> int:
         ct = 0
@@ -323,15 +321,15 @@ class WorkerPool(WorkerPoolProtocol):
                             await worker.signal_stop()
                             break
 
-    async def manage_new_workers(self, forking_lock: asyncio.Lock) -> None:
+    async def manage_new_workers(self) -> None:
         """This calls the .start() method to actually fork a new process for initialized workers
 
         This call may be slow. It is only called from the worker management task. This is its job.
-        The forking_lock is shared with producers, and avoids forking and connecting at the same time.
+        The forking_and_connecting_lock is shared with producers, and avoids forking and connecting at the same time.
         """
         for worker in self.workers:
             if worker.status == 'initialized':
-                async with forking_lock:  # never fork while connecting
+                async with self.shared.forking_and_connecting_lock:  # never fork while connecting
                     await worker.start()
                 # Starting the worker may have freed capacity for queued work
                 await self.drain_queue()
@@ -381,13 +379,13 @@ class WorkerPool(WorkerPoolProtocol):
                     logger.debug(f'Fully removing worker id={worker_id}')
                     self.workers.remove_by_id(worker_id)
 
-    async def manage_workers(self, forking_lock: asyncio.Lock) -> None:
+    async def manage_workers(self) -> None:
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
-        while not self.shutting_down:
+        while not self.shared.exit_event.is_set():
 
             await self.scale_workers()
 
-            await self.manage_new_workers(forking_lock)
+            await self.manage_new_workers()
 
             await self.manage_old_workers()
 
@@ -451,8 +449,6 @@ class WorkerPool(WorkerPoolProtocol):
                 pass
 
     async def shutdown(self) -> None:
-        self.shutting_down = True
-
         # Shutting down the management task first reduces the number of tasks that might modify self.workers
         self.events.management_event.set()
         if self.management_task:
@@ -466,7 +462,7 @@ class WorkerPool(WorkerPoolProtocol):
                 except asyncio.CancelledError:
                     pass  # intended
 
-        await self.timeout_runner.shutdown()
+        await self.timeout_runner.kick()  # for it to process shutdown event being set
         self.queuer.shutdown()
         self.blocker.shutdown()
         await self.stop_workers()
@@ -499,6 +495,10 @@ class WorkerPool(WorkerPoolProtocol):
         if unblocked_task := await self.blocker.process_task(message):
             worker = self.queuer.get_worker_or_process_task(unblocked_task)
             if worker:
+                if self.shared.exit_event.is_set():
+                    logger.warning(f'Not dispatching task (uuid={uuid}) because currently shutting down')
+                    self.queuer.queued_messages.append(unblocked_task)
+                    return
                 logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
                 async with self.workers.management_lock:
                     await worker.start_task(unblocked_task)
@@ -515,7 +515,7 @@ class WorkerPool(WorkerPoolProtocol):
         # Now process all messages we can in the unblocked queue
         processed_queue = False
         for message in self.queuer.queued_messages.copy():
-            if (not self.queuer.get_free_worker()) or self.shutting_down:
+            if (not self.queuer.get_free_worker()) or self.shared.exit_event.is_set():
                 return
             self.queuer.queued_messages.remove(message)
             await self.dispatch_task(message)
@@ -568,14 +568,14 @@ class WorkerPool(WorkerPoolProtocol):
             stats[worker.status] += 1
         return stats
 
-    async def read_results_forever(self) -> None:
+    async def read_results_forever(self, dispatcher: DispatcherMain) -> None:
         """Perpetual task that continuously waits for task completions."""
         while True:
             # Wait for a result from the finished queue
             message = await self.process_manager.read_finished()
 
             if message == 'stop':
-                if self.shutting_down:
+                if self.shared.exit_event.is_set():
                     logger.debug(f'Results message got administrative stop message, worker status: {self.status_counts}')
                     return
                 else:
@@ -597,7 +597,7 @@ class WorkerPool(WorkerPoolProtocol):
                     worker.status = 'exited'
                     worker.exit_msg_event.set()
 
-                if self.shutting_down:
+                if self.shared.exit_event.is_set():
                     if all(worker.inactive for worker in self.workers):
                         logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
                         return
@@ -612,7 +612,7 @@ class WorkerPool(WorkerPoolProtocol):
             elif event == 'control':
                 action = message.get('command', 'unknown')
                 try:
-                    return_data = await self.dispatcher.get_control_result(  # type: ignore[union-attr]
+                    return_data = await dispatcher.get_control_result(  # type: ignore[union-attr]
                         str(action), control_data=message.get('control_data', {})  # type: ignore[var-annotated,arg-type]
                     )
                 except Exception:

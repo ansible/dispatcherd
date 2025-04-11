@@ -9,6 +9,7 @@ from .config import settings as global_settings
 from .control import Control
 from .protocols import Broker, Producer
 from .service import process
+from .service.asyncio_tasks import SharedAsyncObjects
 from .service.main import DispatcherMain
 from .service.pool import WorkerPool
 
@@ -29,25 +30,33 @@ def process_manager_from_settings(settings: LazySettings = global_settings) -> p
     return process_manager_cls(**kwargs)
 
 
-def pool_from_settings(settings: LazySettings = global_settings) -> WorkerPool:
+def pool_from_settings(shared, settings: LazySettings = global_settings) -> WorkerPool:
     kwargs = settings.service.get('pool_kwargs', {}).copy()
     kwargs['process_manager'] = process_manager_from_settings(settings=settings)
+    kwargs['shared'] = shared
     return WorkerPool(**kwargs)
 
 
-def brokers_from_settings(settings: LazySettings = global_settings) -> Iterable[Broker]:
-    return [get_broker(broker_name, broker_kwargs) for broker_name, broker_kwargs in settings.brokers.items()]
+def brokers_from_settings(settings: LazySettings = global_settings, shared: Optional[SharedAsyncObjects] = None) -> Iterable[Broker]:
+    brokers = []
+    for broker_name, broker_kwargs in settings.brokers.items():
+        kwargs = broker_kwargs.copy()
+        if shared:
+            kwargs['shared'] = shared
+        brokers.append(get_broker(broker_name, kwargs))
+    return brokers
 
 
-def producers_from_settings(settings: LazySettings = global_settings) -> Iterable[Producer]:
+def producers_from_settings(shared: SharedAsyncObjects, settings: LazySettings = global_settings) -> Iterable[Producer]:
     producer_objects = []
     for broker in brokers_from_settings(settings=settings):
-        producer = producers.BrokeredProducer(broker=broker)
+        producer = producers.BrokeredProducer(shared=shared, broker=broker)
         producer_objects.append(producer)
 
     for producer_cls, producer_kwargs in settings.producers.items():
         if producer_kwargs is None:
             producer_kwargs = {}
+        producer_kwargs['shared'] = shared
         producer_objects.append(getattr(producers, producer_cls)(**producer_kwargs))
 
     return producer_objects
@@ -59,8 +68,9 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     You could initialize this yourself, but using the shared settings allows for consistency
     between the service, publisher, and any other interacting processes.
     """
-    producers = producers_from_settings(settings=settings)
-    pool = pool_from_settings(settings=settings)
+    shared = SharedAsyncObjects()
+    producers = producers_from_settings(settings=settings, shared=shared)
+    pool = pool_from_settings(settings=settings, shared=shared)
     extra_kwargs = settings.service.get('main_kwargs', {})
 
     metrics_kwargs = settings.service.get('metrics_kwargs')
@@ -69,7 +79,7 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
 
         extra_kwargs['metrics'] = DispatcherMetricsServer(**metrics_kwargs)
 
-    return DispatcherMain(producers, pool, **extra_kwargs)
+    return DispatcherMain(producers=producers, pool=pool, shared=shared, **extra_kwargs)
 
 
 # ---- Publisher objects ----

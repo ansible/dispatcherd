@@ -2,6 +2,7 @@ import pytest
 
 from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 from dispatcherd.registry import registry
 
 from tests.data.methods import print_hello
@@ -14,7 +15,7 @@ async def test_block_multiple_tasks(test_settings):
     assert task_data['on_duplicate'] == 'serial'
 
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=5)
+    pool = WorkerPool(pm, min_workers=5, max_workers=5, shared=SharedAsyncObjects())
 
     await pool.dispatch_task(task_data.copy())
     assert list(pool.queuer) == [task_data]

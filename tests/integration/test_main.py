@@ -307,5 +307,5 @@ async def test_tasks_are_named(apg_dispatcher, python312):
         task_name = task.get_name()
         assert not task_name.startswith('Task-'), _stack_from_task(task)
 
-    apg_dispatcher.events.exit_event.set()
+    apg_dispatcher.shared.exit_event.set()
     await wait_task

@@ -5,6 +5,7 @@ from unittest import mock
 import pytest
 
 from dispatcherd.service.next_wakeup_runner import HasWakeup, NextWakeupRunner
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 
 
 class ObjectWithWakeup(HasWakeup):
@@ -24,7 +25,7 @@ async def test_process_wakeups(current_time=time.monotonic(), do_processing=Fals
     obj = ObjectWithWakeup(1)
     objects.add(obj)
     callback = mock.MagicMock()
-    runner = NextWakeupRunner(objects, callback)
+    runner = NextWakeupRunner(objects, callback, shared=SharedAsyncObjects())
     assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) > time.monotonic()
     assert await runner.process_wakeups(current_time=time.monotonic(), do_processing=False) < time.monotonic() + 1.0
 
@@ -47,7 +48,7 @@ async def test_run_and_exit_task():
         obj.period = None  # No need to run ever again
         callback_makes_done.is_called = True
 
-    runner = NextWakeupRunner(objects, callback_makes_done)
+    runner = NextWakeupRunner(objects, callback_makes_done, shared=SharedAsyncObjects())
 
     await runner.background_task()  # should finish
 
@@ -67,7 +68,7 @@ async def test_next_wakeup_is_in_past():
 
     normal_periodic_callback.is_called = False
 
-    runner = NextWakeupRunner(objects, normal_periodic_callback)
+    runner = NextWakeupRunner(objects, normal_periodic_callback, shared=SharedAsyncObjects())
 
     # run the background task asynchronously
     background_task = asyncio.create_task(runner.background_task())
@@ -81,7 +82,7 @@ async def test_next_wakeup_is_in_past():
         raise RuntimeError('never called the callback')
 
     # now that our test is done we can shut down the background task runner
-    await runner.shutdown()
+    runner.shared.exit_event.set()
     await runner.kick()
 
     # the task should reach its exit condition for shutdown now
@@ -100,7 +101,7 @@ async def test_graceful_shutdown():
         obj.last_run = time.monotonic()  # did whatever we do with the things
         callback()  # track for assertion
 
-    runner = NextWakeupRunner(objects, mock_process_tasks)
+    runner = NextWakeupRunner(objects, mock_process_tasks, shared=SharedAsyncObjects())
     await runner.kick()  # creates task, starts running
 
     # Poll for the objects data to reflect that it has been processed
@@ -111,7 +112,7 @@ async def test_graceful_shutdown():
     else:
         raise RuntimeError('Object was never marked as ran as expected')
 
-    runner.shutting_down = True
+    runner.shared.exit_event.set()
     await runner.kick()
     await runner.asyncio_task
     assert runner.asyncio_task.done()

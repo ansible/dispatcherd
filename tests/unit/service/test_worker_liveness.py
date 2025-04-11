@@ -7,6 +7,7 @@ import pytest
 
 from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 
 
 @pytest.mark.asyncio
@@ -17,9 +18,8 @@ async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     """
     # Create a pool with one worker and start it
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=5)
-    dispatcher = SimpleNamespace(fd_lock=asyncio.Lock(), exit_event=asyncio.Event())
-    await pool.start_working(dispatcher)
+    pool = WorkerPool(pm, min_workers=1, max_workers=5, shared=SharedAsyncObjects())
+    await pool.start_working(SimpleNamespace())
     await pool.events.workers_ready.wait()
 
     # Get the ready worker and assign a task
@@ -44,6 +44,7 @@ async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     # Clean up by shutting down the pool (override cancel to prevent errors)
     for w in pool.workers:
         w.cancel = lambda: None
+    pool.shared.exit_event.set()
     await pool.shutdown()
 
 
@@ -54,7 +55,7 @@ async def test_manage_dead_worker_removal(test_settings):
     """
     pm = ProcessManager(settings=test_settings)
     # Set a very short removal wait time for the test.
-    pool = WorkerPool(pm, min_workers=1, max_workers=3, worker_removal_wait=0.1)
+    pool = WorkerPool(pm, min_workers=1, max_workers=3, worker_removal_wait=0.1, shared=SharedAsyncObjects())
     await pool.up()
     worker = pool.workers.get_by_id(0)
     worker.status = 'error'
@@ -68,6 +69,9 @@ async def test_manage_dead_worker_removal(test_settings):
     # Assert that the worker has been removed from the pool == the pool is now empty.
     assert len(pool.workers) == 0
 
+    pool.shared.exit_event.set()
+    await pool.shutdown()
+
 
 @pytest.mark.asyncio
 async def test_dead_worker_with_no_task(test_settings):
@@ -76,7 +80,7 @@ async def test_dead_worker_with_no_task(test_settings):
     without increasing the canceled task count.
     """
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=3)
+    pool = WorkerPool(pm, min_workers=1, max_workers=3, shared=SharedAsyncObjects())
     await pool.up()
     worker = pool.workers.get_by_id(0)
 
@@ -93,3 +97,6 @@ async def test_dead_worker_with_no_task(test_settings):
     assert worker.status == 'error'
     # And the canceled counter remains unchanged since there was no running task.
     assert pool.canceled_count == initial_canceled
+
+    pool.shared.exit_event.set()
+    await pool.shutdown()

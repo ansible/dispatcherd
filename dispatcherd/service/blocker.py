@@ -13,7 +13,6 @@ class Blocker(BlockerProtocol):
         self.blocked_messages: list[dict] = []  # TODO: use deque, customizability
         self.queuer = queuer
         self.discard_count: int = 0
-        self.shutting_down: bool = False
 
     def __iter__(self) -> Iterator[dict]:
         return iter(self.blocked_messages)
@@ -44,11 +43,6 @@ class Blocker(BlockerProtocol):
         """
         uuid = message.get("uuid", "<unknown>")
         on_duplicate = message.get('on_duplicate', DuplicateBehavior.parallel.value)
-
-        if self.shutting_down:
-            logger.info(f'Not starting task (uuid={uuid}) because we are shutting down, queued_ct={len(self.blocked_messages)}')
-            self.blocked_messages.append(message)
-            return None
 
         if on_duplicate == DuplicateBehavior.serial.value:
             if self.already_running(message):
@@ -90,7 +84,7 @@ class Blocker(BlockerProtocol):
         return len(self.blocked_messages)
 
     def shutdown(self) -> None:
-        self.shutting_down = True
+        """Issue a log about the tasks that will be abandoned due to the shutdown"""
         if self.blocked_messages:
             uuids = [message.get('uuid', '<unknown>') for message in self.blocked_messages]
             logger.error(f'Dispatcherd shut down with blocked work, uuids: {uuids}')
