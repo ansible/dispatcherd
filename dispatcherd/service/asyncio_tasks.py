@@ -62,6 +62,6 @@ async def named_wait(event: asyncio.Event, name: str) -> None:
     """Add a name to waiting task so it is visible via debugging commands"""
     current_task = asyncio.current_task()
     if current_task:
-        current_task.set_name(f'internal_wait_for_client_{id}')
+        current_task.set_name(name)
 
     await event.wait()
