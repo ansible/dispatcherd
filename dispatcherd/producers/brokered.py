@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class BrokeredProducer(BaseProducer):
+    can_recycle = True
+
     def __init__(self, broker: Broker) -> None:
         self.production_task: Optional[asyncio.Task] = None
         self.broker = broker

@@ -75,6 +75,7 @@ class Producer(Protocol):
     """
 
     events: ProducerEvents
+    can_recycle: bool
 
     async def start_producing(self, dispatcher: 'DispatcherMain') -> None:
         """Starts tasks which will eventually call DispatcherMain.process_message - how tasks originate in the service"""

@@ -4,7 +4,7 @@ import time
 from abc import abstractmethod
 from typing import Any, Callable, Coroutine, Iterable, Optional
 
-from .asyncio_tasks import ensure_fatal
+from .asyncio_tasks import ensure_fatal, named_wait
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class NextWakeupRunner:
                 delta = 0.1
 
             try:
-                await asyncio.wait_for(self.kick_event.wait(), timeout=delta)
+                await asyncio.wait_for(named_wait(self.kick_event, f'{self.name}_kick_event_wait'), timeout=delta)
             except asyncio.TimeoutError:
                 pass  # intended mechanism to hit the next schedule
             except asyncio.CancelledError:

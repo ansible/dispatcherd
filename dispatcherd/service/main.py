@@ -242,6 +242,8 @@ class DispatcherMain(DispatcherMainProtocol):
     async def recycle_broker_producers(self) -> None:
         """For any producer in a broken state (likely due to external factors beyond our control) recycle it"""
         for producer in self.producers:
+            if not producer.can_recycle:
+                continue
             if producer.events.recycle_event.is_set():
                 await producer.recycle()
                 for task in producer.all_tasks():
@@ -251,12 +253,20 @@ class DispatcherMain(DispatcherMainProtocol):
     async def main_loop_wait(self) -> None:
         """Wait for an event that requires some kind of action by the main loop"""
         events = [self.events.exit_event]
+        names = ['exit_event_wait']
         for producer in self.producers:
+            if not producer.can_recycle:
+                continue
             events.append(producer.events.recycle_event)
+            names.append(f'{str(producer)}_recycle_event_wait')
 
-        await wait_for_any(events)
+        await wait_for_any(events, names=names)
 
     async def main(self) -> None:
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            current_task.set_name('dispatcherd_service_main')
+
         await self.connect_signals()
 
         try:
