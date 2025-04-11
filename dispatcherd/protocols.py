@@ -165,6 +165,11 @@ class WorkerData(Protocol):
     def get_by_id(self, worker_id: int) -> PoolWorker: ...
 
 
+class SharedAsyncObjects:
+    exit_event: asyncio.Event
+    forking_and_connecting_lock: asyncio.Lock  # Forking and locking may need to be serialized, which this does
+
+
 class WorkerPool(Protocol):
     """
     Describes an interface for a pool managing task workers.
@@ -176,8 +181,9 @@ class WorkerPool(Protocol):
     workers: WorkerData
     queuer: Queuer
     blocker: Blocker
+    shared: SharedAsyncObjects
 
-    async def start_working(self, dispatcher: 'DispatcherMain', exit_event: Optional[asyncio.Event] = None) -> None:
+    async def start_working(self, dispatcher: 'DispatcherMain') -> None:
         """Start persistent asyncio tasks, including asychronously starting worker subprocesses"""
         ...
 
@@ -203,7 +209,7 @@ class DispatcherMain(Protocol):
 
     pool: WorkerPool
     delayed_messages: set
-    fd_lock: asyncio.Lock  # Forking and locking may need to be serialized, which this does
+    shared: SharedAsyncObjects
     producers: Iterable[Producer]
 
     async def main(self) -> None:
