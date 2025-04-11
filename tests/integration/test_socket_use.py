@@ -104,17 +104,3 @@ async def test_socket_tasks_are_named(asock_dispatcher, sock_control):
         if task_name == current_task_name:
             continue
         assert not task_name.startswith('Task-'), task_stuff['stack']
-
-    # import pdb; pdb.set_trace()
-
-    # wait_task = asyncio.create_task(asock_dispatcher.main_loop_wait(), name='this_is_for_test')
-
-    # current_task = asyncio.current_task()
-    # for task in asyncio.all_tasks():
-    #     if task is current_task:
-    #         continue
-    #     task_name = task.get_name()
-    #     assert not task_name.startswith('Task-'), _stack_from_task(task)
-
-    # apg_dispatcher.events.exit_event.set()
-    # await wait_task
