@@ -62,6 +62,13 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     producers = producers_from_settings(settings=settings)
     pool = pool_from_settings(settings=settings)
     extra_kwargs = settings.service.get('main_kwargs', {})
+
+    metrics_kwargs = settings.service.get('metrics_kwargs')
+    if metrics_kwargs:
+        from .service.metrics import DispatcherMetricsServer
+
+        extra_kwargs['metrics'] = DispatcherMetricsServer(**metrics_kwargs)
+
     return DispatcherMain(producers, pool, **extra_kwargs)
 
 
@@ -105,7 +112,7 @@ def get_control_from_settings(publish_broker: Optional[str] = None, settings: La
 
 # ---- Schema generation ----
 
-SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list, float)
+SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list, float, bool)
 
 
 def is_valid_annotation(annotation):
@@ -134,6 +141,9 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
 
     ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
     ret['service']['main_kwargs'] = schema_for_cls(DispatcherMain)
+    from .service.metrics import DispatcherMetricsServer
+
+    ret['service']['metrics_kwargs'] = schema_for_cls(DispatcherMetricsServer)
     ret['service']['process_manager_kwargs'] = {}
     pm_classes = (process.ProcessManager, process.ForkServerManager)
     for pm_cls in pm_classes:

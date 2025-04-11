@@ -193,6 +193,17 @@ class WorkerPool(Protocol):
     async def shutdown(self) -> None: ...
 
 
+class DispatcherMetricsServer(Protocol):
+    """
+    Metrics object will be created by factories.
+
+    If the extra is not installed, we may not have needed python dependencies.
+    This only needs to capture the interace of the initialized object with DispatcherMain.
+    """
+
+    async def start_server(self, dispatcher: 'DispatcherMain') -> None: ...
+
+
 class DispatcherMain(Protocol):
     """
     Describes the primary dispatcherd interface.
@@ -206,6 +217,9 @@ class DispatcherMain(Protocol):
     delayed_messages: set
     fd_lock: asyncio.Lock  # Forking and locking may need to be serialized, which this does
     producers: Iterable[Producer]
+
+    received_count: int
+    control_count: int
 
     async def main(self) -> None:
         """This is the method that runs the service, bring your own event loop"""
