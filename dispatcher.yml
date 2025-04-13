@@ -3,7 +3,7 @@
 version: 2
 service:
   pool_kwargs:
-    min_workers: 2  # subprocesses
+    min_workers: 1  # subprocesses
     max_workers: 12
     scaledown_wait: 15  # seconds
   main_kwargs:
