@@ -1,3 +1,5 @@
 pytest
 pytest-asyncio
-pytest-benchmark
+pytest-benchmark  # for benchmark tests
+pytest-cov  # for SonarCloud
+httpx  # used for the metrics server test

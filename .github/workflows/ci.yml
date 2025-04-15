@@ -26,8 +26,8 @@ jobs:
       - name: Install dispatcherd
         run: pip install -e .[pg_notify,metrics]
       - run: make postgres
-      - run: pip install pytest pytest-asyncio httpx
-      - run: pytest tests/unit tests/integration -vv -s
+      - run: pip install -r requirements_dev.txt
+      - run: pytest tests/unit tests/integration --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json -vv -s
 
   black:
     name: Run black
