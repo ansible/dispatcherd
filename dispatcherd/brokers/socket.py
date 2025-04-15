@@ -6,6 +6,7 @@ import socket
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
 from ..protocols import Broker as BrokerProtocol
+from ..service.asyncio_tasks import named_wait
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,9 @@ class Broker(BrokerProtocol):
         client = Client(self.client_ct, reader, writer)
         self.clients[self.client_ct] = client
         self.client_ct += 1
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            current_task.set_name(f'socket_client_task_{client.client_id}')
         logger.info(f'Socket client_id={client.client_id} is connected')
 
         try:
@@ -89,7 +93,7 @@ class Broker(BrokerProtocol):
                 await self.incoming_queue.put((client.client_id, message))
                 # Wait for caller to potentially fill a reply queue
                 # this should realistically never take more than a trivial amount of time
-                await asyncio.wait_for(client.yield_clear.wait(), timeout=2)
+                await asyncio.wait_for(named_wait(client.yield_clear, f'internal_wait_for_client_{client.client_id}'), timeout=2)
                 client.yield_clear.clear()
                 await client.send_replies()
         except asyncio.TimeoutError:

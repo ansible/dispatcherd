@@ -36,12 +36,15 @@ def ensure_fatal(task: asyncio.Task, exit_event: Optional[asyncio.Event] = None)
     return task  # nicety so this can be used as a wrapper
 
 
-async def wait_for_any(events: Iterable[asyncio.Event]) -> int:
+async def wait_for_any(events: Iterable[asyncio.Event], names: Optional[Iterable[str]] = None) -> int:
     """
     Wait for a list of events. If any of the events gets set, this function
     will return
     """
-    tasks = [asyncio.create_task(event.wait()) for event in events]
+    if names:
+        tasks = [asyncio.create_task(event.wait(), name=task_name) for (event, task_name) in zip(events, names)]
+    else:
+        tasks = [asyncio.create_task(event.wait()) for event in events]
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
         task.cancel()
@@ -53,3 +56,12 @@ async def wait_for_any(events: Iterable[asyncio.Event]) -> int:
             return i
 
     raise RuntimeError('Internal error - could done find any tasks that are done')
+
+
+async def named_wait(event: asyncio.Event, name: str) -> None:
+    """Add a name to waiting task so it is visible via debugging commands"""
+    current_task = asyncio.current_task()
+    if current_task:
+        current_task.set_name(name)
+
+    await event.wait()

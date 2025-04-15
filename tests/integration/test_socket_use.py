@@ -10,6 +10,7 @@ from dispatcherd.config import DispatcherSettings
 from dispatcherd.control import Control
 from dispatcherd.factories import from_settings, get_control_from_settings, get_publisher_from_settings
 from dispatcherd.protocols import DispatcherMain
+from dispatcherd.service.control_tasks import _stack_from_task
 
 logger = logging.getLogger(__name__)
 
@@ -84,3 +85,22 @@ async def test_simple_control_and_reply(asock_dispatcher, sock_control):
     data = alive[0]
 
     assert data['node_id'] == 'socket-test-server'
+
+
+@pytest.mark.asyncio
+async def test_socket_tasks_are_named(asock_dispatcher, sock_control, python312):
+    loop = asyncio.get_event_loop()
+
+    def aio_tasks_cmd():
+        return sock_control.control_with_reply('aio_tasks')
+
+    aio_tasks = await loop.run_in_executor(None, aio_tasks_cmd)
+
+    current_task_name = asyncio.current_task().get_name()
+
+    assert len(aio_tasks) == 1
+    data = aio_tasks[0]
+    for task_name, task_stuff in data.items():
+        if task_name == current_task_name:
+            continue
+        assert not task_name.startswith('Task-'), task_stuff['stack']

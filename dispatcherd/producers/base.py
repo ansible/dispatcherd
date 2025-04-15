@@ -10,6 +10,7 @@ class ProducerEvents:
 
 
 class BaseProducer(ProducerProtocol):
+    can_recycle: bool = False
 
     def __init__(self) -> None:
         self.events = ProducerEvents()
