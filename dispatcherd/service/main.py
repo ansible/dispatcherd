@@ -272,6 +272,7 @@ class DispatcherMain(DispatcherMainProtocol):
         metrics_task: Optional[asyncio.Task] = None
         if self.metrics:
             metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
+            ensure_fatal(metrics_task, exit_event=self.events.exit_event)
 
         try:
             await self.start_working()
