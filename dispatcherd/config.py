@@ -76,3 +76,8 @@ def temporary_settings(config):
         yield settings
     finally:
         settings._wrapped = prior_settings
+
+
+def is_setup(for_settings: LazySettings = settings) -> bool:
+    """Tells whether dispatcherd has been configured"""
+    return for_settings._wrapped is None

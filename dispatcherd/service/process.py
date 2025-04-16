@@ -1,4 +1,5 @@
 import asyncio
+import json
 import multiprocessing
 from multiprocessing.context import BaseContext
 from types import ModuleType
@@ -75,7 +76,8 @@ class ProcessManager:
     def __init__(self, settings: LazySettings = global_settings) -> None:
         self.ctx = multiprocessing.get_context(self.mp_context)
         self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
-        self.settings_stash: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
+        settings_config: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
+        self.settings_stash: str = json.dumps(settings_config)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:

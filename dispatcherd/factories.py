@@ -55,9 +55,11 @@ def producers_from_settings(shared: SharedAsyncObjects, settings: LazySettings =
 
     for producer_cls, producer_kwargs in settings.producers.items():
         if producer_kwargs is None:
-            producer_kwargs = {}
-        producer_kwargs['shared'] = shared
-        producer_objects.append(getattr(producers, producer_cls)(**producer_kwargs))
+            create_kwargs = {}
+        else:
+            create_kwargs = producer_kwargs.copy()
+        create_kwargs['shared'] = shared
+        producer_objects.append(getattr(producers, producer_cls)(**create_kwargs))
 
     return producer_objects
 
