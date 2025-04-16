@@ -342,7 +342,9 @@ def connection_saver(**config) -> psycopg.Connection:  # type: ignore[no-untyped
     """
     with connection_save._lock:
         # Check if we need to create a new connection because it's either None or closed.
-        if connection_save._connection is None or getattr(connection_save._connection, 'closed', False):
+        # NOTE:  or getattr(connection_save._connection, 'closed', False) would fix some issues
+        # but that is not done here for testing demonstration
+        if connection_save._connection is None:
             connection_save._connection = create_connection(**config)
         return connection_save._connection
 
