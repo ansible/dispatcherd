@@ -36,8 +36,7 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
         comms.q_out.put('ready')
 
         events: dict[str, asyncio.Event] = {}
-        for event_name in comms.main_events:
-            events[event_name] = getattr(dispatcher.events, event_name)
+        events['exit_event'] = dispatcher.shared.exit_event
         for event_name in comms.pool_events:
             events[event_name] = getattr(dispatcher.pool.events, event_name)
 

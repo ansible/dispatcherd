@@ -222,6 +222,7 @@ class WorkerPool(Protocol):
     queuer: Queuer
     blocker: Blocker
     shared: SharedAsyncObjects
+    events: PoolEvents
     finished_count: int
 
     async def start_working(self, dispatcher: 'DispatcherMain') -> None:
