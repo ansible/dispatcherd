@@ -76,8 +76,14 @@ class ProcessManager:
     def __init__(self, settings: LazySettings = global_settings) -> None:
         self.ctx = multiprocessing.get_context(self.mp_context)
         self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
-        settings_config: dict = settings.serialize()  # These are passed to the workers to initialize dispatcher settings
+
+        # Settings will be passed to the workers to initialize dispatcher settings
+        settings_config: dict = settings.serialize()
+        # Settings are passed as a JSON format string
+        # JSON is more type-restrictive than python pickle, which multiprocessing otherwise uses
+        # this assures we do not pass python objects inside of settings by accident
         self.settings_stash: str = json.dumps(settings_config)
+
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
