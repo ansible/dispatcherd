@@ -9,7 +9,7 @@ import traceback
 from queue import Empty as QueueEmpty
 from typing import Optional
 
-from ..config import setup
+from ..config import is_setup, setup
 from ..registry import DispatcherMethodRegistry
 from ..registry import registry as global_registry
 
@@ -218,14 +218,20 @@ class TaskWorker:
         return {"worker": self.worker_id, "event": "shutdown"}
 
 
-def work_loop(worker_id: int, settings: dict, finished_queue: multiprocessing.Queue, message_queue: multiprocessing.Queue) -> None:
+def work_loop(worker_id: int, settings: str, finished_queue: multiprocessing.Queue, message_queue: multiprocessing.Queue) -> None:
     """
     Worker function that processes messages from the queue and sends confirmation
     to the finished_queue once done.
     """
     # Load settings passed from parent
     # this assures that workers are all configured the same
-    setup(config=settings)
+    # If user configured workers via preload_modules, do nothing here
+    if not is_setup():
+        config = json.loads(settings)
+        setup(config=config)
+    else:
+        logger.debug(f'Not calling setup() for worker_id={worker_id} because environment is already configured')
+
     worker = TaskWorker(worker_id, finished_queue, message_queue)
     # TODO: add an app callback here to set connection name and things like that
 

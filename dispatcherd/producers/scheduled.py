@@ -4,6 +4,7 @@ import time
 from typing import Optional, Union
 
 from ..protocols import DispatcherMain
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .base import BaseProducer
 
@@ -24,11 +25,11 @@ class ScheduleEntry(HasWakeup):
 
 
 class ScheduledProducer(BaseProducer):
-    def __init__(self, task_schedule: dict[str, dict[str, Union[int, str]]]) -> None:
+    def __init__(self, task_schedule: dict[str, dict[str, Union[int, str]]], shared: SharedAsyncObjectsProtocol) -> None:
         self.task_schedule = task_schedule
         self.schedule_entries: set[ScheduleEntry] = set()
         self.dispatcher: Optional[DispatcherMain] = None
-        self.schedule_runner = NextWakeupRunner(self.schedule_entries, self.trigger_schedule, name='ScheduledProducer')
+        self.schedule_runner = NextWakeupRunner(self.schedule_entries, self.trigger_schedule, shared=shared, name='ScheduledProducer')
         super().__init__()
 
     async def trigger_schedule(self, entry: ScheduleEntry) -> None:
@@ -39,9 +40,8 @@ class ScheduledProducer(BaseProducer):
         if self.dispatcher:
             await self.dispatcher.process_message(message)
 
-    async def start_producing(self, dispatcher: DispatcherMain, exit_event: Optional[asyncio.Event] = None) -> None:
+    async def start_producing(self, dispatcher: DispatcherMain) -> None:
         self.dispatcher = dispatcher
-        self.schedule_runner.exit_event = exit_event
         current_time = time.monotonic()
 
         for task_name, options in self.task_schedule.items():
@@ -62,5 +62,5 @@ class ScheduledProducer(BaseProducer):
 
     async def shutdown(self) -> None:
         logger.info('Stopping scheduled tasks')
-        await self.schedule_runner.shutdown()
+        await self.schedule_runner.kick()  # To ack shutdown
         self.schedule_entries = set()  # Avoids duplication, in case .start_producing is called again

@@ -3,6 +3,7 @@ import time
 import pytest
 
 from dispatcherd.service.next_wakeup_runner import HasWakeup, NextWakeupRunner
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 
 
 # Dummy object that implements HasWakeup.
@@ -31,7 +32,7 @@ async def test_process_wakeups_normal():
     past_time = time.monotonic() - 5
     schedule = DummySchedule(past_time)
     # Use dummy_process_object that adds 10 seconds.
-    runner = NextWakeupRunner([schedule], dummy_process_object)
+    runner = NextWakeupRunner([schedule], dummy_process_object, shared=SharedAsyncObjects())
     current_time = time.monotonic()
     next_wakeup = await runner.process_wakeups(current_time)
     # The wakeup time should now be 10 seconds later than the original past time.
@@ -46,7 +47,7 @@ async def test_process_wakeups_error_propagation():
     past_time = time.monotonic() - 5
     schedule = DummySchedule(past_time)
     # Use failing_process_object that raises an exception.
-    runner = NextWakeupRunner([schedule], failing_process_object)
+    runner = NextWakeupRunner([schedule], failing_process_object, shared=SharedAsyncObjects())
     current_time = time.monotonic()
     with pytest.raises(ValueError, match="Processing error"):
         await runner.process_wakeups(current_time)

@@ -6,13 +6,14 @@ import pytest
 
 from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 
 
 @pytest.mark.asyncio
 async def test_scale_to_min(test_settings):
     "Create 5 workers to fill up to the minimum"
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=5)
+    pool = WorkerPool(pm, min_workers=5, max_workers=5, shared=SharedAsyncObjects())
     assert len(pool.workers) == 0
     await pool.scale_workers()
     assert len(pool.workers) == 5
@@ -23,7 +24,7 @@ async def test_scale_to_min(test_settings):
 async def test_scale_due_to_queue_pressure(test_settings):
     "Given 5 busy workers and 1 task in the queue, the scaler should add 1 more worker"
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=10)
+    pool = WorkerPool(pm, min_workers=5, max_workers=10, shared=SharedAsyncObjects())
     await pool.scale_workers()
     for worker in pool.workers:
         worker.status = 'ready'  # a lie, for test
@@ -45,7 +46,7 @@ async def test_initialized_workers_count_for_scaling(test_settings):
     With task_ct < worker_ct, we should not scale additional workers right after startup.
     """
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=5, max_workers=10)
+    pool = WorkerPool(pm, min_workers=5, max_workers=10, shared=SharedAsyncObjects())
     await pool.scale_workers()
     assert len(pool.workers) == 5
     assert set([worker.status for worker in pool.workers]) == {'initialized'}
@@ -64,7 +65,7 @@ async def test_initialized_and_ready_but_scale(test_settings):
     That is, task_ct > worker_ct, on startup.
     """
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=2, max_workers=10)
+    pool = WorkerPool(pm, min_workers=2, max_workers=10, shared=SharedAsyncObjects())
     await pool.scale_workers()
     assert len(pool.workers) == 2
 
@@ -78,7 +79,7 @@ async def test_initialized_and_ready_but_scale(test_settings):
 async def test_scale_down_condition(test_settings):
     """You have 3 workers due to past demand, but work finished long ago. Should scale down."""
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=3)
+    pool = WorkerPool(pm, min_workers=1, max_workers=3, shared=SharedAsyncObjects())
 
     # Prepare for test by scaling up to the 3 max workers by adding demand
     pool.queuer.queued_messages = [{'task': 'waiting.task'} for i in range(3)]  # 3 tasks, 3 workers
@@ -106,7 +107,7 @@ async def test_scale_down_condition(test_settings):
 async def test_error_while_scaling_up(test_settings):
     """It is always possible that we fail to start workers due to OS errors. This should not error the whole program."""
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=1)
+    pool = WorkerPool(pm, min_workers=1, max_workers=1, shared=SharedAsyncObjects())
 
     pool.queuer.queued_messages = [{'task': 'waiting.task'}]
     for i in range(3):
@@ -114,6 +115,6 @@ async def test_error_while_scaling_up(test_settings):
     assert len(pool.workers) == 1
 
     with mock.patch('dispatcherd.service.process.ProcessProxy.start', side_effect=RuntimeError):
-        await pool.manage_new_workers(asyncio.Lock())
+        await pool.manage_new_workers()
 
     assert set([worker.status for worker in pool.workers]) == {'error'}

@@ -46,7 +46,7 @@ async def test_sever_pg_connection(apg_dispatcher, pg_message):
 
     # Main loop (which test simulates) should wake up before infinity
     await asyncio.wait_for(apg_dispatcher.main_loop_wait(), timeout=3)
-    assert not apg_dispatcher.events.exit_event.is_set()
+    assert not apg_dispatcher.shared.exit_event.is_set()
     # Okay now fix the things
     await apg_dispatcher.recycle_broker_producers()
 

@@ -1,10 +1,10 @@
-import asyncio
 import logging
 import time
 from typing import Any, Callable, Coroutine, Iterator, Optional, cast
 
 from ..protocols import DelayCapsule as DelayCapsuleProtocol
 from ..protocols import Delayer as DelayerProtocol
+from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 logger = logging.getLogger(__name__)
@@ -29,24 +29,22 @@ class Delayer(NextWakeupRunner, DelayerProtocol):
     def __init__(
         self,
         process_message_now: Callable[[dict[Any, Any]], Coroutine[Any, Any, tuple[str | None, str | None]]],
-        exit_event: Optional[asyncio.Event] = None,
+        shared: SharedAsyncObjectsProtocol,
     ) -> None:
         self.delayed_messages: set[DelayCapsuleProtocol] = set()
-        self.shutting_down = False
         self.process_message_now = process_message_now
         super().__init__(
             wakeup_objects=cast(set[HasWakeup], self.delayed_messages),
             process_object=self.run_delayed_capsule,  # type: ignore[arg-type] # takes capsules, not HasWakeups, which is more specific
             name='delayed_task_runner',
-            exit_event=exit_event,
+            shared=shared,
         )
 
     def __iter__(self) -> Iterator[DelayCapsuleProtocol]:
         return iter(self.delayed_messages)
 
     async def shutdown(self) -> None:
-        self.shutting_down = True
-        await super().shutdown()
+        await self.kick()
         for capsule in self.delayed_messages:
             logger.warning(f'Abandoning delayed task (due to shutdown) to run in {capsule.delay}, message={capsule.message}')
         self.delayed_messages = set()
