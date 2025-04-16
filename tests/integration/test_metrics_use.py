@@ -7,6 +7,7 @@ import pytest
 import pytest_asyncio
 
 from dispatcherd.protocols import DispatcherMain
+from dispatcherd.testing.asyncio import adispatcher_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ def metrics_config():
 
 
 @pytest_asyncio.fixture
-async def ametrics_dispatcher(metrics_config, adispatcher_factory) -> AsyncIterator[DispatcherMain]:
-    async with adispatcher_factory(metrics_config) as dispatcher:
+async def ametrics_dispatcher(metrics_config) -> AsyncIterator[DispatcherMain]:
+    async with adispatcher_service(metrics_config) as dispatcher:
         yield dispatcher
 
 

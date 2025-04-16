@@ -1,4 +1,5 @@
 DOCKER_COMPOSE ?= docker compose
+TEST_DIRS ?= tests/
 
 
 # Mostly copied from DAB
@@ -28,3 +29,8 @@ demo:
 
 stop-demo:
 	docker compose down
+
+## Runs pytest synchronous and async tests in different processes
+test:
+	pytest $(TEST_DIRS)
+	pytest $(TEST_DIRS) -m "asyncio"

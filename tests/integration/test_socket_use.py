@@ -8,9 +8,9 @@ import pytest_asyncio
 
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.control import Control
-from dispatcherd.factories import from_settings, get_control_from_settings, get_publisher_from_settings
+from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
 from dispatcherd.protocols import DispatcherMain
-from dispatcherd.service.control_tasks import _stack_from_task
+from dispatcherd.testing.asyncio import adispatcher_service
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,8 @@ def socket_settings(socket_config):
 
 
 @pytest_asyncio.fixture
-async def asock_dispatcher(socket_config, adispatcher_factory) -> AsyncIterator[DispatcherMain]:
-    async with adispatcher_factory(socket_config) as dispatcher:
+async def asock_dispatcher(socket_config) -> AsyncIterator[DispatcherMain]:
+    async with adispatcher_service(socket_config) as dispatcher:
         yield dispatcher
 
 
