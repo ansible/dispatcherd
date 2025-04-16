@@ -135,7 +135,8 @@ async def test_shutdown_is_idepotent(pool_factory):
     pool = pool_factory()
     await pool.shutdown()  # weird to shutdown before starting, but okay
 
-    await pool.start_working(dispatcher=DispatcherMain(producers=(), pool=pool))
+    dispatcher = DispatcherMain(producers=(), pool=pool, shared=SharedAsyncObjects())
+    await pool.start_working(dispatcher=dispatcher)
 
     await pool.shutdown()
     await pool.shutdown()  # weird to shutdown twice, but... just return
