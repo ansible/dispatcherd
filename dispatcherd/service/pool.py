@@ -463,6 +463,7 @@ class WorkerPool(WorkerPoolProtocol):
                     await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
                 except asyncio.CancelledError:
                     pass  # intended
+            self.management_task = None
 
         await self.timeout_runner.kick()  # for it to process shutdown event being set
         self.queuer.shutdown()
@@ -479,16 +480,7 @@ class WorkerPool(WorkerPoolProtocol):
                 await self.force_shutdown()
             except asyncio.CancelledError:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
-
-        if self.management_task:
-            logger.info('Canceling worker management task')
-            self.management_task.cancel()
-            try:
-                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
-            except asyncio.TimeoutError:
-                logger.error('The scaleup task failed to shut down')
-            except asyncio.CancelledError:
-                pass  # intended
+            self.read_results_task = None
 
         self.process_manager.shutdown()
 
