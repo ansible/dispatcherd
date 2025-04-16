@@ -46,7 +46,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
         self.metrics = metrics
 
-        self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared, exit_event=self.events.exit_event)
+        self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
