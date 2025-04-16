@@ -2,18 +2,18 @@ import asyncio
 import json
 import logging
 import signal
-import time
 from os import getpid
 from typing import Any, Iterable, Optional, Union
 from uuid import uuid4
 
 from ..producers import BrokeredProducer
+from ..protocols import Delayer as DelayerProtocol
 from ..protocols import DispatcherMain as DispatcherMainProtocol
 from ..protocols import DispatcherMetricsServer as DispatcherMetricsServerProtocol
 from ..protocols import Producer, WorkerPool
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal, wait_for_any
-from .next_wakeup_runner import HasWakeup, NextWakeupRunner
+from .delayer import Delayer
 
 logger = logging.getLogger(__name__)
 
@@ -25,26 +25,10 @@ class DispatcherEvents:
         self.exit_event: asyncio.Event = asyncio.Event()
 
 
-class DelayCapsule(HasWakeup):
-    """When a task has a delay, this tracks the delay"""
-
-    def __init__(self, delay: float, message: dict) -> None:
-        self.has_ran: bool = False
-        self.received_at = time.monotonic()
-        self.delay = delay
-        self.message = message
-
-    def next_wakeup(self) -> Optional[float]:
-        if self.has_ran is True:
-            return None
-        return self.received_at + self.delay
-
-
 class DispatcherMain(DispatcherMainProtocol):
     def __init__(
         self, producers: Iterable[Producer], pool: WorkerPool, node_id: Optional[str] = None, metrics: Optional[DispatcherMetricsServerProtocol] = None
     ):
-        self.delayed_messages: set[DelayCapsule] = set()
         self.received_count = 0
         self.control_count = 0
         self.shutting_down = False
@@ -67,8 +51,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
         self.metrics = metrics
 
-        self.delayed_runner = NextWakeupRunner(self.delayed_messages, self.process_delayed_task, name='delayed_task_runner')
-        self.delayed_runner.exit_event = self.events.exit_event
+        self.delayer: DelayerProtocol = Delayer(self.process_message_now, exit_event=self.events.exit_event)
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
@@ -102,10 +85,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 logger.exception('Producer task had error')
 
         # Handle delayed tasks and inform user
-        await self.delayed_runner.shutdown()
-        for capsule in self.delayed_messages:
-            logger.warning(f'Abandoning delayed task (due to shutdown) to run in {capsule.delay}, message={capsule.message}')
-        self.delayed_messages = set()
+        await self.delayer.shutdown()
 
         logger.debug('Gracefully shutting down worker pool')
         try:
@@ -118,20 +98,6 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def connected_callback(self, producer: Producer) -> None:
         return
-
-    async def process_delayed_task(self, capsule: DelayCapsule) -> None:
-        capsule.has_ran = True
-        logger.debug(f'Wakeup for delayed task: {capsule.message}')
-        await self.process_message_internal(capsule.message)
-        self.delayed_messages.remove(capsule)
-
-    async def create_delayed_task(self, message: dict) -> None:
-        "Called as alternative to sending to worker now, send to worker later"
-        # capsule, as in, time capsule
-        capsule = DelayCapsule(message['delay'], message)
-        logger.info(f'Delaying {capsule.delay} s before running task: {capsule.message}')
-        self.delayed_messages.add(capsule)
-        await self.delayed_runner.kick()
 
     async def process_message(
         self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
@@ -166,11 +132,10 @@ class DispatcherMain(DispatcherMainProtocol):
             message['channel'] = channel
         self.received_count += 1
 
-        if 'delay' in message:
-            # NOTE: control messages with reply should never be delayed, document this for users
-            await self.create_delayed_task(message)
-        else:
-            return await self.process_message_internal(message, producer=producer)
+        if immediate_message := await self.delayer.process_task(message):
+            return await self.process_message_now(immediate_message, producer=producer)
+
+        # We should be at this line if task was delayed, and in that case there is no reply message
         return (None, None)
 
     async def get_control_result(self, action: str, control_data: Optional[dict] = None) -> dict:
@@ -202,8 +167,8 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.info(f"Control action {action} returned {type(return_data)}, done")
             return (None, None)
 
-    async def process_message_internal(self, message: dict, producer: Optional[Producer] = None) -> tuple[Optional[str], Optional[str]]:
-        """Route message based on needed action - delay for later, return reply, or dispatch to worker"""
+    async def process_message_now(self, message: dict, producer: Optional[Producer] = None) -> tuple[Optional[str], Optional[str]]:
+        """Route message to control action or to a worker via the pool. Does not consider task delays."""
         if 'control' in message:
             return await self.run_control_action(message['control'], control_data=message.get('control_data'), reply_to=message.get('reply_to'))
         else:
