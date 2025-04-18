@@ -10,6 +10,9 @@ service:
     node_id: demo-server-a
   metrics_kwargs:
     log_level: debug
+worker:
+  worker_kwargs:
+    idle_timeout: 3
 brokers:
   pg_notify:
     config:

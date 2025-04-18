@@ -117,10 +117,14 @@ class NextWakeupRunner:
 
         This needs to be called if objects in wakeup_objects are changed, for example
         """
-        if await self.process_wakeups(current_time=time.monotonic(), do_processing=False) is None:
+        if self.shared.exit_event.is_set():
+            self.kick_event.set()
+            return  # .kick is often called in shutdown path, should not create new task then
+        elif await self.process_wakeups(current_time=time.monotonic(), do_processing=False) is None:
             # Optimization here, if there is no next time, do not bother managing tasks
+            self.kick_event.set()
             return
-        if self.asyncio_task:
+        elif self.asyncio_task:
             if self.asyncio_task.done():
                 self.mk_new_task()
             else:

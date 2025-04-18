@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable, Optional, Union
 
 from ..config import LazySettings
 from ..config import settings as global_settings
-from ..worker.task import work_loop
+from ..worker.target import work_loop
 
 
 class ProcessProxy:
