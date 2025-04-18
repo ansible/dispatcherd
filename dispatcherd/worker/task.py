@@ -1,4 +1,3 @@
-import json
 import logging
 import multiprocessing
 import os
@@ -6,34 +5,27 @@ import signal
 import sys
 import time
 import traceback
-from queue import Empty as QueueEmpty
-from typing import Optional
+from typing import Any, Optional, Union
 
-from ..config import is_setup, setup
+from ..protocols import TaskWorker as TaskWorkerProtocol
 from ..registry import DispatcherMethodRegistry
 from ..registry import registry as global_registry
+from .exceptions import DispatcherCancel
 
 logger = logging.getLogger(__name__)
 
 
-"""This module contains code ran by the worker subprocess"""
-
-
-class DispatcherCancel(Exception):
-    pass
-
-
 class WorkerSignalHandler:
-    def __init__(self, worker_id):
+    def __init__(self, worker_id: int) -> None:
         self.kill_now = False
         self.worker_id = worker_id
         signal.signal(signal.SIGUSR1, self.task_cancel)
         signal.signal(signal.SIGINT, self.exit_gracefully)
 
-    def task_cancel(self, *args, **kwargs):
+    def task_cancel(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
         raise DispatcherCancel
 
-    def exit_gracefully(self, *args, **kwargs):
+    def exit_gracefully(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
         logger.info(f'Worker {self.worker_id} received worker process exit signal')
         self.kill_now = True
 
@@ -55,11 +47,11 @@ class DispatcherBoundMethods:
         to_send = {'worker': self.worker_id, 'event': 'control', 'command': command}
         if data:
             to_send['control_data'] = data
-        self.message_queue.put(to_send)
-        return self.finished_queue.get()
+        self.finished_queue.put(to_send)
+        return self.message_queue.get()
 
 
-class TaskWorker:
+class TaskWorker(TaskWorkerProtocol):
     """
     A worker implementation that deserializes task messages and runs native
     Python code.
@@ -75,7 +67,12 @@ class TaskWorker:
     """
 
     def __init__(
-        self, worker_id: int, message_queue: multiprocessing.Queue, finished_queue: multiprocessing.Queue, registry: DispatcherMethodRegistry = global_registry
+        self,
+        worker_id: int,
+        message_queue: multiprocessing.Queue,
+        finished_queue: multiprocessing.Queue,
+        registry: DispatcherMethodRegistry = global_registry,
+        idle_timeout: int = 0,
     ) -> None:
         self.worker_id: int = worker_id
         self.message_queue = message_queue
@@ -84,6 +81,27 @@ class TaskWorker:
         self.ppid = os.getppid()
         self.pid = os.getpid()
         self.signal_handler = WorkerSignalHandler(worker_id)
+        self.idle_timeout = idle_timeout
+
+    def on_start(self) -> None:
+        """For apps integrating callbacks"""
+        pass
+
+    def on_shutdown(self) -> None:
+        """For apps integrating callbacks"""
+        pass
+
+    def pre_task(self, message: dict) -> None:
+        """For apps integrating callbacks"""
+        pass
+
+    def post_task(self, result: dict) -> None:
+        """The result is a part of the contract if someone adds callbacks"""
+        pass
+
+    def on_idle(self) -> None:
+        """For apps integrating callbacks"""
+        pass
 
     def should_exit(self) -> bool:
         """Called before continuing the loop, something suspicious, return True, should exit"""
@@ -94,16 +112,16 @@ class TaskWorker:
             return True
         return False
 
-    def get_uuid(self, message):
+    def get_uuid(self, message: dict[str, Any]) -> str:
         return message.get('uuid', '<unknown>')
 
     def produce_binder(self, message: dict) -> DispatcherBoundMethods:
         """
         Return the object with public callbacks to pass to the task
         """
-        return DispatcherBoundMethods(self.worker_id, message, self.message_queue, self.finished_queue)
+        return DispatcherBoundMethods(worker_id=self.worker_id, message=message, message_queue=self.message_queue, finished_queue=self.finished_queue)
 
-    def run_callable(self, message):
+    def run_callable(self, message: dict) -> Any:
         """
         Import the Python code and run it.
         """
@@ -129,7 +147,7 @@ class TaskWorker:
             logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
             return '<cancel>'
 
-    def perform_work(self, message):
+    def perform_work(self, message: dict) -> dict[str, Any]:
         """
         Import and run code for a task e.g.,
 
@@ -149,8 +167,7 @@ class TaskWorker:
             'task': u'awx.main.tasks.jobs.RunProjectUpdate'
         }
         """
-        # TODO: callback before starting task, previously ran
-        # settings.__clean_on_fork__()
+        time_started = time.time()
         result = None
         try:
             result = self.run_callable(message)
@@ -184,13 +201,10 @@ class TaskWorker:
         for callback in message.get('callbacks', []) or []:
             callback['uuid'] = self.get_uuid(message)
             self.perform_work(callback)
-        return result
-
-    # NOTE: on_start and on_stop were intentionally removed
-    # these were used for the consumer classes, but not the worker classes
+        return self.get_finished_message(result, message, time_started)
 
     # TODO: new WorkerTaskCall class to track timings and such
-    def get_finished_message(self, raw_result, message, time_started):
+    def get_finished_message(self, raw_result: Any, message: dict, time_started: float) -> dict[str, Any]:
         """I finished the task in message, giving result. This is what I send back to traffic control."""
         result = None
         if type(raw_result) in (type(None), list, dict, int, str):
@@ -209,68 +223,10 @@ class TaskWorker:
             "time_finish": time.time(),
         }
 
-    def get_ready_message(self):
-        """Message for traffic control, saying am entering the main work loop and am HOT TO GO"""
+    def get_ready_message(self) -> dict[str, Union[str, int]]:
+        """Message for traffic control, saying am entering the main work loop"""
         return {"worker": self.worker_id, "event": "ready"}
 
-    def get_shutdown_message(self):
+    def get_shutdown_message(self) -> dict[str, Union[str, int]]:
         """Message for traffic control, do not deliver any more mail to this address"""
         return {"worker": self.worker_id, "event": "shutdown"}
-
-
-def work_loop(worker_id: int, settings: str, finished_queue: multiprocessing.Queue, message_queue: multiprocessing.Queue) -> None:
-    """
-    Worker function that processes messages from the queue and sends confirmation
-    to the finished_queue once done.
-    """
-    # Load settings passed from parent
-    # this assures that workers are all configured the same
-    # If user configured workers via preload_modules, do nothing here
-    if not is_setup():
-        config = json.loads(settings)
-        setup(config=config)
-    else:
-        logger.debug(f'Not calling setup() for worker_id={worker_id} because environment is already configured')
-
-    worker = TaskWorker(worker_id, finished_queue, message_queue)
-    # TODO: add an app callback here to set connection name and things like that
-
-    finished_queue.put(worker.get_ready_message())
-
-    while True:
-        if worker.should_exit():
-            break
-
-        try:
-            message = message_queue.get()
-        except DispatcherCancel:
-            logger.info(f'Worker {worker_id} received a task cancel signal in main loop, ignoring')
-            continue
-        except QueueEmpty:
-            logger.info(f'Worker {worker_id} Encountered strange QueueEmpty condition')
-            continue  # a race condition that mostly can be ignored
-        except Exception as exc:
-            logger.exception(f"Exception on worker {worker_id}, type {type(exc)}, error: {str(exc)}, exiting")
-            break
-
-        if not isinstance(message, dict):
-
-            if isinstance(message, str):
-                if message.lower() == "stop":
-                    logger.warning(f"Worker {worker_id} exiting main loop due to stop message.")
-                    break
-
-            try:
-                message = json.loads(message)
-            except Exception as e:
-                logger.error(f'Worker {worker_id} could not process message {message}, error: {str(e)}')
-                break
-
-        time_started = time.time()
-        result = worker.perform_work(message)
-
-        # Indicate that the task is finished by putting a message in the finished_queue
-        finished_queue.put(worker.get_finished_message(result, message, time_started))
-
-    finished_queue.put(worker.get_shutdown_message())
-    logger.debug(f'Worker {worker_id} informed the pool manager that we have exited')

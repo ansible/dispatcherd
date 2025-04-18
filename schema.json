@@ -15,13 +15,13 @@
     }
   },
   "producers": {
-    "ControlProducer": {},
     "ScheduledProducer": {
       "task_schedule": "dict[str, dict[str, typing.Union[int, str]]]"
     },
     "OnStartProducer": {
       "task_list": "dict[str, dict[str, typing.Union[int, str]]]"
-    }
+    },
+    "ControlProducer": {}
   },
   "service": {
     "pool_kwargs": {
@@ -36,9 +36,9 @@
       "node_id": "typing.Optional[str]"
     },
     "metrics_kwargs": {
-      "host": "<class 'str'>",
       "port": "<class 'int'>",
-      "log_level": "<class 'str'>"
+      "log_level": "<class 'str'>",
+      "host": "<class 'str'>"
     },
     "process_manager_kwargs": {
       "preload_modules": "typing.Optional[list[str]]"
@@ -47,5 +47,12 @@
   },
   "publish": {
     "default_broker": "str"
+  },
+  "worker": {
+    "worker_kwargs": {
+      "worker_id": "<class 'int'>",
+      "idle_timeout": "<class 'int'>"
+    },
+    "worker_cls": "typing.Any"
   }
 }

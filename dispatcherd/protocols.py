@@ -1,4 +1,5 @@
 import asyncio
+import multiprocessing
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
 
@@ -289,3 +290,36 @@ class DispatcherMain(Protocol):
     def get_status_data(self) -> dict:
         """Data for debugging commands"""
         ...
+
+
+class TaskWorker(Protocol):
+    """
+    Object used in the synchronous workers, interacts with the work_loop
+
+    contains callbacks offered for the user to override
+    """
+
+    worker_id: int
+    idle_timeout: int
+    finished_queue: multiprocessing.Queue
+    message_queue: multiprocessing.Queue
+
+    def __init__(self, worker_id: int, message_queue: multiprocessing.Queue, finished_queue: multiprocessing.Queue, **kwargs) -> None: ...
+
+    def should_exit(self) -> bool: ...
+
+    def on_start(self) -> None: ...
+
+    def on_shutdown(self) -> None: ...
+
+    def pre_task(self, message: dict) -> None: ...
+
+    def post_task(self, result: dict) -> None: ...
+
+    def on_idle(self) -> None: ...
+
+    def perform_work(self, message: dict) -> dict: ...
+
+    def get_ready_message(self) -> dict[str, Union[str, int]]: ...
+
+    def get_shutdown_message(self) -> dict[str, Union[str, int]]: ...

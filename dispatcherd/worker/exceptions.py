@@ -1,0 +1,2 @@
+class DispatcherCancel(Exception):
+    pass

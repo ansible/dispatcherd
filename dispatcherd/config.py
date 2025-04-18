@@ -14,6 +14,7 @@ class DispatcherSettings:
         self.producers: dict = config.get('producers', {})
         self.service: dict = config.get('service', {})
         self.publish: dict = config.get('publish', {})
+        self.worker: dict = config.get('worker', {})
 
         # Automatic defaults
         if 'pool_kwargs' not in self.service:
@@ -21,12 +22,8 @@ class DispatcherSettings:
         if 'max_workers' not in self.service['pool_kwargs']:
             self.service['pool_kwargs']['max_workers'] = 3
 
-        # TODO: firmly planned sections of config for later
-        # self.callbacks: dict = config.get('callbacks', {})
-        # self.options: dict = config.get('options', {})
-
     def serialize(self):
-        return dict(version=self.version, brokers=self.brokers, producers=self.producers, service=self.service, publish=self.publish)
+        return dict(version=self.version, brokers=self.brokers, producers=self.producers, service=self.service, publish=self.publish, worker=self.worker)
 
 
 def settings_from_file(path: str) -> DispatcherSettings:
@@ -59,13 +56,14 @@ class LazySettings:
 settings = LazySettings()
 
 
-def setup(config: Optional[dict] = None, file_path: Optional[str] = None):
+def setup(config: Optional[dict] = None, file_path: Optional[str] = None) -> LazySettings:
     if config:
         settings._wrapped = DispatcherSettings(config)
     elif file_path:
         settings._wrapped = settings_from_file(file_path)
     else:
         settings._wrapped = settings_from_env()
+    return settings
 
 
 @contextmanager
@@ -80,4 +78,4 @@ def temporary_settings(config):
 
 def is_setup(for_settings: LazySettings = settings) -> bool:
     """Tells whether dispatcherd has been configured"""
-    return for_settings._wrapped is None
+    return bool(for_settings._wrapped is not None)
