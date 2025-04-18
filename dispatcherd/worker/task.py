@@ -47,8 +47,8 @@ class DispatcherBoundMethods:
         to_send = {'worker': self.worker_id, 'event': 'control', 'command': command}
         if data:
             to_send['control_data'] = data
-        self.message_queue.put(to_send)
-        return self.finished_queue.get()
+        self.finished_queue.put(to_send)
+        return self.message_queue.get()
 
 
 class TaskWorker(TaskWorkerProtocol):
@@ -115,7 +115,7 @@ class TaskWorker(TaskWorkerProtocol):
         """
         Return the object with public callbacks to pass to the task
         """
-        return DispatcherBoundMethods(self.worker_id, message, self.message_queue, self.finished_queue)
+        return DispatcherBoundMethods(worker_id=self.worker_id, message=message, message_queue=self.message_queue, finished_queue=self.finished_queue)
 
     def run_callable(self, message: dict) -> Any:
         """
