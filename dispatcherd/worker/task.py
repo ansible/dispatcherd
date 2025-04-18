@@ -91,7 +91,7 @@ class TaskWorker(TaskWorkerProtocol):
         """For apps integrating callbacks"""
         pass
 
-    def pre_task(self) -> None:
+    def pre_task(self, message: dict) -> None:
         """For apps integrating callbacks"""
         pass
 

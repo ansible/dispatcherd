@@ -45,7 +45,7 @@ def work_loop_internal(worker: TaskWorker) -> None:
             logger.warning(f"Worker {worker.worker_id} exiting main loop due to stop message.")
             break
 
-        worker.pre_task()
+        worker.pre_task(message)
         result = worker.perform_work(message)
         worker.post_task(result)
 
