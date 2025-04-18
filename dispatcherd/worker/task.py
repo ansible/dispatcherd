@@ -84,12 +84,15 @@ class TaskWorker(TaskWorkerProtocol):
         self.idle_timeout = idle_timeout
 
     def on_start(self) -> None:
+        """For apps integrating callbacks"""
         pass
 
     def on_shutdown(self) -> None:
+        """For apps integrating callbacks"""
         pass
 
     def pre_task(self) -> None:
+        """For apps integrating callbacks"""
         pass
 
     def post_task(self, result: dict) -> None:
@@ -97,6 +100,7 @@ class TaskWorker(TaskWorkerProtocol):
         pass
 
     def on_idle(self) -> None:
+        """For apps integrating callbacks"""
         pass
 
     def should_exit(self) -> bool:
