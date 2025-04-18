@@ -12,8 +12,6 @@ logger.propagate = False
 log_path = Path(__file__).resolve().parents[2] / "logs" / "app.log"
 logger.addHandler(logging.FileHandler(log_path, mode="a"))
 
-logger.info('import test')
-
 
 class TestWorker(TaskWorker):
 
