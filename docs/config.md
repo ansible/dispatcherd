@@ -147,7 +147,7 @@ worker:
     idle_timeout: 120
 ```
 
-Presumably, your class would subclass from `dispatcherd.worker.task.TaskWorker`.
+Your class should subclass from `dispatcherd.worker.task.TaskWorker`.
 This allows you to define callbacks on your class.
 You can get a sense of what callbacks are possible
 by looking at `TaskWorker` in the [protocol module](../dispatcherd/protocols.py).
