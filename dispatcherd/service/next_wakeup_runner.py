@@ -86,6 +86,7 @@ class NextWakeupRunner:
 
     async def background_task(self) -> None:
         while not self.shared.exit_event.is_set():
+            self.kick_event.clear()
             now_time = time.monotonic()
             next_wakeup = await self.process_wakeups(now_time)
             if next_wakeup is None:
@@ -104,29 +105,34 @@ class NextWakeupRunner:
                 logger.info(f'Task {self.name} cancelled, returning')
                 return
 
-            self.kick_event.clear()
-
     def mk_new_task(self) -> None:
         """Should only be called if a task is not currently running"""
         self.asyncio_task = asyncio.create_task(self.background_task(), name=self.name)
         # NOTE: passing the exit_event means that this new task may set it for unexpected errors
         ensure_fatal(self.asyncio_task, exit_event=self.shared.exit_event)
 
+    async def needs_new_task(self) -> bool:
+        """A new background asyncio task should be created"""
+        if self.shared.exit_event.is_set():
+            # .kick is often called in shutdown path, should not create new task then
+            return False
+        if await self.process_wakeups(current_time=time.monotonic(), do_processing=False) is None:
+            # Optimization here, if there is no next time, do not bother managing tasks
+            return False
+        if not self.asyncio_task:
+            return True
+        # At this point, we need a new task if the current task is finished
+        return self.asyncio_task.done()
+
     async def kick(self) -> None:
         """Initiates the asyncio task to wake up at the next run time
 
         This needs to be called if objects in wakeup_objects are changed, for example
         """
-        if await self.process_wakeups(current_time=time.monotonic(), do_processing=False) is None:
-            # Optimization here, if there is no next time, do not bother managing tasks
-            return
-        if self.asyncio_task:
-            if self.asyncio_task.done():
-                self.mk_new_task()
-            else:
-                self.kick_event.set()
-        else:
+        if await self.needs_new_task():
             self.mk_new_task()
+        else:
+            self.kick_event.set()
 
     def all_tasks(self) -> list[asyncio.Task]:
         if self.asyncio_task:

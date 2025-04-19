@@ -1,6 +1,6 @@
 import inspect
 from copy import deepcopy
-from typing import Iterable, Literal, Optional, Type, get_args, get_origin
+from typing import Any, Iterable, Literal, Optional, Type, get_args, get_origin
 
 from . import producers
 from .brokers import get_broker
@@ -12,6 +12,7 @@ from .service import process
 from .service.asyncio_tasks import SharedAsyncObjects
 from .service.main import DispatcherMain
 from .service.pool import WorkerPool
+from .worker.task import TaskWorker
 
 """
 Creates objects from settings,
@@ -153,6 +154,8 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
 
     ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
     ret['service']['main_kwargs'] = schema_for_cls(DispatcherMain)
+
+    # In-line here so we do not require dependencies for operation
     from .service.metrics import DispatcherMetricsServer
 
     ret['service']['metrics_kwargs'] = schema_for_cls(DispatcherMetricsServer)
@@ -161,6 +164,9 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     for pm_cls in pm_classes:
         ret['service']['process_manager_kwargs'].update(schema_for_cls(pm_cls))
     ret['service']['process_manager_cls'] = str(Literal[tuple(pm_cls.__name__ for pm_cls in pm_classes)])
+
+    ret['worker']['worker_cls'] = str(Any)
+    ret['worker']['worker_kwargs'] = schema_for_cls(TaskWorker)
 
     for broker_name, broker_kwargs in settings.brokers.items():
         broker = get_broker(broker_name, broker_kwargs)

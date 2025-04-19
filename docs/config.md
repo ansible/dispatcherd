@@ -74,6 +74,8 @@ producers:
     # options
 publish:
   # options
+worker:
+  # options
 ```
 
 When providing `pool_kwargs`, those are the kwargs passed to `WorkerPool`, for example.
@@ -131,3 +133,28 @@ The others are:
 #### Publish
 
 Additional options for publishers (task submitters).
+
+#### Worker
+
+This allows you to configure a `worker_cls`, pointing to
+an importable location of your own class.
+Syntax:
+
+```yaml
+worker:
+  worker_cls: my_app.AppWorker
+  worker_kwargs:
+    idle_timeout: 120
+```
+
+Your class should subclass from `dispatcherd.worker.task.TaskWorker`.
+This allows you to define callbacks on your class.
+You can get a sense of what callbacks are possible
+by looking at `TaskWorker` in the [protocol module](../dispatcherd/protocols.py).
+
+See the [example class with callbacks](../tests/data/callbacks.py) that is
+used for testing this feature.
+
+The `idle_timeout` is a number of seconds which determines how long
+after no new tasks are received that the `on_idle` callback will be called.
+That can be useful for connection keep-alive work and such.
