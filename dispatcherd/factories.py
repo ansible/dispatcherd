@@ -11,7 +11,6 @@ from .protocols import Broker, Producer
 from .service import process
 from .service.asyncio_tasks import SharedAsyncObjects
 from .service.main import DispatcherMain
-from .service.metrics import DispatcherMetricsServer
 from .service.pool import WorkerPool
 from .worker.task import TaskWorker
 
@@ -155,6 +154,9 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
 
     ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
     ret['service']['main_kwargs'] = schema_for_cls(DispatcherMain)
+
+    # In-line here so we do not require dependencies for operation
+    from .service.metrics import DispatcherMetricsServer
 
     ret['service']['metrics_kwargs'] = schema_for_cls(DispatcherMetricsServer)
     ret['service']['process_manager_kwargs'] = {}
