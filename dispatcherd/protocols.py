@@ -276,10 +276,6 @@ class DispatcherMain(Protocol):
         ...
 
 
-class DispatcherMethodRegistry(Protocol):
-    def get_method(self) -> Callable: ...
-
-
 class TaskWorker(Protocol):
     """
     Object used in the synchronous workers, interacts with the work_loop
