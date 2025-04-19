@@ -33,4 +33,4 @@ class TestWorker(TaskWorker):
 
     def on_idle(self) -> None:
         print('on_idle')
-        logger.info(f'on_idle')
+        logger.info('on_idle')
