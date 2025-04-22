@@ -5,6 +5,7 @@ import pytest
 import psycopg
 
 from tests.conftest import CONNECTION_STRING
+from tests.data.methods import break_connection, do_database_query
 
 from dispatcherd.producers.brokered import BrokeredProducer
 
@@ -60,3 +61,34 @@ async def test_sever_pg_connection(apg_dispatcher, pg_message):
     await pg_message('lambda: "This worked!"')
     await asyncio.wait_for(clearing_task, timeout=3)
     assert apg_dispatcher.pool.finished_count == 1
+
+
+@pytest.mark.asyncio
+async def test_task_breaks_connection(apg_dispatcher, test_settings, caplog):
+    # Sanity case
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    caplog.clear()
+    with caplog.at_level("DEBUG"):
+        do_database_query.apply_async(settings=test_settings, uuid='sanity')
+        await asyncio.wait_for(clearing_task, timeout=3)
+
+    assert "Worker 0 finished task" in caplog.text
+    assert apg_dispatcher.pool.finished_count == 1
+    apg_dispatcher.pool.events.work_cleared.clear()
+
+    # idle connections are the devil's workshop
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    break_connection.apply_async(settings=test_settings)
+    await asyncio.wait_for(clearing_task, timeout=3)
+    assert apg_dispatcher.pool.finished_count == 2
+
+    # After being very rough with the connection, test that things still work
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    caplog.clear()
+    with caplog.at_level("DEBUG"):
+        do_database_query.apply_async(settings=test_settings, uuid='real_test')
+        await asyncio.wait_for(clearing_task, timeout=3)
+
+    assert "Worker 0 finished task (uuid=real_test)" in caplog.text
+    assert apg_dispatcher.pool.finished_count == 3
