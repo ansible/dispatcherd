@@ -6,7 +6,7 @@ from typing import Callable, AsyncIterator, Union
 import pytest
 import pytest_asyncio
 
-from dispatcherd.brokers.pg_notify import Broker, acreate_connection, connection_save
+from dispatcherd.brokers.pg_notify import Broker, acreate_connection
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.control import Control
 from dispatcherd.factories import get_control_from_settings
