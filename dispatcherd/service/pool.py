@@ -6,6 +6,7 @@ import time
 from typing import Any, Iterator, Literal, Optional
 
 from ..protocols import DispatcherMain
+from ..protocols import PoolEvents as PoolEventsProtocol
 from ..protocols import PoolWorker as PoolWorkerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
@@ -104,6 +105,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         except asyncio.TimeoutError:
             logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
             self.status = 'error'  # can signal for result task to exit, since no longer waiting for it here
+            self.process.message_queue.close()
 
         await self.join()  # If worker fails to exit, this returns control without raising an exception
 
@@ -158,7 +160,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         return None
 
 
-class PoolEvents:
+class PoolEvents(PoolEventsProtocol):
     "Benchmark tests have to re-create this because they use same object in different event loops"
 
     def __init__(self) -> None:
@@ -213,7 +215,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.read_results_task: Optional[asyncio.Task] = None
         self.management_task: Optional[asyncio.Task] = None
         # other internal asyncio objects
-        self.events: PoolEvents = PoolEvents()
+        self.events: PoolEventsProtocol = PoolEvents()
 
         # internal tracking variables
         self.workers = WorkerData()
@@ -461,6 +463,7 @@ class WorkerPool(WorkerPoolProtocol):
                     await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
                 except asyncio.CancelledError:
                     pass  # intended
+            self.management_task = None
 
         await self.timeout_runner.kick()  # for it to process shutdown event being set
         self.queuer.shutdown()
@@ -477,6 +480,9 @@ class WorkerPool(WorkerPoolProtocol):
                 await self.force_shutdown()
             except asyncio.CancelledError:
                 logger.info('The finished task was canceled, but we are shutting down so that is alright')
+            self.read_results_task = None
+
+        self.process_manager.shutdown()
 
         logger.info('Pool is shut down')
 
@@ -596,6 +602,7 @@ class WorkerPool(WorkerPoolProtocol):
                 async with self.workers.management_lock:
                     worker.status = 'exited'
                     worker.exit_msg_event.set()
+                    worker.process.message_queue.close()
 
                 if self.shared.exit_event.is_set():
                     if all(worker.inactive for worker in self.workers):
