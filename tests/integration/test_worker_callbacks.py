@@ -6,6 +6,7 @@ import pytest
 import pytest_asyncio
 
 from dispatcherd.protocols import DispatcherMain
+from dispatcherd.testing.asyncio import adispatcher_service
 
 
 LOG_PATH = 'logs/app.log'
@@ -18,16 +19,16 @@ def callback_config():
 
 
 @pytest_asyncio.fixture
-async def acallback_dispatcher(callback_config, adispatcher_factory) -> AsyncIterator[DispatcherMain]:
+async def acallback_dispatcher(callback_config) -> AsyncIterator[DispatcherMain]:
     if os.path.exists(LOG_PATH):
         os.remove(LOG_PATH)
 
-    async with adispatcher_factory(callback_config) as dispatcher:
+    async with adispatcher_service(callback_config) as dispatcher:
         yield dispatcher
 
 
 @pytest.mark.asyncio
-async def test_worker_callback_usage(acallback_dispatcher, capsys):
+async def test_worker_callback_usage(acallback_dispatcher):
 
     await acallback_dispatcher.process_message({
         'task': 'lambda: "This worked!"'
