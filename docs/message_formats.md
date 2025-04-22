@@ -47,8 +47,12 @@ stats and lifetime are the job of the main process, not the worker.
 
 #### Worker to Main Process
 
-When the worker communicates information back to the main process,
-it must identify itself, and identify the event. For example:
+When the worker communicates information back to the main process for several reasons.
+
+##### Ready-for-work message
+
+After starting up, the worker sends this message to indicate that
+it is ready to receive tasks.
 
 ```json
 {
@@ -57,9 +61,54 @@ it must identify itself, and identify the event. For example:
 }
 ```
 
-This is used for several core functions of dispatcherd.
-These include notifying the parent of:
- - finishing a task, meaning that worker is ready for new task
- - entering main loop, meaning that worker has started up
- - control actions triggered from the task logic
- - shutting down, confirming it is safe to join process
+##### Finished-a-task message
+
+Workers send messages via a shared queue, so one thing that
+must be present is the `worker_id` identifier so that the main
+process knows who its from.
+Other information is given for various stats tracking.
+
+```json
+{
+    "worker": 3,
+    "event": "done",
+    "result": null,
+    "uuid": "9760671a-6261-45aa-881a-f66929ff9725",
+    "time_started": 1744992973.5737305,
+    "time_finish": 1744992980.0253727,
+}
+```
+
+Most tasks are expected to give a `None` value for its return value.
+This library does not support handling of results formally,
+but result may be used for some testing function via logging.
+
+##### Control-action message
+
+Workers can use the IPC mechanism to perform control actions
+if they have set `bind=True`. This allows bypassing the broker
+which has performance and stability benefits.
+
+The message to the parent looks like:
+
+```json
+{
+    "worker": 3,
+    "event": "control",
+    "command": "running",
+    "control_data": {},
+}
+```
+
+##### Shutting down message
+
+This is a fairly static method, but it is very important
+for pool management, since getting this message indicates
+to the parent the process can be `.join()`ed.
+
+```json
+{
+    "worker": 3,
+    "event": "shutdown",
+}
+```
