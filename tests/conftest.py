@@ -64,6 +64,7 @@ def clear_connection():
     Tests will do a lot of unthoughtful forking, and connections can not
     be shared accross processes.
     """
+    yield
     if connection_save._connection:
         connection_save._connection.close()
         connection_save._connection = None
