@@ -57,22 +57,6 @@ async def aconnection_for_test():
             await conn.close()
 
 
-@pytest.fixture(autouse=True)
-def clear_connection():
-    """Always close connections between tests
-
-    Tests will do a lot of unthoughtful forking, and connections can not
-    be shared accross processes.
-    """
-    yield
-    if connection_save._connection:
-        connection_save._connection.close()
-        connection_save._connection = None
-    if connection_save._async_connection:
-        connection_save._async_connection.close()
-        connection_save._async_connection = None
-
-
 @pytest.fixture
 def conn_config():
     return {'conninfo': CONNECTION_STRING}
