@@ -5,7 +5,7 @@ from typing import Any, Callable, Coroutine, Iterator, Optional, cast
 from ..protocols import DelayCapsule as DelayCapsuleProtocol
 from ..protocols import Delayer as DelayerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
-from .next_wakeup_runner import HasWakeup, NextWakeupRunner
+from ..service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 logger = logging.getLogger(__name__)
 

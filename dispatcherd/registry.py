@@ -27,12 +27,15 @@ class InvalidMethod(DispatcherError):
 
 class DispatcherMethod:
 
-    def __init__(self, fn: DispatcherCallable, queue: Optional[Union[Callable, str]] = None, bind: bool = False, **submission_defaults) -> None:
+    def __init__(self, fn: DispatcherCallable, queue: Union[Callable, str, None] = None, bind: bool = False, **submission_defaults) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
         self.submission_defaults = submission_defaults or {}
-        self.queue = queue  # applied by worker, not publisher
+        if queue and callable(queue):
+            self.queue = queue()
+        else:
+            self.queue = queue  # applied by worker, not publisher
         self.bind = bind  # only needed to submit, do not need to pass in message
 
     def serialize_task(self) -> str:
@@ -57,10 +60,17 @@ class DispatcherMethod:
         return defaults
 
     def delay(self, *args, **kwargs) -> Tuple[dict, str]:
-        return self.apply_async(args, kwargs)
+        return self.apply_async(args=args, kwargs=kwargs)
 
     def get_async_body(
-        self, args=None, kwargs=None, uuid=None, bind: bool = False, on_duplicate: Optional[str] = None, timeout: Optional[float] = 0.0, delay: float = 0.0
+        self,
+        args: Optional[tuple] = None,
+        kwargs: Optional[dict] = None,
+        uuid: Optional[str] = None,
+        bind: bool = False,
+        on_duplicate: Optional[str] = None,
+        timeout: Optional[float] = 0.0,
+        delay: float = 0.0,
     ) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
@@ -84,22 +94,41 @@ class DispatcherMethod:
 
         return body
 
-    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, settings: LazySettings = global_settings, **kw) -> Tuple[dict, str]:
-        queue = queue or self.queue
+    def apply_async(
+        self,
+        args: Optional[tuple] = None,
+        kwargs: Optional[dict] = None,
+        queue: Union[str, Callable[..., str], None] = None,
+        uuid: Optional[str] = None,
+        settings: LazySettings = global_settings,
+        bind: bool = False,
+        on_duplicate: Optional[str] = None,
+        timeout: Optional[float] = 0.0,
+        delay: float = 0.0,
+    ) -> Tuple[dict, str]:
+        """Submit a task to be ran by dispatcherd worker(s)
 
-        if callable(queue):
-            queue = queue()
+        This submission does not provide confirmation.
+        If you need confirmation from the service, look into the "run" control command.
+        """
 
-        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, **kw)
+        resolved_queue: str
+        if queue is None:
+            resolved_queue = self.queue
+        elif callable(queue):
+            resolved_queue = queue()
+        else:
+            resolved_queue = queue
+
+        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, on_duplicate=on_duplicate, timeout=timeout, delay=delay)
 
         from dispatcherd.factories import get_publisher_from_settings
 
         broker = get_publisher_from_settings(settings=settings)
 
-        # TODO: exit if a setting is applied to disable publishing
-
-        broker.publish_message(channel=queue, message=json.dumps(obj))
-        return (obj, queue)
+        # The broker itself has a channel default, so we return that if applicable
+        used_queue = broker.publish_message(channel=resolved_queue, message=json.dumps(obj))
+        return (obj, used_queue)
 
 
 class UnregisteredMethod(DispatcherMethod):

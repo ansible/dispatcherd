@@ -304,7 +304,8 @@ class Broker(BrokerProtocol):
 
             cur.execute(self.get_unlisten_query())
 
-    def publish_message(self, channel: Optional[str] = None, message: str = '') -> None:
+    def publish_message(self, channel: Optional[str] = None, message: str = '') -> str:
+        """Synchronous method to submit a message to a pg_notify channel, returns the queue it was sent to"""
         connection = self.get_connection()
         channel = self.get_publish_channel(channel)
 
@@ -312,6 +313,7 @@ class Broker(BrokerProtocol):
             cur.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
         logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
+        return channel
 
     def close(self) -> None:
         if self.owns_sync_connection and self._sync_connection:

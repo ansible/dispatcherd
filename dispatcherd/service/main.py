@@ -6,6 +6,7 @@ from os import getpid
 from typing import Any, Iterable, Optional, Union
 from uuid import uuid4
 
+from ..processors.delayer import Delayer
 from ..producers import BrokeredProducer
 from ..protocols import Delayer as DelayerProtocol
 from ..protocols import DispatcherMain as DispatcherMainProtocol
@@ -15,7 +16,6 @@ from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal, wait_for_any
-from .delayer import Delayer
 
 logger = logging.getLogger(__name__)
 

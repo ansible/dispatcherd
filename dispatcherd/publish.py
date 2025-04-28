@@ -1,6 +1,8 @@
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
+from .config import LazySettings
+from .config import settings as global_settings
 from .registry import DispatcherMethodRegistry
 from .registry import registry as default_registry
 from .utils import DispatcherCallable
@@ -14,12 +16,14 @@ class DispatcherDecorator:
         registry: DispatcherMethodRegistry,
         *,
         bind: bool = False,
+        decorate: bool = True,
         queue: Optional[str] = None,
         on_duplicate: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> None:
         self.registry = registry
         self.bind = bind
+        self.decorate = decorate
         self.queue = queue
         self.on_duplicate = on_duplicate
         self.timeout = timeout
@@ -29,8 +33,9 @@ class DispatcherDecorator:
 
         dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, on_duplicate=self.on_duplicate, timeout=self.timeout)
 
-        setattr(fn, 'apply_async', dmethod.apply_async)
-        setattr(fn, 'delay', dmethod.delay)
+        if self.decorate:
+            setattr(fn, 'apply_async', dmethod.apply_async)
+            setattr(fn, 'delay', dmethod.delay)
 
         return fn
 
@@ -81,3 +86,23 @@ def task(
     # options are documented in dispatcherd.utils.DuplicateBehavior
     """
     return DispatcherDecorator(registry, bind=bind, queue=queue, on_duplicate=on_duplicate, timeout=timeout)
+
+
+def submit_task(
+    fn: DispatcherCallable,
+    /,
+    *,
+    registry: DispatcherMethodRegistry = default_registry,
+    queue: Optional[str] = None,
+    args: Optional[tuple] = None,
+    kwargs: Optional[dict] = None,
+    uuid: Optional[str] = None,
+    bind: bool = False,
+    timeout: Optional[float] = 0.0,
+    on_duplicate: Optional[str] = None,
+    delay: float = 0.0,  # TODO: get from processors
+    settings: LazySettings = global_settings,
+) -> Tuple[dict, str]:
+    dmethod = registry.get_from_callable(fn)
+
+    return dmethod.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout)
