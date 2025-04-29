@@ -19,7 +19,7 @@ def test_method_normal_call(registry, mock_apply_async):
 
     test_method.delay()
 
-    mock_apply_async.assert_called_once_with((), {})
+    mock_apply_async.assert_called_once_with(args=(), kwargs={})
 
 
 def test_method_call_with_args_kwargs(registry, mock_apply_async):
@@ -30,7 +30,7 @@ def test_method_call_with_args_kwargs(registry, mock_apply_async):
 
     test_method.delay(1, 2, 3, foo=6, bar=7)
 
-    mock_apply_async.assert_called_once_with((1, 2, 3), {"foo": 6, "bar": 7})
+    mock_apply_async.assert_called_once_with(args=(1, 2, 3), kwargs={"foo": 6, "bar": 7})
 
 
 def test_method_call_with_options(registry, mock_apply_async):
@@ -51,7 +51,7 @@ def test_using_as_decorator(registry, mock_apply_async):
 
     test_method.delay()
 
-    mock_apply_async.assert_called_once_with((), {})
+    mock_apply_async.assert_called_once_with(args=(), kwargs={})
 
 
 def test_decorator_kwargs(registry):
@@ -60,7 +60,7 @@ def test_decorator_kwargs(registry):
         return
 
     dmethod = registry.get_from_callable(test_method)
-    assert dmethod.submission_defaults['on_duplicate'] == 'run_once'
+    assert len(dmethod.parts) == 1
 
     assert dmethod.get_async_body()['on_duplicate'] == 'run_once'
 
@@ -74,4 +74,4 @@ def test_class_normal_call(registry, mock_apply_async):
 
     TestMethod.delay()
 
-    mock_apply_async.assert_called_once_with((), {})
+    mock_apply_async.assert_called_once_with(args=(), kwargs={})

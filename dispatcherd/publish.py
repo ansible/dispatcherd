@@ -1,5 +1,6 @@
 import logging
-from typing import Iterable, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Iterable, Optional, Tuple
 
 from .config import LazySettings
 from .config import settings as global_settings
@@ -9,6 +10,19 @@ from .registry import registry as default_registry
 from .utils import DispatcherCallable
 
 logger = logging.getLogger('awx.main.dispatch')
+
+
+@dataclass(kw_only=True)
+class CompatParams(ProcessorParams):
+    on_duplicate: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'on_duplicate': self.on_duplicate}
+
+    @classmethod
+    def from_message(cls, message: dict[str, Any]) -> 'CompatParams':
+        "Unused, only exists for adherence to protocol"
+        return cls(on_duplicate=message['on_duplicate'])
 
 
 class DispatcherDecorator:
@@ -21,6 +35,7 @@ class DispatcherDecorator:
         queue: Optional[str] = None,
         timeout: Optional[float] = None,
         parts: Iterable[ProcessorParams] = (),
+        on_duplicate: Optional[str] = None,  # Deprecated
     ) -> None:
         self.registry = registry
         self.bind = bind
@@ -28,11 +43,18 @@ class DispatcherDecorator:
         self.queue = queue
         self.timeout = timeout
         self.parts = parts
+        self.on_duplicate = on_duplicate
 
     def __call__(self, fn: DispatcherCallable, /) -> DispatcherCallable:
         "Concrete task decorator, registers method and glues on some methods from the registry"
 
-        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, timeout=self.timeout, parts=self.parts)
+        parts: Iterable[ProcessorParams]
+        if self.on_duplicate:
+            parts = (CompatParams(on_duplicate=self.on_duplicate),)
+        else:
+            parts = self.parts
+
+        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, timeout=self.timeout, parts=parts)
 
         if self.decorate:
             setattr(fn, 'apply_async', dmethod.apply_async)
@@ -46,6 +68,7 @@ def task(
     bind: bool = False,
     queue: Optional[str] = None,
     timeout: Optional[float] = None,
+    on_duplicate: Optional[str] = None,  # Deprecated
     parts: Iterable[ProcessorParams] = (),
     registry: DispatcherMethodRegistry = default_registry,
 ) -> DispatcherDecorator:
@@ -86,7 +109,7 @@ def task(
     # The on_duplicate kwarg controls behavior when multiple instances of the task running
     # options are documented in dispatcherd.utils.DuplicateBehavior
     """
-    return DispatcherDecorator(registry, bind=bind, queue=queue, timeout=timeout, parts=parts)
+    return DispatcherDecorator(registry, bind=bind, queue=queue, timeout=timeout, parts=parts, on_duplicate=on_duplicate)
 
 
 def submit_task(
