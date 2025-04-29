@@ -28,7 +28,9 @@ class InvalidMethod(DispatcherError):
 
 class DispatcherMethod:
 
-    def __init__(self, fn: DispatcherCallable, queue: Union[Callable, str, None] = None, bind: bool = False, **submission_defaults) -> None:
+    def __init__(
+        self, fn: DispatcherCallable, queue: Union[Callable, str, None] = None, bind: bool = False, parts: Iterable[ProcessorParams] = (), **submission_defaults
+    ) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
@@ -38,6 +40,7 @@ class DispatcherMethod:
         else:
             self.queue = queue  # applied by worker, not publisher
         self.bind = bind  # only needed to submit, do not need to pass in message
+        self.parts = parts
 
     def serialize_task(self) -> str:
         """The reverse of resolve_callable, transform callable into dotted notation"""
@@ -58,6 +61,8 @@ class DispatcherMethod:
                 defaults[k] = v
         defaults['task'] = self.serialize_task()
         defaults['time_pub'] = time.time()
+        for part in self.parts:
+            defaults.update(part.to_dict())
         return defaults
 
     def delay(self, *args, **kwargs) -> Tuple[dict, str]:
