@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class Blocker(BlockerProtocol):
     @dataclass(kw_only=True)
     class Params(ProcessorParams):
-        delay: float = 0.0
+        on_duplicate: str
 
     def __init__(self, queuer: Queuer) -> None:
         self.blocked_messages: list[dict] = []  # TODO: use deque, customizability

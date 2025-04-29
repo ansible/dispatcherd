@@ -2,7 +2,8 @@ from unittest import mock
 
 import pytest
 
-from dispatcherd.publish import task
+from dispatcherd.publish import task, submit_task
+from dispatcherd.processors.blocker import Blocker
 
 
 @pytest.fixture
@@ -75,3 +76,32 @@ def test_class_normal_call(registry, mock_apply_async):
     TestMethod.delay()
 
     mock_apply_async.assert_called_once_with(args=(), kwargs={})
+
+
+def test_submit_task_method(registry, mock_apply_async, test_settings):
+    @task(queue='foobar', registry=registry)
+    def test_method():
+        return
+
+    submit_task(test_method, registry=registry, settings=test_settings)
+
+    mock_apply_async.assert_called_once()
+    args, kwargs = mock_apply_async.call_args
+    assert not args
+    assert len(kwargs) > 0
+    for kwarg, value in kwargs.items():
+        if kwarg == 'settings':
+            assert value is test_settings
+        else:
+            assert not value
+
+
+def test_decorate_with_processor(registry):
+    @task(queue='foobar', registry=registry, parts=(Blocker.Params(on_duplicate='serial'),))
+    def test_method():
+        return
+
+    dmethod = registry.get_from_callable(test_method)
+
+    kwargs = dmethod.get_async_body()
+    assert kwargs['on_duplicate'] == 'serial'
