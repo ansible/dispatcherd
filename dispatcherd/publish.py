@@ -19,20 +19,20 @@ class DispatcherDecorator:
         bind: bool = False,
         decorate: bool = True,
         queue: Optional[str] = None,
-        on_duplicate: Optional[str] = None,
         timeout: Optional[float] = None,
+        parts: Iterable[ProcessorParams] = (),
     ) -> None:
         self.registry = registry
         self.bind = bind
         self.decorate = decorate
         self.queue = queue
-        self.on_duplicate = on_duplicate
         self.timeout = timeout
+        self.parts = parts
 
     def __call__(self, fn: DispatcherCallable, /) -> DispatcherCallable:
         "Concrete task decorator, registers method and glues on some methods from the registry"
 
-        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, on_duplicate=self.on_duplicate, timeout=self.timeout)
+        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, timeout=self.timeout, parts=self.parts)
 
         if self.decorate:
             setattr(fn, 'apply_async', dmethod.apply_async)
@@ -45,8 +45,8 @@ def task(
     *,
     bind: bool = False,
     queue: Optional[str] = None,
-    on_duplicate: Optional[str] = None,
     timeout: Optional[float] = None,
+    parts: Iterable[ProcessorParams] = (),
     registry: DispatcherMethodRegistry = default_registry,
 ) -> DispatcherDecorator:
     """
@@ -86,7 +86,7 @@ def task(
     # The on_duplicate kwarg controls behavior when multiple instances of the task running
     # options are documented in dispatcherd.utils.DuplicateBehavior
     """
-    return DispatcherDecorator(registry, bind=bind, queue=queue, on_duplicate=on_duplicate, timeout=timeout)
+    return DispatcherDecorator(registry, bind=bind, queue=queue, timeout=timeout, parts=parts)
 
 
 def submit_task(
