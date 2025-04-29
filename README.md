@@ -37,11 +37,12 @@ dispatcherd tasks.
 
 The decorator accepts some kwargs (like `queue` below) that will affect task behavior,
 see [docs/task_options.md](docs/task_options.md).
+Using `decorate=False` tells it to not attach the deprecated Celery-like methods.
 
 ```python
 from dispatcherd.publish import task
 
-@task(queue='test_channel')
+@task(queue='test_channel', decorate=False)
 def print_hello():
     print('hello world!!')
 ```
@@ -98,31 +99,19 @@ Configuration tells how to connect to postgres, and what channel(s) to listen to
 
 This assumes you configured python so that `print_hello` is importable
 from the `test_methods` python module.
-This method does not take any args or kwargs, but if it did, you would
-pass those directly as in, `.delay(*args, **kwargs)`.
-
 The following code will submit `print_hello` to run in the background dispatcherd service.
 
 ```python
 from test_methods import print_hello
 
-# After the setup() method has been called
-
-print_hello.delay()
-```
-
-Also valid:
-
-```python
-from test_methods import print_hello
+from dispatcherd.publish import submit_task
 
 # After the setup() method has been called
 
-print_hello.apply_async(args=[], kwargs={})
+submit_task(
+    test_methods.print_hello
+)
 ```
-
-The difference is that `apply_async` takes both args and kwargs as kwargs themselves,
-and allows for additional configuration parameters to come after those.
 
 ### Manual Demos
 
