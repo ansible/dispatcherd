@@ -6,6 +6,9 @@ import pytest
 
 from dispatcherd.config import temporary_settings
 from dispatcherd.service.control_tasks import _stack_from_task
+from dispatcherd.publish import submit_task
+from dispatcherd.processors.blocker import Blocker
+
 from tests.data import methods as test_methods
 
 SLEEP_METHOD = 'lambda: __import__("time").sleep(0.1)'
@@ -44,6 +47,29 @@ async def test_run_decorated_function(apg_dispatcher, test_settings):
         test_methods.RunJob.delay()
     await asyncio.wait_for(clearing_task, timeout=3)
     assert apg_dispatcher.pool.finished_count == 3
+
+    # piggyback to test direct submission method
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    submit_task(test_methods.print_hello, settings=test_settings)
+    await asyncio.wait_for(clearing_task, timeout=3)
+    assert apg_dispatcher.pool.finished_count == 4
+
+    # piggyback to test using options from processors
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    submit_task(test_methods.sleep_function, kwargs={'seconds': 0.2}, settings=test_settings, parts=(Blocker.Params(on_duplicate='serial'),))
+    await wait_to_receive(apg_dispatcher, 5)
+    for worker in apg_dispatcher.pool.workers:
+        if worker.current_task:
+            assert worker.current_task['on_duplicate'] == 'serial'
+            assert worker.current_task['task'] == 'tests.data.methods.sleep_function'
+            break
+    else:
+        raise RuntimeError('Expected to find a task running but did not')
+    await asyncio.wait_for(clearing_task, timeout=3)
+    assert apg_dispatcher.pool.finished_count == 5
+
 
 
 @pytest.mark.asyncio
