@@ -99,8 +99,9 @@ def submit_task(
     uuid: Optional[str] = None,
     bind: bool = False,
     timeout: Optional[float] = 0.0,
-    on_duplicate: Optional[str] = None,
-    delay: float = 0.0,  # TODO: get from processors
+    processors = (),
+    # on_duplicate: Optional[str] = None,
+    # delay: float = 0.0,  # TODO: get from processors
     settings: LazySettings = global_settings,
 ) -> Tuple[dict, str]:
     dmethod = registry.get_from_callable(fn)

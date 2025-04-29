@@ -1,11 +1,13 @@
 import logging
 import time
 from typing import Any, Callable, Coroutine, Iterator, Optional, cast
+from dataclasses import dataclass
 
 from ..protocols import DelayCapsule as DelayCapsuleProtocol
 from ..protocols import Delayer as DelayerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..service.next_wakeup_runner import HasWakeup, NextWakeupRunner
+from ..processors.params import ProcessorParams
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,10 @@ class DelayCapsule(HasWakeup, DelayCapsuleProtocol):
 
 
 class Delayer(NextWakeupRunner, DelayerProtocol):
+    @dataclass(kw_only=True)
+    class Params(ProcessorParams):
+        delay: float = 0.0
+
     def __init__(
         self,
         process_message_now: Callable[[dict[Any, Any]], Coroutine[Any, Any, tuple[str | None, str | None]]],

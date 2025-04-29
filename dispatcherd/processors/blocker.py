@@ -1,14 +1,20 @@
 import logging
 from typing import Iterable, Iterator, Optional
+from dataclasses import dataclass
 
 from ..protocols import Blocker as BlockerProtocol
 from ..utils import DuplicateBehavior
 from .queuer import Queuer
+from ..processors.params import ProcessorParams
 
 logger = logging.getLogger(__name__)
 
 
 class Blocker(BlockerProtocol):
+    @dataclass(kw_only=True)
+    class Params(ProcessorParams):
+        delay: float = 0.0
+
     def __init__(self, queuer: Queuer) -> None:
         self.blocked_messages: list[dict] = []  # TODO: use deque, customizability
         self.queuer = queuer
