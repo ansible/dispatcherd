@@ -1,8 +1,9 @@
 import logging
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 from .config import LazySettings
 from .config import settings as global_settings
+from .protocols import ProcessorParams
 from .registry import DispatcherMethodRegistry
 from .registry import registry as default_registry
 from .utils import DispatcherCallable
@@ -99,11 +100,9 @@ def submit_task(
     uuid: Optional[str] = None,
     bind: bool = False,
     timeout: Optional[float] = 0.0,
-    processors = (),
-    # on_duplicate: Optional[str] = None,
-    # delay: float = 0.0,  # TODO: get from processors
+    parts: Iterable[ProcessorParams] = (),
     settings: LazySettings = global_settings,
 ) -> Tuple[dict, str]:
     dmethod = registry.get_from_callable(fn)
 
-    return dmethod.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout)
+    return dmethod.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout, parts=parts)

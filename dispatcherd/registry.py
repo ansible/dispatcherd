@@ -3,11 +3,12 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Optional, Set, Tuple, Union
+from typing import Callable, Iterable, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 from .config import LazySettings
 from .config import settings as global_settings
+from .protocols import ProcessorParams
 from .utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
 
 logger = logging.getLogger(__name__)
@@ -68,9 +69,8 @@ class DispatcherMethod:
         kwargs: Optional[dict] = None,
         uuid: Optional[str] = None,
         bind: bool = False,
-        on_duplicate: Optional[str] = None,
         timeout: Optional[float] = 0.0,
-        delay: float = 0.0,
+        parts: Iterable[ProcessorParams] = (),
     ) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
@@ -79,18 +79,21 @@ class DispatcherMethod:
         """
         body = self.publication_defaults()
         # These params are forced to be set on every submission, can not be generic to task
-        body.update({'uuid': uuid or str(uuid4()), 'args': args or [], 'kwargs': kwargs or {}})
+        body['uuid'] = uuid or str(uuid4())
 
-        # TODO: callback to add other things, guid in case of AWX
-
-        if bind:  # only needed for testing
+        if args:
+            body['args'] = args
+        if kwargs:
+            body['kwargs'] = kwargs
+        # The bind param in the submission data is only needed for testing
+        # normally this should be applied on the task decorator
+        if bind:
             body['bind'] = bind
-        if on_duplicate:
-            body['on_duplicate'] = on_duplicate
-        if delay:
-            body['delay'] = delay
         if timeout:
             body['timeout'] = timeout
+
+        for part in parts:
+            body.update(part.to_dict())
 
         return body
 
@@ -102,9 +105,8 @@ class DispatcherMethod:
         uuid: Optional[str] = None,
         settings: LazySettings = global_settings,
         bind: bool = False,
-        on_duplicate: Optional[str] = None,
         timeout: Optional[float] = 0.0,
-        delay: float = 0.0,
+        parts: Iterable[ProcessorParams] = (),
     ) -> Tuple[dict, str]:
         """Submit a task to be ran by dispatcherd worker(s)
 
@@ -120,7 +122,7 @@ class DispatcherMethod:
         else:
             resolved_queue = queue
 
-        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, on_duplicate=on_duplicate, timeout=timeout, delay=delay)
+        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, timeout=timeout, parts=parts)
 
         from dispatcherd.factories import get_publisher_from_settings
 

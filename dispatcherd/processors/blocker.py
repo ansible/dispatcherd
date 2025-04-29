@@ -1,11 +1,11 @@
 import logging
-from typing import Iterable, Iterator, Optional
 from dataclasses import dataclass
+from typing import Iterable, Iterator, Optional
 
+from ..processors.params import ProcessorParams
 from ..protocols import Blocker as BlockerProtocol
 from ..utils import DuplicateBehavior
 from .queuer import Queuer
-from ..processors.params import ProcessorParams
 
 logger = logging.getLogger(__name__)
 

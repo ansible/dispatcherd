@@ -1,13 +1,13 @@
 import logging
 import time
-from typing import Any, Callable, Coroutine, Iterator, Optional, cast
 from dataclasses import dataclass
+from typing import Any, Callable, Coroutine, Iterator, Optional, cast
 
+from ..processors.params import ProcessorParams
 from ..protocols import DelayCapsule as DelayCapsuleProtocol
 from ..protocols import Delayer as DelayerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..service.next_wakeup_runner import HasWakeup, NextWakeupRunner
-from ..processors.params import ProcessorParams
 
 logger = logging.getLogger(__name__)
 
