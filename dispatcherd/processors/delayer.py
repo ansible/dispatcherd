@@ -80,7 +80,7 @@ class Delayer(NextWakeupRunner, DelayerProtocol):
         Here, task consumption means that we store it in the local storage to run later at delayed time.
         Otherwise, if this is not marked for delayed we hand the task back as return value.
         """
-        if delay := message.pop('delay', None):
+        if delay := self.Params.from_message(message).delay:
             # NOTE: control messages with reply should never be delayed, document this for users
             await self.create_delayed_task(delay, message)
             return None

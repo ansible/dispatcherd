@@ -129,6 +129,8 @@ class PoolWorker(Protocol):
 
 
 class ProcessorParams(Protocol):
+    """Task-specific parameters, specific to a certain processor"""
+
     def to_dict(self) -> dict[str, Any]: ...
 
     @classmethod
@@ -136,6 +138,12 @@ class ProcessorParams(Protocol):
 
 
 class Processor(Protocol):
+    """The dispatcherd service runs processors at different stages
+
+    in the code path for dispatching a task.
+    These can have Params, giving directions for a particular task.
+    """
+
     Params: ProcessorParams
 
 

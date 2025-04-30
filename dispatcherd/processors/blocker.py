@@ -48,7 +48,7 @@ class Blocker(BlockerProtocol):
         If task if not blocked and is returned, that means you should continue doing what you were going to do.
         """
         uuid = message.get("uuid", "<unknown>")
-        on_duplicate = message.get('on_duplicate', DuplicateBehavior.parallel.value)
+        on_duplicate = self.Params.from_message(message).on_duplicate
 
         if on_duplicate == DuplicateBehavior.serial.value:
             if self.already_running(message):

@@ -113,6 +113,8 @@ submit_task(
 )
 ```
 
+For more options related to publishing tasks see [docs/submit_task.md](docs/submit_task.md).
+
 ### Manual Demos
 
 #### Service in foreground
