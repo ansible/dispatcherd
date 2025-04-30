@@ -36,14 +36,23 @@ class DispatcherMethod:
         processor_options: Iterable[ProcessorParams] = (),
         **submission_defaults,
     ) -> None:
+        """Class that tracks a registered method to be ran by dispatcherd
+
+        Parameters:
+            fn: the python method to register, or class with .run method
+            queue: default queue specific to this task
+                this might be used to broadcast certain tasks to multiple services
+                or send certain tasks to certain groups of workers.
+                This can be over-ridden on task submission.
+                Takes precedence over the broker default queue.
+            bind: method expects a first argument to be the dispatcherd interaction object
+                See DispatcherBoundMethods for what this offers
+        """
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
         self.fn = fn
         self.submission_defaults = submission_defaults or {}
-        if queue and callable(queue):
-            self.queue = queue()
-        else:
-            self.queue = queue  # applied by worker, not publisher
+        self.queue = queue  # If null, method expects queue from broker default or submitter
         self.bind = bind  # only needed to submit, do not need to pass in message
         self.processor_options = processor_options
 
@@ -124,13 +133,11 @@ class DispatcherMethod:
         If you need confirmation from the service, look into the "run" control command.
         """
 
-        resolved_queue: str
-        if queue is None:
-            resolved_queue = self.queue
-        elif callable(queue):
+        resolved_queue: Optional[str]
+        if queue and callable(queue):
             resolved_queue = queue()
         else:
-            resolved_queue = queue
+            resolved_queue = queue  # Can still be None if we rely on the broker default channel
 
         obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, timeout=timeout, processor_options=processor_options)
 
