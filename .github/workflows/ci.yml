@@ -26,7 +26,7 @@ jobs:
       - name: Install dispatcherd
         run: pip install -e .[pg_notify,metrics]
       - run: make postgres
-      - run: pip install pytest pytest-asyncio httpx
+      - run: pip install -r requirements_dev.txt
       - name: Run synchronous tests
         run: pytest tests/ -vv -s
       - name: Run pytest-asyncio tests
