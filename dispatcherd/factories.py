@@ -11,8 +11,9 @@ from .protocols import Broker, Producer
 from .service import process
 from .service.asyncio_tasks import SharedAsyncObjects
 from .service.main import DispatcherMain
-from .service.pool import WorkerPool
+from .service.pool import WorkerPool, WorkerData
 from .worker.task import TaskWorker
+from .processors.queuer import Queuer
 
 """
 Creates objects from settings,
@@ -35,6 +36,18 @@ def pool_from_settings(shared, settings: LazySettings = global_settings) -> Work
     kwargs = settings.service.get('pool_kwargs', {}).copy()
     kwargs['process_manager'] = process_manager_from_settings(settings=settings)
     kwargs['shared'] = shared
+    
+    # Create shared WorkerData
+    worker_data = WorkerData()
+    kwargs['workers'] = worker_data
+    
+    # Create Queuer with shared WorkerData
+    queuer_kwargs = settings.processors.get('queuer_kwargs', {}).copy()
+    queuer_kwargs['workers'] = worker_data
+    queuer_kwargs['worker_selection_strategy'] = queuer_kwargs.get('worker_selection_strategy', 'longest-idle')
+    from .processors.queuer import Queuer
+    kwargs['queuer'] = Queuer(**queuer_kwargs)
+    
     return WorkerPool(**kwargs)
 
 
@@ -129,6 +142,8 @@ SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list, float, bool)
 
 
 def is_valid_annotation(annotation):
+    if get_origin(annotation) is Literal:
+        return True
     if get_origin(annotation):
         for arg in get_args(annotation):
             if not is_valid_annotation(arg):
@@ -152,6 +167,12 @@ def schema_for_cls(cls: Type) -> dict[str, str]:
 def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     ret = deepcopy(settings.serialize())
 
+    # Add processors section
+    ret['processors'] = {
+        'queuer_kwargs': schema_for_cls(Queuer)
+    }
+
+    # Update service section
     ret['service']['pool_kwargs'] = schema_for_cls(WorkerPool)
     ret['service']['main_kwargs'] = schema_for_cls(DispatcherMain)
 

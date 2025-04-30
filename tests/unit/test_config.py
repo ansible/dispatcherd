@@ -14,6 +14,17 @@ def test_settings_reference_unconfigured():
     assert 'Dispatcherd not configured' in str(exc)
 
 
+def test_settings_reference_configured():
+    settings = LazySettings()
+    settings._wrapped = DispatcherSettings({'version': 2})
+    assert settings.brokers == {}
+    assert settings.producers == {}
+    assert settings.service == {'pool_kwargs': {'max_workers': 3}}
+    assert settings.publish == {}
+    assert settings.worker == {}
+    assert settings.processors == {'queuer_kwargs': {}}
+
+
 def test_configured_settings():
     settings = LazySettings()
     settings._wrapped = DispatcherSettings({'version': 2, 'brokers': {'pg_notify': {'config': {}}}})
@@ -49,3 +60,16 @@ def test_schema_is_current():
         schema_contents = sch_f.read()
     schema_data = json.loads(schema_contents)
     assert schema_data == expect_schema
+
+
+def test_processors_config():
+    config = {
+        'version': 2,
+        'processors': {
+            'queuer_kwargs': {
+                'worker_selection_strategy': 'longest-idle'
+            }
+        }
+    }
+    settings = DispatcherSettings(config)
+    assert settings.processors['queuer_kwargs']['worker_selection_strategy'] == 'longest-idle'

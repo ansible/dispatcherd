@@ -1,6 +1,7 @@
 import logging
+import random
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Optional
+from typing import Iterable, Iterator, Optional, Literal
 
 from ..processors.params import ProcessorParams
 from ..protocols import PoolWorker
@@ -14,9 +15,10 @@ class Queuer(QueuerProtocol):
     class Params(ProcessorParams):
         delay: float = 0.0
 
-    def __init__(self, workers: Iterable[PoolWorker]) -> None:
+    def __init__(self, workers: Iterable[PoolWorker], worker_selection_strategy: Literal['linear', 'random', 'longest-idle'] = 'linear') -> None:
         self.queued_messages: list[dict] = []  # TODO: use deque, customizability
         self.workers = workers
+        self.worker_selection_strategy = worker_selection_strategy
 
     def __iter__(self) -> Iterator[dict]:
         return iter(self.queued_messages)
@@ -25,10 +27,17 @@ class Queuer(QueuerProtocol):
         return len(self.queued_messages)
 
     def get_free_worker(self) -> Optional[PoolWorker]:
-        for candidate_worker in self.workers:
-            if (not candidate_worker.current_task) and candidate_worker.is_ready:
-                return candidate_worker
-        return None
+        free_workers = [w for w in self.workers if (not w.current_task) and w.is_ready]
+        if not free_workers:
+            return None
+
+        if self.worker_selection_strategy == 'random':
+            return random.choice(free_workers)
+        elif self.worker_selection_strategy == 'longest-idle':
+            # Sort by last_task_finished_at, with None (never had a task) being considered oldest
+            return min(free_workers, key=lambda w: w.last_task_finished_at if w.last_task_finished_at is not None else float('-inf'))
+        else:  # linear strategy
+            return free_workers[0]
 
     def active_tasks(self) -> Iterator[dict]:
         """Iterable of all tasks currently running, or eligable to be ran right away"""

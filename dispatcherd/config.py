@@ -15,15 +15,26 @@ class DispatcherSettings:
         self.service: dict = config.get('service', {})
         self.publish: dict = config.get('publish', {})
         self.worker: dict = config.get('worker', {})
+        self.processors: dict = config.get('processors', {})
 
         # Automatic defaults
         if 'pool_kwargs' not in self.service:
             self.service['pool_kwargs'] = {}
         if 'max_workers' not in self.service['pool_kwargs']:
             self.service['pool_kwargs']['max_workers'] = 3
+        if 'queuer_kwargs' not in self.processors:
+            self.processors['queuer_kwargs'] = {}
 
     def serialize(self):
-        return dict(version=self.version, brokers=self.brokers, producers=self.producers, service=self.service, publish=self.publish, worker=self.worker)
+        return dict(
+            version=self.version,
+            brokers=self.brokers,
+            producers=self.producers,
+            service=self.service,
+            publish=self.publish,
+            worker=self.worker,
+            processors=self.processors
+        )
 
 
 def settings_from_file(path: str) -> DispatcherSettings:

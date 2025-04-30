@@ -54,5 +54,10 @@
       "idle_timeout": "<class 'int'>"
     },
     "worker_cls": "typing.Any"
+  },
+  "processors": {
+    "queuer_kwargs": {
+      "worker_selection_strategy": "typing.Literal['linear', 'random', 'longest-idle']"
+    }
   }
 }

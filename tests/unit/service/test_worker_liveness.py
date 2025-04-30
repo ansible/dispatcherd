@@ -1,13 +1,16 @@
 import asyncio
+import os
+import signal
 import time
 from unittest import mock
 from types import SimpleNamespace
 
 import pytest
 
-from dispatcherd.service.pool import WorkerPool
+from dispatcherd.service.pool import WorkerPool, WorkerData
 from dispatcherd.service.process import ProcessManager
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
+from dispatcherd.processors.queuer import Queuer
 
 
 @pytest.mark.asyncio
@@ -18,7 +21,16 @@ async def test_detect_unexpectedly_dead_worker(test_settings, caplog):
     """
     # Create a pool with one worker and start it
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=5, shared=SharedAsyncObjects())
+    workers = WorkerData()
+    queuer = Queuer(workers=workers)
+    pool = WorkerPool(
+        process_manager=pm,
+        min_workers=1,
+        max_workers=5,
+        shared=SharedAsyncObjects(),
+        workers=workers,
+        queuer=queuer
+    )
     await pool.start_working(SimpleNamespace())
     await pool.events.workers_ready.wait()
 
@@ -54,8 +66,18 @@ async def test_manage_dead_worker_removal(test_settings):
     Verify that a worker marked as dead is removed from the pool after the removal wait period.
     """
     pm = ProcessManager(settings=test_settings)
+    workers = WorkerData()
+    queuer = Queuer(workers=workers)
     # Set a very short removal wait time for the test.
-    pool = WorkerPool(pm, min_workers=1, max_workers=3, worker_removal_wait=0.1, shared=SharedAsyncObjects())
+    pool = WorkerPool(
+        process_manager=pm,
+        min_workers=1,
+        max_workers=3,
+        worker_removal_wait=0.1,
+        shared=SharedAsyncObjects(),
+        workers=workers,
+        queuer=queuer
+    )
     await pool.up()
     worker = pool.workers.get_by_id(0)
     worker.status = 'error'
@@ -80,7 +102,16 @@ async def test_dead_worker_with_no_task(test_settings):
     without increasing the canceled task count.
     """
     pm = ProcessManager(settings=test_settings)
-    pool = WorkerPool(pm, min_workers=1, max_workers=3, shared=SharedAsyncObjects())
+    workers = WorkerData()
+    queuer = Queuer(workers=workers)
+    pool = WorkerPool(
+        process_manager=pm,
+        min_workers=1,
+        max_workers=3,
+        shared=SharedAsyncObjects(),
+        workers=workers,
+        queuer=queuer
+    )
     await pool.up()
     worker = pool.workers.get_by_id(0)
 

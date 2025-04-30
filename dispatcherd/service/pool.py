@@ -29,6 +29,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.started_at: Optional[float] = None
         self.stopping_at: Optional[float] = None
         self.retired_at: Optional[float] = None
+        self.last_task_finished_at: Optional[float] = None
         self.is_active_cancel: bool = False
 
         # Tracking information for worker
@@ -199,6 +200,8 @@ class WorkerPool(WorkerPoolProtocol):
         self,
         process_manager: ProcessManager,
         shared: SharedAsyncObjectsProtocol,
+        workers: WorkerData,
+        queuer: Queuer,
         min_workers: int = 1,
         max_workers: int = 4,
         scaledown_wait: float = 15.0,
@@ -206,10 +209,13 @@ class WorkerPool(WorkerPoolProtocol):
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
     ) -> None:
+        assert queuer.workers is workers, "Queuer must have the same workers instance as the worker pool"
         self.min_workers = min_workers
         self.max_workers = max_workers
         self.process_manager = process_manager
         self.shared = shared
+        self.workers = workers
+        self.queuer = queuer
 
         # internal asyncio tasks
         self.read_results_task: Optional[asyncio.Task] = None
@@ -218,7 +224,6 @@ class WorkerPool(WorkerPoolProtocol):
         self.events: PoolEventsProtocol = PoolEvents()
 
         # internal tracking variables
-        self.workers = WorkerData()
         self.next_worker_id = 0
         self.finished_count: int = 0
         self.canceled_count: int = 0
@@ -242,7 +247,6 @@ class WorkerPool(WorkerPoolProtocol):
         self.worker_removal_wait = worker_removal_wait  # after worker process exits, seconds to keep its record, for stats
 
         # queuer and blocker objects hold an internal inventory of tasks that can not yet run
-        self.queuer = Queuer(self.workers)
         self.blocker = Blocker(self.queuer)
 
     @property
@@ -554,6 +558,7 @@ class WorkerPool(WorkerPoolProtocol):
             else:
                 self.finished_count += 1
             worker.mark_finished_task()
+            worker.last_task_finished_at = time.monotonic()
 
         if not self.queuer.queued_messages and all(worker.current_task is None for worker in self.workers):
             self.events.work_cleared.set()

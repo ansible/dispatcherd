@@ -13,6 +13,9 @@ service:
 worker:
   worker_kwargs:
     idle_timeout: 3
+processors:
+  queuer_kwargs:
+    worker_selection_strategy: longest-idle  # options: linear, random, longest-idle
 brokers:
   pg_notify:
     config:
