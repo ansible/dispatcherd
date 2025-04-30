@@ -1,6 +1,8 @@
 import logging
+from dataclasses import dataclass
 from typing import Iterable, Iterator, Optional
 
+from ..processors.params import ProcessorParams
 from ..protocols import Blocker as BlockerProtocol
 from ..utils import DuplicateBehavior
 from .queuer import Queuer
@@ -9,6 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class Blocker(BlockerProtocol):
+    @dataclass(kw_only=True)
+    class Params(ProcessorParams):
+        on_duplicate: str = DuplicateBehavior.parallel.value
+
     def __init__(self, queuer: Queuer) -> None:
         self.blocked_messages: list[dict] = []  # TODO: use deque, customizability
         self.queuer = queuer
@@ -42,7 +48,7 @@ class Blocker(BlockerProtocol):
         If task if not blocked and is returned, that means you should continue doing what you were going to do.
         """
         uuid = message.get("uuid", "<unknown>")
-        on_duplicate = message.get('on_duplicate', DuplicateBehavior.parallel.value)
+        on_duplicate = self.Params.from_message(message).on_duplicate
 
         if on_duplicate == DuplicateBehavior.serial.value:
             if self.already_running(message):

@@ -128,7 +128,26 @@ class PoolWorker(Protocol):
     def cancel(self) -> None: ...
 
 
-class Queuer(Protocol):
+class ProcessorParams(Protocol):
+    """Task-specific parameters, specific to a certain processor"""
+
+    def to_dict(self) -> dict[str, Any]: ...
+
+    @classmethod
+    def from_message(cls, message: dict[str, Any]) -> 'ProcessorParams': ...
+
+
+class Processor(Protocol):
+    """The dispatcherd service runs processors at different stages
+
+    in the code path for dispatching a task.
+    These can have Params, giving directions for a particular task.
+    """
+
+    Params: ProcessorParams
+
+
+class Queuer(Processor, Protocol):
     """
     Describes an interface for managing pending tasks.
 
@@ -148,7 +167,7 @@ class DelayCapsule(Protocol):
     has_ran: bool
 
 
-class Delayer(Protocol):
+class Delayer(Processor, Protocol):
     """
     Describes an interface for handling tasks that specifify a delay before running.
 
@@ -165,7 +184,7 @@ class Delayer(Protocol):
     async def shutdown(self) -> None: ...
 
 
-class Blocker(Protocol):
+class Blocker(Processor, Protocol):
     """
     Describes an interface for handling tasks that are temporarily deferred.
 

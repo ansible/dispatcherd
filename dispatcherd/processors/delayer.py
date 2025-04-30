@@ -1,11 +1,13 @@
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, Iterator, Optional, cast
 
+from ..processors.params import ProcessorParams
 from ..protocols import DelayCapsule as DelayCapsuleProtocol
 from ..protocols import Delayer as DelayerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
-from .next_wakeup_runner import HasWakeup, NextWakeupRunner
+from ..service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,10 @@ class DelayCapsule(HasWakeup, DelayCapsuleProtocol):
 
 
 class Delayer(NextWakeupRunner, DelayerProtocol):
+    @dataclass(kw_only=True)
+    class Params(ProcessorParams):
+        delay: float = 0.0
+
     def __init__(
         self,
         process_message_now: Callable[[dict[Any, Any]], Coroutine[Any, Any, tuple[str | None, str | None]]],
@@ -74,7 +80,7 @@ class Delayer(NextWakeupRunner, DelayerProtocol):
         Here, task consumption means that we store it in the local storage to run later at delayed time.
         Otherwise, if this is not marked for delayed we hand the task back as return value.
         """
-        if delay := message.pop('delay', None):
+        if delay := self.Params.from_message(message).delay:
             # NOTE: control messages with reply should never be delayed, document this for users
             await self.create_delayed_task(delay, message)
             return None

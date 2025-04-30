@@ -5,6 +5,8 @@ import signal
 import time
 from typing import Any, Iterator, Literal, Optional
 
+from ..processors.blocker import Blocker
+from ..processors.queuer import Queuer
 from ..protocols import DispatcherMain
 from ..protocols import PoolEvents as PoolEventsProtocol
 from ..protocols import PoolWorker as PoolWorkerProtocol
@@ -12,10 +14,8 @@ from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
 from ..protocols import WorkerPool as WorkerPoolProtocol
 from .asyncio_tasks import ensure_fatal
-from .blocker import Blocker
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
-from .queuer import Queuer
 
 logger = logging.getLogger(__name__)
 
