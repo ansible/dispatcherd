@@ -13,9 +13,9 @@ from tests.data.methods import print_hello
 async def test_block_multiple_tasks(test_settings):
     dmethod = registry.get_from_callable(print_hello)
     task_data = dmethod.get_async_body(
-        processor_options=Blocker.Params(
-            on_duplicate='serial'
-        )
+        processor_options=[
+            Blocker.Params(on_duplicate='serial')
+        ]
     )
     assert task_data['on_duplicate'] == 'serial'
 
