@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass, fields
-from typing import Any, Type, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T", bound="ProcessorParams")
 
@@ -12,7 +12,7 @@ class ProcessorParams:
         return asdict(self)
 
     @classmethod
-    def from_message(cls: Type[T], message: dict[str, Any]) -> T:
+    def from_message(cls: type[T], message: dict[str, Any]) -> T:
         """Used by the dispatcherd service, given a message from the broker, return the params for associated processor"""
         reduced_data = {}
         for field in fields(cls):
