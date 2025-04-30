@@ -39,7 +39,7 @@ from dispatcherd.processors.delayer import Delayer
 
 submit_task(
     test_methods.print_hello,
-    parts=[
+    processor_options=[
         Delayer.Params(delay=3)
     ]
 )

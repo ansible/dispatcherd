@@ -34,7 +34,7 @@ class DispatcherDecorator:
         decorate: bool = True,
         queue: Optional[str] = None,
         timeout: Optional[float] = None,
-        parts: Iterable[ProcessorParams] = (),
+        processor_options: Iterable[ProcessorParams] = (),
         on_duplicate: Optional[str] = None,  # Deprecated
     ) -> None:
         self.registry = registry
@@ -42,19 +42,19 @@ class DispatcherDecorator:
         self.decorate = decorate
         self.queue = queue
         self.timeout = timeout
-        self.parts = parts
+        self.processor_options = processor_options
         self.on_duplicate = on_duplicate
 
     def __call__(self, fn: DispatcherCallable, /) -> DispatcherCallable:
         "Concrete task decorator, registers method and glues on some methods from the registry"
 
-        parts: Iterable[ProcessorParams]
+        processor_options: Iterable[ProcessorParams]
         if self.on_duplicate:
-            parts = (CompatParams(on_duplicate=self.on_duplicate),)
+            processor_options = (CompatParams(on_duplicate=self.on_duplicate),)
         else:
-            parts = self.parts
+            processor_options = self.processor_options
 
-        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, timeout=self.timeout, parts=parts)
+        dmethod = self.registry.register(fn, bind=self.bind, queue=self.queue, timeout=self.timeout, processor_options=processor_options)
 
         if self.decorate:
             setattr(fn, 'apply_async', dmethod.apply_async)
@@ -69,7 +69,7 @@ def task(
     queue: Optional[str] = None,
     timeout: Optional[float] = None,
     on_duplicate: Optional[str] = None,  # Deprecated
-    parts: Iterable[ProcessorParams] = (),
+    processor_options: Iterable[ProcessorParams] = (),
     registry: DispatcherMethodRegistry = default_registry,
 ) -> DispatcherDecorator:
     """
@@ -109,7 +109,7 @@ def task(
     # The on_duplicate kwarg controls behavior when multiple instances of the task running
     # options are documented in dispatcherd.utils.DuplicateBehavior
     """
-    return DispatcherDecorator(registry, bind=bind, queue=queue, timeout=timeout, parts=parts, on_duplicate=on_duplicate)
+    return DispatcherDecorator(registry, bind=bind, queue=queue, timeout=timeout, processor_options=processor_options, on_duplicate=on_duplicate)
 
 
 def submit_task(
@@ -123,9 +123,11 @@ def submit_task(
     uuid: Optional[str] = None,
     bind: bool = False,
     timeout: Optional[float] = 0.0,
-    parts: Iterable[ProcessorParams] = (),
+    processor_options: Iterable[ProcessorParams] = (),
     settings: LazySettings = global_settings,
 ) -> Tuple[dict, str]:
     dmethod = registry.get_from_callable(fn)
 
-    return dmethod.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout, parts=parts)
+    return dmethod.apply_async(
+        args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout, processor_options=processor_options
+    )

@@ -58,7 +58,7 @@ async def test_run_decorated_function(apg_dispatcher, test_settings):
     # piggyback to test using options from processors
     apg_dispatcher.pool.events.work_cleared.clear()
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    submit_task(test_methods.sleep_function, kwargs={'seconds': 0.2}, settings=test_settings, parts=(Blocker.Params(on_duplicate='serial'),))
+    submit_task(test_methods.sleep_function, kwargs={'seconds': 0.2}, settings=test_settings, processor_options=(Blocker.Params(on_duplicate='serial'),))
     await wait_to_receive(apg_dispatcher, 5)
     for worker in apg_dispatcher.pool.workers:
         if worker.current_task:

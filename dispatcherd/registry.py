@@ -29,7 +29,12 @@ class InvalidMethod(DispatcherError):
 class DispatcherMethod:
 
     def __init__(
-        self, fn: DispatcherCallable, queue: Union[Callable, str, None] = None, bind: bool = False, parts: Iterable[ProcessorParams] = (), **submission_defaults
+        self,
+        fn: DispatcherCallable,
+        queue: Union[Callable, str, None] = None,
+        bind: bool = False,
+        processor_options: Iterable[ProcessorParams] = (),
+        **submission_defaults,
     ) -> None:
         if not hasattr(fn, '__qualname__'):
             raise InvalidMethod('Can only register methods and classes')
@@ -40,7 +45,7 @@ class DispatcherMethod:
         else:
             self.queue = queue  # applied by worker, not publisher
         self.bind = bind  # only needed to submit, do not need to pass in message
-        self.parts = parts
+        self.processor_options = processor_options
 
     def serialize_task(self) -> str:
         """The reverse of resolve_callable, transform callable into dotted notation"""
@@ -61,7 +66,7 @@ class DispatcherMethod:
                 defaults[k] = v
         defaults['task'] = self.serialize_task()
         defaults['time_pub'] = time.time()
-        for part in self.parts:
+        for part in self.processor_options:
             defaults.update(part.to_dict())
         return defaults
 
@@ -75,7 +80,7 @@ class DispatcherMethod:
         uuid: Optional[str] = None,
         bind: bool = False,
         timeout: Optional[float] = 0.0,
-        parts: Iterable[ProcessorParams] = (),
+        processor_options: Iterable[ProcessorParams] = (),
     ) -> dict:
         """
         Get the python dict to become JSON data in the pg_notify message
@@ -97,7 +102,7 @@ class DispatcherMethod:
         if timeout:
             body['timeout'] = timeout
 
-        for part in parts:
+        for part in processor_options:
             body.update(part.to_dict())
 
         return body
@@ -111,7 +116,7 @@ class DispatcherMethod:
         settings: LazySettings = global_settings,
         bind: bool = False,
         timeout: Optional[float] = 0.0,
-        parts: Iterable[ProcessorParams] = (),
+        processor_options: Iterable[ProcessorParams] = (),
     ) -> Tuple[dict, str]:
         """Submit a task to be ran by dispatcherd worker(s)
 
@@ -127,7 +132,7 @@ class DispatcherMethod:
         else:
             resolved_queue = queue
 
-        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, timeout=timeout, parts=parts)
+        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, timeout=timeout, processor_options=processor_options)
 
         from dispatcherd.factories import get_publisher_from_settings
 

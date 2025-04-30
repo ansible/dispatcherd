@@ -61,7 +61,7 @@ def test_decorator_kwargs(registry):
         return
 
     dmethod = registry.get_from_callable(test_method)
-    assert len(dmethod.parts) == 1
+    assert len(dmethod.processor_options) == 1
 
     assert dmethod.get_async_body()['on_duplicate'] == 'run_once'
 
@@ -97,7 +97,7 @@ def test_submit_task_method(registry, mock_apply_async, test_settings):
 
 
 def test_decorate_with_processor(registry):
-    @task(queue='foobar', registry=registry, parts=(Blocker.Params(on_duplicate='serial'),))
+    @task(queue='foobar', registry=registry, processor_options=(Blocker.Params(on_duplicate='serial'),))
     def test_method():
         return
 
