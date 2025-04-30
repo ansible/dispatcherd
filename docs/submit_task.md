@@ -28,6 +28,7 @@ Some non-testing options are direct kwargs to `submit_task` which are:
  - kwargs: keyword arguments to the task
  - uuid: uuid4 string to identify the task
  - timeout: maximum time task is allowed to run
+ - processor_options: options specific to a certain part of the dispatcherd code path
 
 ```python
 from test_methods import print_hello
@@ -44,6 +45,15 @@ submit_task(
     ]
 )
 ```
+
+The `processor_options` can provide a list of objects which are created
+by `.Params` from a given processor class.
+The processor classes are also used by the background dispatcherd service
+when dispatching the task.
+These are parameters passed to that specific class,
+for the processing of that particular task.
+The `Delayer`, for example, may delay starting task for the specified
+number of seconds.
 
 ### Getting Confirmation
 

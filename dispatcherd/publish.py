@@ -116,16 +116,43 @@ def submit_task(
     fn: DispatcherCallable,
     /,
     *,
-    registry: DispatcherMethodRegistry = default_registry,
-    queue: Optional[str] = None,
     args: Optional[tuple] = None,
     kwargs: Optional[dict] = None,
     uuid: Optional[str] = None,
-    bind: bool = False,
+    queue: Optional[str] = None,
     timeout: Optional[float] = 0.0,
     processor_options: Iterable[ProcessorParams] = (),
+    # Testing-oriented parameters
+    bind: bool = False,
+    registry: DispatcherMethodRegistry = default_registry,
     settings: LazySettings = global_settings,
 ) -> Tuple[dict, str]:
+    """Submit a task for background execution via dispatcherd service(s)
+
+    Example:
+        from dispatcherd.processors.blocker import Blocker
+        from tests.data.methods import hello_world
+
+        submit_task(
+            test_methods.sleep_function,
+            processor_options=(Blocker.Params(on_duplicate='serial'),)
+        )
+
+    Parameters:
+        fn: The function to run, must be registered with via @task() decorator
+        args: Positional arguments to pass to the function when it runs
+        kwargs: Keyword arguments to pass to the function when it runs
+        uuid: Task UUID for tracking, if None, one will be automatically generated
+        queue: The name of the target queue to submit the task to, if None, uses the default queue
+        timeout: Optional timeout for background task, default is no timeout
+        processor_options:
+
+    Testing Focused Parameter, these would be uncommon to use, but are available for completeness and testing:
+        bind: If True, the first argument passed to the function will be for dispatcherd interaction
+                Normally it would make more sense to set via @task(bind=True) decorator
+        registry: The task registry, normally you should use the default global registry
+        settings: dispatcherd settings, normally you should use the default global settings
+    """
     dmethod = registry.get_from_callable(fn)
 
     return dmethod.apply_async(
