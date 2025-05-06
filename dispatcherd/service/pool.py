@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import multiprocessing
 import os
 import signal
 import time
@@ -200,13 +201,17 @@ class WorkerPool(WorkerPoolProtocol):
         process_manager: ProcessManager,
         shared: SharedAsyncObjectsProtocol,
         min_workers: int = 1,
-        max_workers: int = 4,
+        max_workers: Optional[int] = None,
         scaledown_wait: float = 15.0,
         scaledown_interval: float = 15.0,
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
     ) -> None:
         self.min_workers = min_workers
+
+        if max_workers is None:
+            max_workers = multiprocessing.cpu_count()
+
         self.max_workers = max_workers
         self.process_manager = process_manager
         self.shared = shared
