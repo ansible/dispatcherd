@@ -7,6 +7,7 @@ import psycopg
 from tests.conftest import CONNECTION_STRING
 
 from dispatcherd.producers.brokered import BrokeredProducer
+from dispatcherd.brokers.pg_notify import connection_save
 
 
 # Change the application_name so that when we run this test we will not kill the connection for the test itself
@@ -15,6 +16,15 @@ THIS_TEST_STR = CONNECTION_STRING.replace('application_name=apg_test_server', 'a
 
 @pytest.mark.asyncio
 async def test_sever_pg_connection(apg_dispatcher, pg_message):
+
+    # If any past test connections are open they will mess with asserts here
+    if connection_save._connection:
+        connection_save._connection.close()
+        connection_save._connection = None
+    if connection_save._async_connection:
+        connection_save._async_connection.close()
+        connection_save._async_connection = None
+
     brokered_producers = [producer for producer in apg_dispatcher.producers if isinstance(producer, BrokeredProducer)]
     assert len(brokered_producers) == 1
     brokered_producers[0].events.ready_event.clear()

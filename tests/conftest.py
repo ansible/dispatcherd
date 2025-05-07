@@ -6,7 +6,7 @@ from typing import Callable, AsyncIterator, Union
 import pytest
 import pytest_asyncio
 
-from dispatcherd.brokers.pg_notify import Broker, acreate_connection, connection_save
+from dispatcherd.brokers.pg_notify import Broker, acreate_connection
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.control import Control
 from dispatcherd.factories import get_control_from_settings
@@ -55,22 +55,6 @@ async def aconnection_for_test():
     finally:
         if conn:
             await conn.close()
-
-
-@pytest.fixture(autouse=True)
-def clear_connection():
-    """Always close connections between tests
-
-    Tests will do a lot of unthoughtful forking, and connections can not
-    be shared accross processes.
-    """
-    yield
-    if connection_save._connection:
-        connection_save._connection.close()
-        connection_save._connection = None
-    if connection_save._async_connection:
-        connection_save._async_connection.close()
-        connection_save._async_connection = None
 
 
 @pytest.fixture
