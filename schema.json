@@ -26,7 +26,7 @@
   "service": {
     "pool_kwargs": {
       "min_workers": "<class 'int'>",
-      "max_workers": "<class 'int'>",
+      "max_workers": "typing.Optional[int]",
       "scaledown_wait": "<class 'float'>",
       "scaledown_interval": "<class 'float'>",
       "worker_stop_wait": "<class 'float'>",

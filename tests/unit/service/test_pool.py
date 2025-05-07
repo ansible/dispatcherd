@@ -10,7 +10,7 @@ from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.main import DispatcherMain
 from dispatcherd.service.process import ProcessManager
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
-
+import multiprocessing
 
 @pytest.fixture
 def pool_factory(test_settings) -> Callable[..., WorkerPool]:
@@ -140,3 +140,11 @@ async def test_shutdown_is_idepotent(pool_factory):
 
     await pool.shutdown()
     await pool.shutdown()  # weird to shutdown twice, but... just return
+
+
+@pytest.mark.asyncio
+async def test_auto_count_max_workers(pool_factory):
+    "Test max_workers is set to the number of CPUs if not set"
+    cpu_count = multiprocessing.cpu_count()
+    pool = pool_factory(max_workers=None)
+    assert pool.max_workers == cpu_count
