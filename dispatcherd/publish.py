@@ -5,7 +5,7 @@ from typing import Any, Iterable, Optional, Tuple
 from .config import LazySettings
 from .config import settings as global_settings
 from .protocols import ProcessorParams
-from .registry import DispatcherMethodRegistry
+from .registry import DispatcherMethod, DispatcherMethodRegistry, NotRegistered
 from .registry import registry as default_registry
 from .utils import DispatcherCallable
 
@@ -153,7 +153,11 @@ def submit_task(
         registry: The task registry, normally you should use the default global registry
         settings: dispatcherd settings, normally you should use the default global settings
     """
-    dmethod = registry.get_from_callable(fn)
+    try:
+        dmethod = registry.get_from_callable(fn)
+    except NotRegistered:
+        # For unregistered methods, create a local object
+        dmethod = DispatcherMethod(fn)
 
     return dmethod.apply_async(
         args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout, processor_options=processor_options

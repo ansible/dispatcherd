@@ -203,7 +203,7 @@ class DispatcherMethodRegistry:
         for dmethod in self.registry:
             if dmethod.fn is fn:
                 return dmethod
-        raise RuntimeError(f'Callable {fn} does not appear to be registered')
+        raise NotRegistered(f'Callable {fn} does not appear to be registered')
 
 
 registry = DispatcherMethodRegistry()

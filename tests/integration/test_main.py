@@ -26,7 +26,7 @@ async def wait_to_receive(dispatcher, ct, timeout=5.0, interval=0.05):
 
 
 @pytest.mark.asyncio
-async def test_run_decorated_function(apg_dispatcher, test_settings):
+async def test_submitting_task(apg_dispatcher, test_settings):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     test_methods.print_hello.apply_async(settings=test_settings)
     await asyncio.wait_for(clearing_task, timeout=3)
@@ -70,6 +70,12 @@ async def test_run_decorated_function(apg_dispatcher, test_settings):
     await asyncio.wait_for(clearing_task, timeout=3)
     assert apg_dispatcher.pool.finished_count == 5
 
+    # test using submit_task to submit an unregistered task
+    apg_dispatcher.pool.events.work_cleared.clear()
+    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    submit_task(test_methods.unregistered_task, settings=test_settings)
+    await asyncio.wait_for(clearing_task, timeout=3)
+    assert apg_dispatcher.pool.finished_count == 6
 
 
 @pytest.mark.asyncio
