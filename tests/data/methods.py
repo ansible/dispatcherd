@@ -8,6 +8,10 @@ def sleep_function(seconds=1):
     time.sleep(seconds)
 
 
+def unregistered_task():
+    print('hello from unregistered task')
+
+
 @task(queue='test_channel', on_duplicate='discard')
 def sleep_discard(seconds=1):
     time.sleep(seconds)
