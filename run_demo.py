@@ -7,6 +7,8 @@ import sys
 from dispatcherd.config import setup
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
 from dispatcherd.utils import MODULE_METHOD_DELIMITER
+from dispatcherd.processors.delayer import Delayer
+from dispatcherd.processors.blocker import Blocker
 from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout
 
 # Setup the global config from the settings file shared with the service
@@ -96,7 +98,7 @@ def main():
     # NOTE: this task will error unless you run the dispatcherd itself with it in the PYTHONPATH, which is intended
     sleep_function.apply_async(
         args=[3],  # sleep 3 seconds
-        delay=10,
+        processor_options=[Delayer.Params(delay=10)]
     )
 
     print('')
@@ -130,7 +132,7 @@ def main():
         sleep_discard.apply_async(args=[2])
     print('demo of discarding tasks with apply_async contract')
     for i in range(10):
-        sleep_function.apply_async(args=[3], on_duplicate='discard')
+        sleep_function.apply_async(args=[3], processor_options=[Blocker.Params(on_duplicate='discard')])
     print('demo of submitting waiting tasks')
     for i in range(10):
         broker.publish_message(message=json.dumps({'task': 'lambda: __import__("time").sleep(10)', 'on_duplicate': 'serial', 'uuid': f'wait-{i}'}))
