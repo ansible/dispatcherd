@@ -9,6 +9,9 @@ from ..protocols import Queuer as QueuerProtocol
 logger = logging.getLogger(__name__)
 
 
+QUEUE_LVL_MAP = {0: logging.DEBUG, 1: logging.INFO}
+
+
 class Queuer(QueuerProtocol):
     @dataclass(kw_only=True)
     class Params(ProcessorParams):
@@ -52,7 +55,9 @@ class Queuer(QueuerProtocol):
             logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
             return worker
         else:
-            logger.warning(f'Queueing task (uuid={uuid}), due to lack of capacity, queued_ct={len(self.queued_messages)}')
+            queue_ct = len(self.queued_messages)
+            log_msg = f'Queueing task (uuid={uuid}), due to lack of capacity, queued_ct={queue_ct}'
+            logging.log(QUEUE_LVL_MAP.get(queue_ct, logging.WARNING), log_msg)
             self.queued_messages.append(message)
             return None
 
