@@ -68,6 +68,7 @@ def task(
     bind: bool = False,
     queue: Optional[str] = None,
     timeout: Optional[float] = None,
+    decorate: bool = True,
     on_duplicate: Optional[str] = None,  # Deprecated
     processor_options: Iterable[ProcessorParams] = (),
     registry: DispatcherMethodRegistry = default_registry,
@@ -109,7 +110,9 @@ def task(
     # The on_duplicate kwarg controls behavior when multiple instances of the task running
     # options are documented in dispatcherd.utils.DuplicateBehavior
     """
-    return DispatcherDecorator(registry, bind=bind, queue=queue, timeout=timeout, processor_options=processor_options, on_duplicate=on_duplicate)
+    return DispatcherDecorator(
+        registry, bind=bind, queue=queue, timeout=timeout, processor_options=processor_options, on_duplicate=on_duplicate, decorate=decorate
+    )
 
 
 def submit_task(
