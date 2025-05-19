@@ -18,8 +18,7 @@ keywords = [
     "pg_notify",
     "python",
 ]
-license = "Apache-2.0"
-license-files = ["LICENSE"]
+license = {text = "Apache-2.0"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
