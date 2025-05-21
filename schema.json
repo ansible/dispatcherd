@@ -13,7 +13,10 @@
     "socket": {
       "socket_path": "<class 'str'>"
     },
-    "noop": {}
+    "noop": {},
+    "error_only": {
+      "error_message": "<class 'str'>"
+    }
   },
   "producers": {
     "ScheduledProducer": {
