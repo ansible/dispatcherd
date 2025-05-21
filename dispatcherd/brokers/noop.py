@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
@@ -23,11 +24,13 @@ class Broker(BrokerProtocol):
     async def aprocess_notify(
         self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
     ) -> AsyncGenerator[tuple[Union[int, str], str], None]:
-        """No-op implementation that yields nothing."""
+        """No-op implementation that yields once after the forever loop."""
         if connected_callback:
             await connected_callback()
+        # Never yield, allowing the no-op broker to coexist with other brokers
         while True:
-            yield ('', '')
+            await asyncio.sleep(0.1)  # Prevent busy-waiting
+        yield ('', '')  # Yield once to satisfy the AsyncGenerator return type
 
     async def apublish_message(self, channel: Optional[str] = None, origin: Union[int, str, None] = None, message: str = '') -> None:
         """No-op implementation that does nothing."""
@@ -56,4 +59,4 @@ class Broker(BrokerProtocol):
 
     def verify_self_check(self, message: dict[str, Any]) -> None:
         """No-op implementation that does nothing."""
-        pass 
+        pass
