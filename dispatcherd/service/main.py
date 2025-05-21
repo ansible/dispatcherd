@@ -46,6 +46,11 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             self.node_id = str(uuid4())
 
+        # Address confusion about main task responsibility,
+        # if other code calls .shutdown() then we do not want to, avoid contention issues
+        self.has_shutdown = False
+        self.shutdown_lock = asyncio.Lock()
+
         self.metrics = metrics
 
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
@@ -62,13 +67,46 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def wait_for_producers_ready(self) -> None:
         "Returns when all the producers have hit their ready event"
-        for producer in self.producers:
-            existing_tasks = list(producer.all_tasks())
-            wait_task = asyncio.create_task(producer.events.ready_event.wait(), name=f'tmp_{producer}_wait_task')
-            existing_tasks.append(wait_task)
-            await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
-            if not wait_task.done():
-                producer.events.ready_event.set()  # exits wait_task, producer had error
+        tmp_tasks: list[asyncio.Task[Any]] = []
+        try:
+            for producer in self.producers:
+                if self.shared.exit_event.is_set():
+                    logger.debug('Exit event set before all producers became ready; stopping wait early')
+                    return
+
+                existing_tasks = list(producer.all_tasks())
+                wait_task = asyncio.create_task(producer.events.ready_event.wait(), name=f'tmp_{producer}_wait_task')
+                tmp_tasks.append(wait_task)
+                existing_tasks.append(wait_task)
+
+                exit_wait_task: asyncio.Task[Any] | None = None
+                if not self.shared.exit_event.is_set():
+                    exit_wait_task = asyncio.create_task(self.shared.exit_event.wait(), name=f'{producer}_exit_event_wait_for_ready')
+                    tmp_tasks.append(exit_wait_task)
+                    existing_tasks.append(exit_wait_task)
+
+                done, _ = await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
+
+                if exit_wait_task and exit_wait_task in done:
+                    logger.debug('Exit event triggered while waiting for %s to become ready', producer)
+                    return
+
+                if wait_task in done:
+                    await wait_task
+                else:
+                    producer.events.ready_event.set()  # exits wait_task, producer had error
+        finally:
+            cleanup_tasks = tuple(tmp_tasks)
+            for task in cleanup_tasks:
+                if not task.done():
+                    task.cancel()
+            if cleanup_tasks:
+                gather_future = asyncio.gather(*cleanup_tasks, return_exceptions=True)
+                try:
+                    await asyncio.shield(gather_future)
+                except asyncio.CancelledError:
+                    await gather_future
+                    raise
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_running_loop()
@@ -76,25 +114,27 @@ class DispatcherMain(DispatcherMainProtocol):
             loop.add_signal_handler(sig, self.receive_signal)
 
     async def shutdown(self) -> None:
-        self.shared.exit_event.set()  # may already be set
-        logger.debug("Shutting down, starting with producers.")
-        for producer in self.producers:
+        async with self.shutdown_lock:
+            self.has_shutdown = True
+            self.shared.exit_event.set()  # may already be set
+            logger.debug("Shutting down, starting with producers.")
+            for producer in self.producers:
+                try:
+                    await producer.shutdown()
+                except Exception:
+                    logger.exception('Producer task had error')
+
+            # Handle delayed tasks and inform user
+            await self.delayer.shutdown()
+
+            logger.debug('Gracefully shutting down worker pool')
             try:
-                await producer.shutdown()
+                await self.pool.shutdown()
             except Exception:
-                logger.exception('Producer task had error')
+                logger.exception('Pool manager encountered error')
 
-        # Handle delayed tasks and inform user
-        await self.delayer.shutdown()
-
-        logger.debug('Gracefully shutting down worker pool')
-        try:
-            await self.pool.shutdown()
-        except Exception:
-            logger.exception('Pool manager encountered error')
-
-        logger.debug('Setting event to exit main loop')
-        self.shared.exit_event.set()
+            logger.debug('Setting event to exit main loop')
+            self.shared.exit_event.set()
 
     async def connected_callback(self, producer: Producer) -> None:
         return
@@ -253,6 +293,8 @@ class DispatcherMain(DispatcherMainProtocol):
             metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
             ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
 
+        self.has_shutdown = False
+
         try:
             await self.start_working()
 
@@ -267,7 +309,8 @@ class DispatcherMain(DispatcherMainProtocol):
                     await self.recycle_broker_producers()  # Otherwise, one or some of the producers broke
 
         finally:
-            await self.shutdown()
+            if not self.has_shutdown:
+                await self.shutdown()
 
             if metrics_task:
                 metrics_task.cancel()

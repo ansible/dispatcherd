@@ -89,11 +89,14 @@ async def test_submit_with_global_settings(apg_dispatcher, test_settings):
 @pytest.mark.asyncio
 async def test_multiple_channels(apg_dispatcher, pg_message):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    await asyncio.gather(
-        pg_message(SLEEP_METHOD, channel='test_channel'),
-        pg_message(SLEEP_METHOD, channel='test_channel2'),
-        pg_message(SLEEP_METHOD, channel='test_channel3'),
-        pg_message(SLEEP_METHOD, channel='test_channel4'),  # not listening to this
+    await asyncio.wait_for(
+        asyncio.gather(
+            pg_message(SLEEP_METHOD, channel='test_channel'),
+            pg_message(SLEEP_METHOD, channel='test_channel2'),
+            pg_message(SLEEP_METHOD, channel='test_channel3'),
+            pg_message(SLEEP_METHOD, channel='test_channel4'),  # not listening to this
+        ),
+        timeout=5,
     )
     await asyncio.wait_for(clearing_task, timeout=3)
 
