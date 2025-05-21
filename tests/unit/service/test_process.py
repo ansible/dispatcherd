@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import queue
 
 import pytest
 
@@ -71,3 +72,10 @@ def test_pid_is_correct(manager_cls, test_settings):
 
     msg = process_manager.finished_queue.get()
     assert int(msg) == process.pid
+
+
+@pytest.mark.asyncio
+async def test_process_manager_read_finished_timeout_returns_control(test_settings):
+    process_manager = ProcessManager(settings=test_settings)
+    with pytest.raises(queue.Empty):
+        await process_manager.read_finished(timeout=0.01)

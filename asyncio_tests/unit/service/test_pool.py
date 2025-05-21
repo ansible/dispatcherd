@@ -1,3 +1,4 @@
+import asyncio
 import multiprocessing
 import time
 from typing import Callable
@@ -11,6 +12,28 @@ from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
 
 
+class _InstrumentedQueueWrapper:
+    """Wrap a real multiprocessing.Queue so we know when get() started."""
+
+    def __init__(self, queue, loop: asyncio.AbstractEventLoop):
+        self._queue = queue
+        self._loop = loop
+        self._reader_waiting = asyncio.Event()
+
+    def get(self, *args, **kwargs):
+        self._loop.call_soon_threadsafe(self._reader_waiting.set)
+        return self._queue.get(*args, **kwargs)
+
+    def close(self) -> None:
+        return self._queue.close()
+
+    def put(self, *args, **kwargs):
+        return self._queue.put(*args, **kwargs)
+
+    async def wait_for_reader(self) -> None:
+        await self._reader_waiting.wait()
+
+
 @pytest.fixture
 def pool_factory(test_settings) -> Callable[..., WorkerPool]:
     def _factory(**kwargs_overrides) -> WorkerPool:
@@ -21,6 +44,41 @@ def pool_factory(test_settings) -> Callable[..., WorkerPool]:
         return pool
 
     return _factory
+
+
+@pytest.fixture
+def process_manager(test_settings):
+    """This does trivial creation of the process manager.
+    Because it creates multiprocessing Queue objects, we would like to assure shutdown on test teardown.
+    """
+    pm = None
+    try:
+        pm = ProcessManager(settings=test_settings)
+        yield pm
+    finally:
+        if pm:
+            pm.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_read_results_forever_exits_after_real_queue_closed(test_settings, process_manager):
+    """Integration-style regression test that closes the real multiprocessing.Queue."""
+    loop = asyncio.get_running_loop()
+    shared = SharedAsyncObjects()
+
+    instrumented_queue = _InstrumentedQueueWrapper(process_manager.finished_queue, loop)
+    process_manager._finished_queue = instrumented_queue
+    pool = WorkerPool(process_manager=process_manager, shared=shared, min_workers=0, max_workers=0)
+    dispatcher = mock.Mock(spec=DispatcherMain)
+
+    read_task = asyncio.create_task(pool.read_results_forever(dispatcher))
+
+    await instrumented_queue.wait_for_reader()
+    instrumented_queue.close()
+
+    with pytest.raises(ValueError) as exc_info:
+        await asyncio.wait_for(read_task, timeout=1)
+    assert 'is closed' in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio
@@ -113,10 +171,9 @@ async def test_scale_down_condition(pool_factory):
 
 
 @pytest.mark.asyncio
-async def test_scale_up_worker_should_not_be_immediately_eligible_for_scaledown(test_settings):
+async def test_scale_up_worker_should_not_be_immediately_eligible_for_scaledown(process_manager):
     """Scaling up due to demand should block a scale-down until the new worker actually does work."""
     shared = SharedAsyncObjects()
-    process_manager = ProcessManager(settings=test_settings)
     pool = WorkerPool(process_manager=process_manager, shared=shared, min_workers=1, max_workers=5, scaledown_wait=60.0)
     DispatcherMain(producers=(), pool=pool, shared=shared)  # ensure dispatcher objects can be built without mocks
 

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import multiprocessing
 import os
+import queue
 import signal
 import time
 from collections import OrderedDict
@@ -69,7 +70,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     @property
     def inactive(self) -> bool:
         """No further shutdown or callback messages are expected from this worker"""
-        return bool(self.status in ('exited', 'error', 'initialized'))
+        return bool(self.status in ('exited', 'error', 'initialized', 'retired'))
 
     async def start_task(self, message: dict) -> None:
         self.current_task = message  # NOTE: this marks this worker as busy
@@ -99,13 +100,32 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         if self.status not in ('stopping', 'exited'):
             await self.signal_stop()
 
-        try:
-            if self.status != 'exited':
-                await asyncio.wait_for(self.exit_msg_event.wait(), timeout=3)
-            self.exit_msg_event.clear()
-        except asyncio.TimeoutError:
-            logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
-            self.status = 'error'  # can signal for result task to exit, since no longer waiting for it here
+        # Poll for process status with shorter intervals
+        poll_interval = 0.2  # 200ms intervals
+        total_timeout = 3.0  # 3 second total timeout
+        start_time = time.monotonic()
+
+        while time.monotonic() - start_time < total_timeout:
+            if not self.process.is_alive():
+                # Process already exited, likely due to process group SIGTERM
+                if self.exit_msg_event.is_set():
+                    logger.debug(f'Worker {self.worker_id} pid={self.process.pid} exited after signaling shutdown, skipping error transition')
+                else:
+                    logger.info(f'Worker {self.worker_id} pid={self.process.pid} already exited, likely due to process group signal')
+                    self.status = 'error'  # Set status to 'error' instead of 'exited'
+                    self.exit_msg_event.set()  # Set event to prevent other code from waiting
+                break
+
+            try:
+                # Try to wait for exit message with a short timeout
+                await asyncio.wait_for(self.exit_msg_event.wait(), timeout=poll_interval)
+                break  # Exit message received
+            except asyncio.TimeoutError:
+                continue  # Keep polling
+
+        else:  # Loop completed without break
+            logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in {total_timeout} seconds')
+            self.status = 'error'
             self.process.message_queue.close()
 
         await self.join()  # If worker fails to exit, this returns control without raising an exception
@@ -117,7 +137,9 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
                 self.process.kill()
             else:
                 logger.debug(f'Worker {self.worker_id} pid={self.process.pid} exited code={self.process.exitcode()}')
-                self.status = 'retired'
+                # Only set to 'retired' if exit code is 0 (clean exit), otherwise keep as 'error'
+                if self.status != 'error' and self.process.exitcode() == 0:
+                    self.status = 'retired'
                 self.retired_at = time.monotonic()
                 return
 
@@ -130,9 +152,14 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.is_active_cancel = True  # signal for result callback
 
         # If the process has never been started or is already gone, its pid may be None
-        if self.process.pid is None:
+        pid = self.process.pid
+        if pid is None or not self.process.is_alive():
+            logger.debug(f'Worker {self.worker_id} cancel skipped; process already exited')
             return  # it's effectively already canceled/not running
-        os.kill(self.process.pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
+        try:
+            os.kill(pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
+        except ProcessLookupError:
+            logger.debug(f'Worker {self.worker_id} cancel skipped; pid {pid} missing')
 
     def get_status_data(self) -> dict[str, Any]:
         return {
@@ -213,6 +240,7 @@ class WorkerPool(WorkerPoolProtocol):
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
         worker_max_lifetime_seconds: float | None = 4 * 60 * 60,
+        results_read_timeout: float = 0.5,
     ) -> None:
         self.min_workers = min_workers
 
@@ -254,6 +282,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.worker_stop_wait = worker_stop_wait  # seconds to wait for a worker to exit on its own before SIGTERM, SIGKILL
         self.worker_removal_wait = worker_removal_wait  # after worker process exits, seconds to keep its record, for stats
         self.worker_max_lifetime_seconds = worker_max_lifetime_seconds
+        self.results_read_timeout = results_read_timeout  # seconds to wait for finished_queue
 
         # queuer and blocker objects hold an internal inventory of tasks that can not yet run
         self.queuer = Queuer(self.workers)
@@ -506,59 +535,77 @@ class WorkerPool(WorkerPoolProtocol):
         stop_tasks = [worker.stop() for worker in workers_to_stop]
         await asyncio.gather(*stop_tasks)
 
-        # Tripple-check that all workers are stopped in practice
+        # Triple-check that all workers are stopped in practice
         for worker in self.workers:
             if worker.process.is_alive():
                 logger.warning(f'worker_id={worker.worker_id} was found alive unexpectedly')
                 await worker.stop()
 
-    async def force_shutdown(self) -> None:
+    async def _shutdown_management_task(self) -> None:
+        self.events.management_event.set()
+        if not self.management_task:
+            return
+        try:
+            await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
+        except asyncio.TimeoutError:
+            logger.error('Worker management task failed to shut down on its own, canceling')
+            self.management_task.cancel()
+            try:
+                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
+            except asyncio.CancelledError:
+                pass
+        except asyncio.CancelledError:
+            pass
+        self.management_task = None
+
+    async def _shutdown_work_queues(self) -> None:
+        await self.timeout_runner.kick()
+        self.queuer.shutdown()
+        self.blocker.shutdown()
+
+    async def _stop_and_cleanup_workers(self) -> None:
+        await self.stop_workers()
         for worker in self.workers:
-            if worker.process.pid and worker.process.is_alive():
+            if worker.counts_for_capacity and worker.process.pid and worker.process.is_alive():
                 logger.warning(f'Force killing worker {worker.worker_id} pid={worker.process.pid}')
                 worker.process.kill()
 
-        if self.read_results_task:
+    async def _shutdown_results_task(self) -> None:
+        if not self.read_results_task:
+            return
+        try:
+            self.process_manager.finished_queue.put('stop', timeout=self.shutdown_timeout / 2.0)
+        except Exception:
+            logger.exception('Failed to send stop sentinel to finished queue during force shutdown')
+
+        logger.info('Waiting for the finished watcher to return')
+        try:
+            # Task should exit either due to workers returning or receiving stop sentinel
+            await asyncio.wait_for(self.read_results_task, timeout=self.shutdown_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f'The finished task failed to cancel in {self.shutdown_timeout} seconds, will force.')
             self.read_results_task.cancel()
             logger.info('Finished watcher had to be canceled, awaiting it a second time')
             try:
                 await self.read_results_task
             except asyncio.CancelledError:
                 pass
+        except asyncio.CancelledError:
+            logger.info('The finished task was canceled, but we are shutting down so that is alright')
+        self.read_results_task = None
 
     async def shutdown(self) -> None:
-        # Shutting down the management task first reduces the number of tasks that might modify self.workers
-        self.events.management_event.set()
-        if self.management_task:
-            try:
-                await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)  # in happy path this should exit very fast
-            except asyncio.TimeoutError:
-                logger.error('Worker management task failed to shut down on its own, canceling')
-                self.management_task.cancel()  # could be non-atomic, we do not really want to do this
-                try:
-                    await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
-                except asyncio.CancelledError:
-                    pass  # intended
-            self.management_task = None
-
-        await self.timeout_runner.kick()  # for it to process shutdown event being set
-        self.queuer.shutdown()
-        self.blocker.shutdown()
-        await self.stop_workers()
-        self.process_manager.finished_queue.put('stop')
-
-        if self.read_results_task:
-            logger.info('Waiting for the finished watcher to return')
-            try:
-                await asyncio.wait_for(self.read_results_task, timeout=self.shutdown_timeout)
-            except asyncio.TimeoutError:
-                logger.warning(f'The finished task failed to cancel in {self.shutdown_timeout} seconds, will force.')
-                await self.force_shutdown()
-            except asyncio.CancelledError:
-                logger.info('The finished task was canceled, but we are shutting down so that is alright')
-            self.read_results_task = None
-
+        print('_shutdown_management_task')
+        await self._shutdown_management_task()
+        print('_shutdown_work_queues')
+        await self._shutdown_work_queues()
+        print('_stop_and_cleanup_workers')
+        await self._stop_and_cleanup_workers()
+        print('_shutdown_results_task')
+        await self._shutdown_results_task()
+        print('process_manager.shutdown')
         self.process_manager.shutdown()
+        print('end of pool shutdown')
 
         logger.info('Pool is shut down')
 
@@ -625,12 +672,18 @@ class WorkerPool(WorkerPoolProtocol):
         running_ct = self.get_running_count()
         self.last_used_by_ct[running_ct] = time.monotonic()  # scale down may be allowed, clock starting now
 
+        is_stopping = message.get('is_stopping', False)
+
         # Mark the worker as no longer busy
         async with self.workers.management_lock:
             if worker.is_active_cancel and result == '<cancel>':
                 self.canceled_count += 1
             else:
                 self.finished_count += 1
+            if is_stopping:
+                worker.status = 'stopping'
+                if not worker.stopping_at:
+                    worker.stopping_at = time.monotonic()
             worker.mark_finished_task()
             self.workers.move_to_end(worker.worker_id)
 
@@ -656,8 +709,13 @@ class WorkerPool(WorkerPoolProtocol):
     async def read_results_forever(self, dispatcher: DispatcherMain) -> None:
         """Perpetual task that continuously waits for task completions."""
         while True:
-            # Wait for a result from the finished queue
-            message = await self.process_manager.read_finished()
+            try:
+                message = await self.process_manager.read_finished(timeout=self.results_read_timeout)
+            except queue.Empty:
+                if self.shared.exit_event.is_set():
+                    logger.warning('Finished queue read timed out during shutdown, exiting results task')
+                    return
+                continue
 
             if message == 'stop':
                 if self.shared.exit_event.is_set():

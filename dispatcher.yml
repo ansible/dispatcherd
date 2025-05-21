@@ -6,6 +6,7 @@ service:
     min_workers: 2  # subprocesses
     max_workers: 12
     scaledown_wait: 15  # seconds
+    results_read_timeout: 0.5  # seconds to wait on finished queue
   main_kwargs:
     node_id: demo-server-a
     chunk_message_timeout_seconds: 5
