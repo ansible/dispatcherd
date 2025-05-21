@@ -12,7 +12,8 @@
     },
     "socket": {
       "socket_path": "<class 'str'>"
-    }
+    },
+    "noop": {}
   },
   "producers": {
     "ScheduledProducer": {

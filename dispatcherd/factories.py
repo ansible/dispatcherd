@@ -168,7 +168,11 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     ret['worker']['worker_cls'] = str(Any)
     ret['worker']['worker_kwargs'] = schema_for_cls(TaskWorker)
 
-    for broker_name, broker_kwargs in settings.brokers.items():
+    # Copy brokers and always add noop
+    all_brokers = dict(settings.brokers)
+    if 'noop' not in all_brokers:
+        all_brokers['noop'] = {}
+    for broker_name, broker_kwargs in all_brokers.items():
         broker = get_broker(broker_name, broker_kwargs)
         ret['brokers'][broker_name] = schema_for_cls(type(broker))
 
