@@ -32,7 +32,8 @@ async def ametrics_dispatcher(metrics_config) -> AsyncIterator[DispatcherMain]:
 
 async def aget_metrics():
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"http://localhost:{TEST_METRICS_PORT}")
+        # Ensure the path is /metrics, as CustomHttpServer serves metrics on this specific path
+        response = await client.get(f"http://localhost:{TEST_METRICS_PORT}/metrics")
         return response
 
 
@@ -47,7 +48,13 @@ async def test_get_metrics(ametrics_dispatcher):
     get_task = asyncio.create_task(aget_metrics())
     resp = await get_task
     assert resp.status_code == 200
+    # Verify the Content-Type header for Prometheus metrics
+    expected_content_type = "text/plain; version=0.0.4; charset=utf-8"
+    assert resp.headers.get("content-type") == expected_content_type
     assert "dispatcher_messages_received_total" in resp.text
+    # Check for another metric to be more thorough, e.g., worker_count
+    assert "dispatcher_worker_count" in resp.text
+
 
     # Normally handled by fixture, we made a main loop task, so take care of our own task
     await ametrics_dispatcher.shutdown()

@@ -64,7 +64,7 @@ line_length = 160
 
 [project.optional-dependencies]
 pg_notify = ["psycopg[binary]>=3.2.4"]
-metrics = ["uvicorn[standard]", "prometheus-client"]
+metrics = ["prometheus-client"]
 
 [tool.pytest.ini_options]
 log_cli_level = "DEBUG"
