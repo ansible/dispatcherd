@@ -20,7 +20,7 @@ def metrics_config():
     return {
         "version": 2,
         "brokers": {},
-        "service": {"main_kwargs": {"node_id": "metrics-test-server"}, "metrics_kwargs": {"log_level": "debug", "port": TEST_METRICS_PORT}},
+        "service": {"main_kwargs": {"node_id": "metrics-test-server"}, "metrics_kwargs": {"port": TEST_METRICS_PORT}},
     }
 
 
@@ -43,6 +43,8 @@ async def test_get_metrics(ametrics_dispatcher):
 
     # Metrics server task starts from the main method
     main_task = asyncio.create_task(ametrics_dispatcher.main_as_task())
+
+    await asyncio.sleep(2)
 
     # Actual test and assertion
     get_task = asyncio.create_task(aget_metrics())

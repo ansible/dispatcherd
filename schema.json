@@ -37,7 +37,6 @@
     },
     "metrics_kwargs": {
       "port": "<class 'int'>",
-      "log_level": "<class 'str'>",
       "host": "<class 'str'>"
     },
     "process_manager_kwargs": {

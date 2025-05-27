@@ -76,10 +76,10 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     pool = pool_from_settings(settings=settings, shared=shared)
     extra_kwargs = settings.service.get('main_kwargs', {})
 
-    metrics_kwargs = settings.service.get('metrics_kwargs')
-    if metrics_kwargs:
+    if settings.service.get('metrics_kwargs') is not None:
         from .service.metrics import DispatcherMetricsServer
 
+        metrics_kwargs = settings.service.get('metrics_kwargs')
         extra_kwargs['metrics'] = DispatcherMetricsServer(**metrics_kwargs)
 
     return DispatcherMain(producers=producers, pool=pool, shared=shared, **extra_kwargs)
