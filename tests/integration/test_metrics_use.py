@@ -44,7 +44,7 @@ async def test_get_metrics(ametrics_dispatcher):
     # Metrics server task starts from the main method
     main_task = asyncio.create_task(ametrics_dispatcher.main_as_task())
 
-    await asyncio.sleep(2)
+    await ametrics_dispatcher.metrics.ready_event.wait()
 
     # Actual test and assertion
     get_task = asyncio.create_task(aget_metrics())

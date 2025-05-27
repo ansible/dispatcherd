@@ -114,7 +114,7 @@ class CustomHttpServer:
         writer.close()
         await writer.wait_closed()
 
-    async def start(self, host: str, port: int) -> None:
+    async def start(self, host: str, port: int, ready_event: asyncio.Event) -> None:
         # The registry is now passed in __init__
         try:
             self.server = await asyncio.start_server(self.handle_request, host, port)
@@ -127,6 +127,7 @@ class CustomHttpServer:
         logger.info(f'Serving dispatcherd metrics on {addr}')
 
         async with self.server:
+            ready_event.set()
             await self.server.serve_forever()
 
     async def stop(self) -> None:
@@ -140,6 +141,7 @@ class DispatcherMetricsServer:
     def __init__(self, port: int = 8070, host: str = "localhost") -> None:
         self.port = port
         self.host = host
+        self.ready_event = asyncio.Event()
 
     async def start_server(self, dispatcher: DispatcherMain) -> None:
         """Run Prometheus metrics forever."""
@@ -157,7 +159,7 @@ class DispatcherMetricsServer:
         # Start the CustomHttpServer
         # The start method in CustomHttpServer is an async method that starts the server.
         try:
-            await http_server.start(host=self.host, port=self.port)
+            await http_server.start(host=self.host, port=self.port, ready_event=self.ready_event)
             logger.error('Metrics HTTP server exited unexpectedly')
         except Exception as e:
             logger.error(f"CustomHttpServer failed to start or encountered an error: {e}")
