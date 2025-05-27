@@ -1,15 +1,14 @@
-import logging
-from typing import Any, Generator
 import asyncio
+import logging
+from typing import Any, Generator, Optional
 
 # Metrics library
-from prometheus_client import CollectorRegistry
+from prometheus_client import CollectorRegistry, generate_latest
 
 # For production of the metrics
 from prometheus_client.core import CounterMetricFamily
 from prometheus_client.metrics_core import Metric
 from prometheus_client.registry import Collector
-from prometheus_client import generate_latest, CollectorRegistry
 
 from ..protocols import DispatcherMain
 
@@ -49,10 +48,10 @@ class CustomCollector(Collector):
 
 class CustomHttpServer:
     def __init__(self, registry: CollectorRegistry):
-        self.server = None
         self.registry = registry
+        self.server: Optional[asyncio.Server] = None
 
-    async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         addr = writer.get_extra_info('peername')
         logger.info(f"Received connection from {addr}")
 
@@ -102,21 +101,20 @@ class CustomHttpServer:
             status_line = "HTTP/1.1 404 Not Found"
             content_type = "text/plain; charset=utf-8"
 
-        response_headers = f"{status_line}\r\n" \
-                           f"Content-Type: {content_type}\r\n" \
-                           f"Content-Length: {len(body.encode('utf-8'))}\r\n" \
-                           "Connection: close\r\n\r\n"
-        
+        response_headers = (
+            f"{status_line}\r\n" f"Content-Type: {content_type}\r\n" f"Content-Length: {len(body.encode('utf-8'))}\r\n" "Connection: close\r\n\r\n"
+        )
+
         response = response_headers + body
 
         writer.write(response.encode('utf-8'))
         await writer.drain()
-        
+
         logger.info(f"Sent {status_line} response to {addr}")
         writer.close()
         await writer.wait_closed()
 
-    async def start(self, host: str, port: int):
+    async def start(self, host: str, port: int) -> None:
         # The registry is now passed in __init__
         try:
             self.server = await asyncio.start_server(self.handle_request, host, port)
@@ -131,7 +129,7 @@ class CustomHttpServer:
         async with self.server:
             await self.server.serve_forever()
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self.server:
             self.server.close()
             await self.server.wait_closed()
@@ -168,4 +166,4 @@ class DispatcherMetricsServer:
             # Ensure graceful shutdown if start() completes or raises an exception
             # that's not KeyboardInterrupt (which is handled in CustomHttpServer's main example)
             logger.info("Attempting to stop CustomHttpServer...")
-            await http_server.stop() # Assuming stop is robust enough to be called even if start failed partially
+            await http_server.stop()  # Assuming stop is robust enough to be called even if start failed partially
