@@ -47,11 +47,17 @@ class CustomCollector(Collector):
 
 
 class CustomHttpServer:
+    """Called from DispatcherMetricsServer, but with the registry initialized"""
     def __init__(self, registry: CollectorRegistry):
         self.registry = registry
         self.server: Optional[asyncio.Server] = None
 
     async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """
+        Callback passed to asyncio.start_server, called each time a request comes in
+
+        This materializes the metrics and sends it as the response
+        """
         addr = writer.get_extra_info('peername')
         logger.info(f"Received connection from {addr}")
 
@@ -63,13 +69,13 @@ class CustomHttpServer:
             return
 
         request_line_str = request_line.decode('utf-8').strip()
-        logger.info(f"Request: {request_line_str}")
+        logger.info(f"Received metrics request: {request_line_str}")
 
         # Parse the request line (simplified parsing)
         try:
             method, _, _ = request_line_str.split()
         except ValueError:
-            logger.warning(f"Could not parse request line: {request_line_str}")
+            logger.warning(f"Could not parse metrics request line: {request_line_str}")
             # Respond with 400 Bad Request for malformed request line
             response_headers = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             writer.write(response_headers.encode('utf-8'))
@@ -90,8 +96,9 @@ class CustomHttpServer:
                 body = metrics_data.decode('utf-8')
                 status_line = "HTTP/1.1 200 OK"
                 content_type = "text/plain; version=0.0.4; charset=utf-8"
-            except Exception as e:
-                logger.error(f"Error generating metrics: {e}")
+            except Exception:
+                # Raising any exceptions would pose problems for the overall task system, so logged
+                logger.exception(f"Error generating metrics")
                 body = "Error generating metrics"
                 status_line = "HTTP/1.1 500 Internal Server Error"
                 content_type = "text/plain; charset=utf-8"
@@ -115,7 +122,7 @@ class CustomHttpServer:
         await writer.wait_closed()
 
     async def start(self, host: str, port: int, ready_event: asyncio.Event) -> None:
-        # The registry is now passed in __init__
+        """Runs the server forever."""
         try:
             self.server = await asyncio.start_server(self.handle_request, host, port)
         except Exception as e:
@@ -126,6 +133,7 @@ class CustomHttpServer:
         addr = self.server.sockets[0].getsockname()
         logger.info(f'Serving dispatcherd metrics on {addr}')
 
+        # The ready event is useful for testing and any code-level integrations
         async with self.server:
             ready_event.set()
             await self.server.serve_forever()
@@ -134,7 +142,7 @@ class CustomHttpServer:
         if self.server:
             self.server.close()
             await self.server.wait_closed()
-            logger.info("Dispatcherd metrics server stopped.")
+            logger.debug("Dispatcherd metrics server stopped.")
 
 
 class DispatcherMetricsServer:
@@ -144,14 +152,11 @@ class DispatcherMetricsServer:
         self.ready_event = asyncio.Event()
 
     async def start_server(self, dispatcher: DispatcherMain) -> None:
-        """Run Prometheus metrics forever."""
+        """Run Prometheus metrics server forever."""
         registry = CollectorRegistry(auto_describe=True)
         registry.register(CustomCollector(dispatcher))
 
         # Instantiate CustomHttpServer with the registry
-        # CustomHttpServer's logging is configured internally, so self.log_level is not directly passed here.
-        # If CustomHttpServer were to be configured with a log level, its __init__ or start method would need to accept it.
-        # For now, we rely on CustomHttpServer's own logging setup.
         http_server = CustomHttpServer(registry=registry)
 
         logger.info(f'Starting dispatcherd prometheus server on {self.host}:{self.port} using CustomHttpServer.')
