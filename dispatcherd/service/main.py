@@ -49,11 +49,11 @@ class DispatcherMain(DispatcherMainProtocol):
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
+        logger.warning(f'Received exit signal args={args} kwargs={kwargs}')
         self.shared.exit_event.set()
 
     def get_status_data(self) -> dict[str, Any]:
-        return {"received_count": self.received_count, "control_count": self.control_count, "pid": getpid()}
+        return {'received_count': self.received_count, 'control_count': self.control_count, 'pid': getpid()}
 
     async def wait_for_producers_ready(self) -> None:
         "Returns when all the producers have hit their ready event"
@@ -72,7 +72,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def shutdown(self) -> None:
         self.shared.exit_event.set()  # may already be set
-        logger.debug("Shutting down, starting with producers.")
+        logger.debug('Shutting down, starting with producers.')
         for producer in self.producers:
             try:
                 await producer.shutdown()
@@ -156,10 +156,10 @@ class DispatcherMain(DispatcherMainProtocol):
         # Give Nones for no reply, or the reply
         if reply_to:
             reply_msg = json.dumps(return_data)
-            logger.info(f"Control action {action} returned message len={len(reply_msg)}, sending back reply")
+            logger.info(f'Control action {action} returned message len={len(reply_msg)}, sending back reply')
             return (reply_to, reply_msg)
         else:
-            logger.info(f"Control action {action} returned {type(return_data)}, done")
+            logger.info(f'Control action {action} returned {type(return_data)}, done')
             return (None, None)
 
     async def process_message_now(self, message: dict, producer: Optional[Producer] = None) -> tuple[Optional[str], Optional[str]]:

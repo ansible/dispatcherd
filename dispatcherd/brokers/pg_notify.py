@@ -77,7 +77,7 @@ class Broker(BrokerProtocol):
                 raise RuntimeError('max_self_check_message_age_seconds must be smaller than max_connection_idle_seconds')
 
         # Used to identify the broker in self check messages
-        self.broker_id = f"broker_{str(uuid.uuid4()).replace('-', '_')}"
+        self.broker_id = f'broker_{str(uuid.uuid4()).replace("-", "_")}'
 
         self.max_connection_idle_seconds = max_connection_idle_seconds
         self.max_self_check_message_age_seconds = max_self_check_message_age_seconds
@@ -117,7 +117,7 @@ class Broker(BrokerProtocol):
 
     @classmethod
     def generate_self_check_channel_name(cls) -> str:
-        return f"self_check_{str(uuid.uuid4()).replace('-', '_')}"
+        return f'self_check_{str(uuid.uuid4()).replace("-", "_")}'
 
     def get_publish_channel(self, channel: Optional[str] = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
@@ -138,7 +138,7 @@ class Broker(BrokerProtocol):
 
     async def aget_connection(self) -> psycopg.AsyncConnection:
         # Check if the cached async connection is either None or closed.
-        if not self._async_connection or getattr(self._async_connection, "closed", 0) != 0:
+        if not self._async_connection or getattr(self._async_connection, 'closed', 0) != 0:
             if self._async_connection_factory:
                 factory = resolve_callable(self._async_connection_factory)
                 if not factory:
@@ -159,11 +159,11 @@ class Broker(BrokerProtocol):
         This uses the psycopg utilities which ensure correct escaping so SQL injection is not possible.
         Return value is a valid argument for cursor.execute()
         """
-        return psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel))
+        return psycopg.sql.SQL('LISTEN {};').format(psycopg.sql.Identifier(channel))
 
     def get_unlisten_query(self) -> psycopg.sql.SQL:
         """Stops listening on all channels for current session, see pg_notify docs"""
-        return psycopg.sql.SQL("UNLISTEN *;")
+        return psycopg.sql.SQL('UNLISTEN *;')
 
     async def initiate_self_check(self) -> None:
         if self.self_check_status == BrokerSelfCheckStatus.IN_PROGRESS:
@@ -266,7 +266,7 @@ class Broker(BrokerProtocol):
 
     def get_connection(self) -> psycopg.Connection:
         # Check if the cached connection is either None or closed.
-        if not self._sync_connection or getattr(self._sync_connection, "closed", 0) != 0:
+        if not self._sync_connection or getattr(self._sync_connection, 'closed', 0) != 0:
             if self._sync_connection_factory:
                 factory = resolve_callable(self._sync_connection_factory)
                 if not factory:

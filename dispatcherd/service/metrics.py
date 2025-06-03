@@ -50,7 +50,7 @@ class CustomCollector(Collector):
 
 
 class DispatcherMetricsServer:
-    def __init__(self, port: int = 8070, log_level: str = 'info', host: str = "localhost") -> None:
+    def __init__(self, port: int = 8070, log_level: str = 'info', host: str = 'localhost') -> None:
         self.port = port
         self.log_level = log_level
         self.host = host
@@ -66,7 +66,7 @@ class DispatcherMetricsServer:
         # loop should default to asyncio anyway with uvicorn
         # lifespan events are apart of ASGI 3.0 protocol, but prometheus client does not implement them
         #   so it makes sense for that to be unconditionally off
-        config = Config(app=app, host=self.host, port=self.port, log_level=self.log_level, loop="asyncio", lifespan="off")
+        config = Config(app=app, host=self.host, port=self.port, log_level=self.log_level, loop='asyncio', lifespan='off')
         server = Server(config)
 
         # Host and port are printed in Uvicorn logging

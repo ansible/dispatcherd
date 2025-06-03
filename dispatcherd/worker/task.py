@@ -177,7 +177,7 @@ class TaskWorker(TaskWorkerProtocol):
             try:
                 if getattr(exc, 'is_awx_task_error', False):
                     # Error caused by user / tracked in job output
-                    logger.warning("{}".format(exc))
+                    logger.warning('{}'.format(exc))
                 else:
                     task = message['task']
                     args = message.get('args', [])
@@ -215,18 +215,18 @@ class TaskWorker(TaskWorkerProtocol):
             logger.info(f'Discarding task (uuid={self.get_uuid(message)}) result of non-serializable type {type(raw_result)}')
 
         return {
-            "worker": self.worker_id,
-            "event": "done",
-            "result": result,
-            "uuid": self.get_uuid(message),
-            "time_started": time_started,
-            "time_finish": time.time(),
+            'worker': self.worker_id,
+            'event': 'done',
+            'result': result,
+            'uuid': self.get_uuid(message),
+            'time_started': time_started,
+            'time_finish': time.time(),
         }
 
     def get_ready_message(self) -> dict[str, Union[str, int]]:
         """Message for traffic control, saying am entering the main work loop"""
-        return {"worker": self.worker_id, "event": "ready"}
+        return {'worker': self.worker_id, 'event': 'ready'}
 
     def get_shutdown_message(self) -> dict[str, Union[str, int]]:
         """Message for traffic control, do not deliver any more mail to this address"""
-        return {"worker": self.worker_id, "event": "shutdown"}
+        return {'worker': self.worker_id, 'event': 'shutdown'}

@@ -74,7 +74,7 @@ class NextWakeupRunner:
                     try:
                         await self.process_object_callback(obj)
                     except Exception as e:
-                        logger.error(f"Error processing wakeup for object {obj}: {e}", exc_info=True)
+                        logger.error(f'Error processing wakeup for object {obj}: {e}', exc_info=True)
                         raise
                     # refresh wakeup, which should be nullified or pushed back by process_object
                     obj_wakeup = obj.next_wakeup()

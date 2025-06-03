@@ -116,12 +116,12 @@ def dispatcher_service(config, main_events=(), pool_events=()):
         comms.q_in.put('stop')
         process.join(timeout=1)
         if process.is_alive():
-            print(f"Process {process.pid} did not exit after stop message, sending SIGTERM")
+            print(f'Process {process.pid} did not exit after stop message, sending SIGTERM')
             process.terminate()  # SIGTERM
             process.join(timeout=1)
 
             if process.is_alive():
-                print(f"Process {process.pid} still alive after SIGTERM, sending SIGKILL")
+                print(f'Process {process.pid} still alive after SIGTERM, sending SIGKILL')
                 process.kill()
                 process.join(timeout=1)
 

@@ -17,7 +17,7 @@ DEFAULT_CONFIG_FILE = 'dispatcher.yml'
 
 
 def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CLI entrypoint for dispatcherd, mainly intended for testing.")
+    parser = argparse.ArgumentParser(description='CLI entrypoint for dispatcherd, mainly intended for testing.')
     parser.add_argument(
         '--log-level',
         type=str,
@@ -38,7 +38,7 @@ def setup_from_parser(parser) -> argparse.Namespace:
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level), stream=sys.stdout)
 
-    logger.debug(f"Configured standard out logging at {args.log_level} level")
+    logger.debug(f'Configured standard out logging at {args.log_level} level')
 
     if os.getenv('DISPATCHERD_CONFIG_FILE') and args.config == os.path.abspath(DEFAULT_CONFIG_FILE):
         logger.info(f'Using config from environment variable DISPATCHERD_CONFIG_FILE={os.getenv("DISPATCHERD_CONFIG_FILE")}')
