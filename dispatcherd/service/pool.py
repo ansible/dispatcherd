@@ -5,6 +5,7 @@ import os
 import signal
 import time
 from typing import Any, Iterator, Literal, Optional
+from collections import OrderedDict
 
 from ..processors.blocker import Blocker
 from ..processors.queuer import Queuer
@@ -173,7 +174,7 @@ class PoolEvents(PoolEventsProtocol):
 
 class WorkerData(WorkerDataProtocol):
     def __init__(self) -> None:
-        self.workers: dict[int, PoolWorker] = {}
+        self.workers: OrderedDict[int, PoolWorker] = OrderedDict()
         self.management_lock = asyncio.Lock()
 
     def __iter__(self) -> Iterator[PoolWorker]:
@@ -193,6 +194,9 @@ class WorkerData(WorkerDataProtocol):
 
     def remove_by_id(self, worker_id: int) -> None:
         del self.workers[worker_id]
+
+    def move_to_end(self, worker_id: int) -> None:
+        self.workers.move_to_end(worker_id)
 
 
 class WorkerPool(WorkerPoolProtocol):
@@ -559,6 +563,7 @@ class WorkerPool(WorkerPoolProtocol):
             else:
                 self.finished_count += 1
             worker.mark_finished_task()
+            self.workers.move_to_end(worker.worker_id)
 
         if not self.queuer.queued_messages and all(worker.current_task is None for worker in self.workers):
             self.events.work_cleared.set()
