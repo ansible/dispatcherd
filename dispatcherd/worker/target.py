@@ -38,11 +38,11 @@ def work_loop_internal(worker: TaskWorker) -> None:
             worker.on_idle()
             continue  # a race condition that mostly can be ignored
         except Exception as exc:
-            logger.exception(f"Exception on worker {worker.worker_id}, type {type(exc)}, exiting")
+            logger.exception(f'Exception on worker {worker.worker_id}, type {type(exc)}, exiting')
             break
 
-        if message == "stop":
-            logger.warning(f"Worker {worker.worker_id} exiting main loop due to stop message.")
+        if message == 'stop':
+            logger.warning(f'Worker {worker.worker_id} exiting main loop due to stop message.')
             break
 
         worker.pre_task(message)

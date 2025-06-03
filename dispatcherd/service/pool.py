@@ -82,7 +82,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
 
     async def signal_stop(self) -> None:
         "Tell the worker to stop and return"
-        self.process.message_queue.put("stop")
+        self.process.message_queue.put('stop')
         logger.debug(f'Sent stop message to worker_id={self.worker_id}')
         if self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
@@ -260,9 +260,9 @@ class WorkerPool(WorkerPoolProtocol):
 
     def get_status_data(self) -> dict[str, Any]:
         return {
-            "next_worker_id": self.next_worker_id,
-            "finished_count": self.finished_count,
-            "canceled_count": self.canceled_count,
+            'next_worker_id': self.next_worker_id,
+            'finished_count': self.finished_count,
+            'canceled_count': self.canceled_count,
         }
 
     async def start_working(self, dispatcher: DispatcherMain) -> None:
@@ -389,7 +389,6 @@ class WorkerPool(WorkerPoolProtocol):
     async def manage_workers(self) -> None:
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shared.exit_event.is_set():
-
             await self.scale_workers()
 
             await self.manage_new_workers()
@@ -410,7 +409,7 @@ class WorkerPool(WorkerPoolProtocol):
             return  # mostly for typing, should not be the case
         # typing note - if we are here current_task is not None
         uuid: str = worker.current_task.get('uuid', '<unknown>')
-        timeout = worker.current_task.get("timeout")
+        timeout = worker.current_task.get('timeout')
         logger.info(
             f'Worker {worker.worker_id} runtime {time.monotonic() - worker.started_at:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling'
         )
@@ -502,7 +501,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.last_used_by_ct[running_ct] = None  # block scale down of this amount
 
     async def dispatch_task(self, message: dict) -> None:
-        uuid = message.get("uuid", "<unknown>")
+        uuid = message.get('uuid', '<unknown>')
         if unblocked_task := await self.blocker.process_task(message):
             worker = self.queuer.get_worker_or_process_task(unblocked_task)
             if worker:
@@ -510,7 +509,7 @@ class WorkerPool(WorkerPoolProtocol):
                     logger.warning(f'Not dispatching task (uuid={uuid}) because currently shutting down')
                     self.queuer.queued_messages.append(unblocked_task)
                     return
-                logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+                logger.debug(f'Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})')
                 async with self.workers.management_lock:
                     await worker.start_task(unblocked_task)
                     await self.post_task_start(unblocked_task)
@@ -537,16 +536,16 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def process_finished(self, worker: PoolWorker, message: dict) -> None:
         uuid = message.get('uuid', '<unknown>')
-        msg = f"Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}"
+        msg = f'Worker {worker.worker_id} finished task (uuid={uuid}), ct={worker.finished_count}'
         result = None
-        if message.get("result"):
-            result = message["result"]
+        if message.get('result'):
+            result = message['result']
             if worker.is_active_cancel:
                 msg += ', expected cancel'
             if result == '<cancel>':
                 msg += ', canceled'
             else:
-                msg += f", result: {result}"
+                msg += f', result: {result}'
         logger.debug(msg)
 
         running_ct = self.get_running_count()
@@ -593,8 +592,8 @@ class WorkerPool(WorkerPoolProtocol):
                     logger.error('Results queue got stop message even through not shutting down')
                     continue
 
-            worker_id = int(message["worker"])
-            event = message["event"]
+            worker_id = int(message['worker'])
+            event = message['event']
             worker = self.workers.get_by_id(worker_id)
 
             if event == 'ready':
@@ -611,21 +610,22 @@ class WorkerPool(WorkerPoolProtocol):
 
                 if self.shared.exit_event.is_set():
                     if all(worker.inactive for worker in self.workers):
-                        logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
+                        logger.debug(f'Worker {worker_id} exited and that is all of them, exiting results read task.')
                         return
                     else:
                         logger.debug(
-                            f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining statuses: {self.status_counts}"
+                            f'Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining statuses: {self.status_counts}'
                         )
                 else:
                     self.events.management_event.set()
-                    logger.debug(f"Worker {worker_id} sent exit signal.")
+                    logger.debug(f'Worker {worker_id} sent exit signal.')
 
             elif event == 'control':
                 action = message.get('command', 'unknown')
                 try:
                     return_data = await dispatcher.get_control_result(  # type: ignore[union-attr]
-                        str(action), control_data=message.get('control_data', {})  # type: ignore[var-annotated,arg-type]
+                        str(action),
+                        control_data=message.get('control_data', {}),  # type: ignore[var-annotated,arg-type]
                     )
                 except Exception:
                     logger.exception('Error with control request from worker task')

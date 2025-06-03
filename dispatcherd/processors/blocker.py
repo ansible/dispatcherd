@@ -47,7 +47,7 @@ class Blocker(BlockerProtocol):
         Consuming the message may mean discarding it, or it may mean holding it until it is unblocked.
         If task if not blocked and is returned, that means you should continue doing what you were going to do.
         """
-        uuid = message.get("uuid", "<unknown>")
+        uuid = message.get('uuid', '<unknown>')
         on_duplicate = self.Params.from_message(message).on_duplicate
 
         if on_duplicate == DuplicateBehavior.serial.value:

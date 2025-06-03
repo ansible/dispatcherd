@@ -19,8 +19,7 @@ clean:
 	find . -mindepth 1 -type d -empty -delete
 
 linters:
-	black dispatcherd/
-	isort dispatcherd/
+	ruff format dispatcherd/
 	flake8 dispatcherd/
 	mypy dispatcherd
 

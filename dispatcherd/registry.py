@@ -27,7 +27,6 @@ class InvalidMethod(DispatcherError):
 
 
 class DispatcherMethod:
-
     def __init__(
         self,
         fn: DispatcherCallable,

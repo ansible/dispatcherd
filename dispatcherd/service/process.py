@@ -55,7 +55,7 @@ class ProcessProxy:
     def terminate(self) -> None:
         self._process.terminate()
 
-    def __enter__(self) -> "ProcessProxy":
+    def __enter__(self) -> 'ProcessProxy':
         """Enter the runtime context and return this ProcessProxy."""
         return self
 

@@ -154,7 +154,7 @@ class Broker(BrokerProtocol):
         """Send an internal message to the async generator, which will cause it to close the server"""
         await self.incoming_queue.put((-1, 'stop'))
 
-    async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
+    async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = '') -> None:
         if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
@@ -213,7 +213,7 @@ class Broker(BrokerProtocol):
             self.sock = None
 
     def _publish_from_sock(self, sock: socket.socket, message: str) -> None:
-        sock.sendall((message + "\n").encode())
+        sock.sendall((message + '\n').encode())
 
     def publish_message(self, channel: Optional[str] = None, message: Optional[str] = None) -> None:
         assert isinstance(message, str)

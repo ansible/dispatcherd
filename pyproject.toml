@@ -52,14 +52,11 @@ include-package-data = true # Ensures package data is included
 version_scheme = "calver-by-date"
 local_scheme = "no-local-version"
 
-[tool.black]
+[tool.ruff]
 line-length = 160
-fast = true
-skip-string-normalization = true
 
-[tool.isort]
-profile = "black"
-line_length = 160
+[tool.ruff.format]
+quote-style = "single"
 
 [project.optional-dependencies]
 pg_notify = ["psycopg[binary]>=3.2.4"]

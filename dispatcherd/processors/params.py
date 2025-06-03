@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass, fields
 from typing import Any, TypeVar
 
-T = TypeVar("T", bound="ProcessorParams")
+T = TypeVar('T', bound='ProcessorParams')
 
 
 @dataclass(kw_only=True)

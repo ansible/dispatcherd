@@ -22,7 +22,7 @@ class OnStartProducer(BaseProducer):
             message['task'] = task_name
             message['uuid'] = f'on-start-{self.produced_count}'
 
-            logger.debug(f"Produced on-start task: {task_name}")
+            logger.debug(f'Produced on-start task: {task_name}')
             self.produced_count += 1
             await dispatcher.process_message(message)
 

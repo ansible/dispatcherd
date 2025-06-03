@@ -42,7 +42,7 @@ class Control:
 
     @classmethod
     def generate_reply_queue_name(cls) -> str:
-        return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
+        return f'reply_to_{str(uuid.uuid4()).replace("-", "_")}'
 
     @staticmethod
     def parse_replies(received_replies: list[str]) -> list[dict]:
@@ -52,7 +52,7 @@ class Control:
                 item_as_dict = json.loads(payload)
                 ret.append(item_as_dict)
             except json.JSONDecodeError as e:
-                logger.warning(f"Invalid JSON for reply for reply {i}: {payload[:100]}... (Error: {e})")
+                logger.warning(f'Invalid JSON for reply for reply {i}: {payload[:100]}... (Error: {e})')
                 ret.append({'error': 'JSON parse error', 'original': payload})
 
         return ret

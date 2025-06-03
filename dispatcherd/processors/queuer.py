@@ -50,9 +50,9 @@ class Queuer(QueuerProtocol):
 
         In the future we may change to optionally discard some tasks.
         """
-        uuid = message.get("uuid", "<unknown>")
+        uuid = message.get('uuid', '<unknown>')
         if worker := self.get_free_worker():
-            logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+            logger.debug(f'Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})')
             return worker
         else:
             queue_ct = len(self.queued_messages)
