@@ -4,8 +4,8 @@ import multiprocessing
 import os
 import signal
 import time
-from typing import Any, Iterator, Literal, Optional
 from collections import OrderedDict
+from typing import Any, Iterator, Literal, Optional
 
 from ..processors.blocker import Blocker
 from ..processors.queuer import Queuer
