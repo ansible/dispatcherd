@@ -62,7 +62,8 @@ profile = "black"
 line_length = 160
 
 [project.optional-dependencies]
-pg_notify = ["psycopg[binary]>=3.2.4"]
+pg_notify = ["psycopg>=3.2.4"]
+pg_dev = ["psycopg[binary]>=3.2.4"]
 metrics = ["uvicorn[standard]", "prometheus-client"]
 
 [tool.pytest.ini_options]
