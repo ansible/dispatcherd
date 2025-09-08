@@ -212,6 +212,8 @@ class WorkerData(Protocol):
 
     def get_by_id(self, worker_id: int) -> PoolWorker: ...
 
+    def move_to_end(self, worker_id: int) -> None: ...
+
 
 class SharedAsyncObjects:
     exit_event: asyncio.Event
