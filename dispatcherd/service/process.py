@@ -122,8 +122,7 @@ class ProcessManager:
         current_start_method = multiprocessing.get_start_method(allow_none=True)
         if parent_proc is not None and current_start_method in ('fork', 'forkserver'):
             raise RuntimeError(
-                "dispatcherd must run from the main process; current process was started via "
-                f"'{current_start_method}' under PID {parent_proc.pid}"
+                f"dispatcherd must run from the main process; current process was started via '{current_start_method}' under PID {parent_proc.pid}"
             )
         self.ctx, self.start_method = _resolve_context(self.mp_context)
         if self.start_method != self.mp_context:

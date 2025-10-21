@@ -84,6 +84,7 @@ def work_loop(worker_id: int, settings: str, finished_queue: multiprocessing.Que
     except Exception:
         import sys
         import traceback as tb_module
+
         exc_type, exc_value, exc_tb = sys.exc_info()
         tb_str = ''.join(tb_module.format_exception(exc_type, exc_value, exc_tb))
 
@@ -94,7 +95,7 @@ def work_loop(worker_id: int, settings: str, finished_queue: multiprocessing.Que
                 "event": "error",
                 "error_type": exc_type.__name__ if exc_type else "Unknown",
                 "error_message": str(exc_value),
-                "traceback": tb_str
+                "traceback": tb_str,
             }
             finished_queue.put(error_msg)
         except Exception:

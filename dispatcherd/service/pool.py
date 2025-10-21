@@ -38,9 +38,9 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.exit_msg_event = asyncio.Event()
 
         # Error information (populated when worker sends "error" event)
-        self.error_type: Optional[str] = None
-        self.error_message: Optional[str] = None
-        self.error_traceback: Optional[str] = None
+        self.error_type: Optional[str | int] = None
+        self.error_message: Optional[str | int] = None
+        self.error_traceback: Optional[str | int] = None
 
     async def start(self) -> None:
         if self.status != 'initialized':

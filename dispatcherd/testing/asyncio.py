@@ -20,16 +20,16 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
 
     # Dump worker pool state
     lines.append("\nWorker Pool Status:")
-    lines.append(f"  Min workers: {dispatcher.pool.min_workers}")
-    lines.append(f"  Max workers: {dispatcher.pool.max_workers}")
-    lines.append(f"  Next worker ID: {dispatcher.pool.next_worker_id}")
-    lines.append(f"  Finished count: {dispatcher.pool.finished_count}")
-    lines.append(f"  Canceled count: {dispatcher.pool.canceled_count}")
-    lines.append(f"  Status counts: {dispatcher.pool.status_counts}")
+    lines.append(f"  Min workers: {dispatcher.pool.min_workers}")  # type: ignore[attr-defined]
+    lines.append(f"  Max workers: {dispatcher.pool.max_workers}")  # type: ignore[attr-defined]
+    lines.append(f"  Next worker ID: {dispatcher.pool.next_worker_id}")  # type: ignore[attr-defined]
+    lines.append(f"  Finished count: {dispatcher.pool.finished_count}")  # type: ignore[attr-defined]
+    lines.append(f"  Canceled count: {dispatcher.pool.canceled_count}")  # type: ignore[attr-defined]
+    lines.append(f"  Status counts: {dispatcher.pool.status_counts}")  # type: ignore[attr-defined]
 
     # Dump individual worker states
-    lines.append(f"\nIndividual Worker States ({len(dispatcher.pool.workers.workers)} workers):")
-    for worker_id, worker in dispatcher.pool.workers.workers.items():
+    lines.append(f"\nIndividual Worker States ({len(dispatcher.pool.workers.workers)} workers):")  # type: ignore[attr-defined]
+    for worker_id, worker in dispatcher.pool.workers.workers.items():  # type: ignore[attr-defined]
         lines.append(f"\n  Worker {worker_id}:")
         lines.append(f"    Status: {worker.status}")
         lines.append(f"    PID: {worker.process.pid}")
@@ -72,13 +72,13 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
 
     # Dump pool tasks state
     lines.append("\nPool Task States:")
-    if dispatcher.pool.read_results_task:
+    if dispatcher.pool.read_results_task:  # type: ignore[attr-defined]
         lines.append("  read_results_task:")
-        lines.append(f"    Done: {dispatcher.pool.read_results_task.done()}")
-        lines.append(f"    Cancelled: {dispatcher.pool.read_results_task.cancelled()}")
-        if dispatcher.pool.read_results_task.done():
+        lines.append(f"    Done: {dispatcher.pool.read_results_task.done()}")  # type: ignore[attr-defined]
+        lines.append(f"    Cancelled: {dispatcher.pool.read_results_task.cancelled()}")  # type: ignore[attr-defined]
+        if dispatcher.pool.read_results_task.done():  # type: ignore[attr-defined]
             try:
-                exc = dispatcher.pool.read_results_task.exception()
+                exc = dispatcher.pool.read_results_task.exception()  # type: ignore[attr-defined]
                 if exc:
                     lines.append(f"    Exception: {exc}")
                     lines.append(f"    Traceback:\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}")
@@ -87,13 +87,13 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
     else:
         lines.append("  read_results_task: None")
 
-    if dispatcher.pool.management_task:
+    if dispatcher.pool.management_task:  # type: ignore[attr-defined]
         lines.append("  management_task:")
-        lines.append(f"    Done: {dispatcher.pool.management_task.done()}")
-        lines.append(f"    Cancelled: {dispatcher.pool.management_task.cancelled()}")
-        if dispatcher.pool.management_task.done():
+        lines.append(f"    Done: {dispatcher.pool.management_task.done()}")  # type: ignore[attr-defined]
+        lines.append(f"    Cancelled: {dispatcher.pool.management_task.cancelled()}")  # type: ignore[attr-defined]
+        if dispatcher.pool.management_task.done():  # type: ignore[attr-defined]
             try:
-                exc = dispatcher.pool.management_task.exception()
+                exc = dispatcher.pool.management_task.exception()  # type: ignore[attr-defined]
                 if exc:
                     lines.append(f"    Exception: {exc}")
                     lines.append(f"    Traceback:\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}")
@@ -103,13 +103,13 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
         lines.append("  management_task: None")
 
     # Dump timeout runner task state
-    if hasattr(dispatcher.pool.timeout_runner, 'task') and dispatcher.pool.timeout_runner.task:
+    if hasattr(dispatcher.pool.timeout_runner, 'task') and dispatcher.pool.timeout_runner.task:  # type: ignore[attr-defined]
         lines.append("  timeout_runner.task:")
-        lines.append(f"    Done: {dispatcher.pool.timeout_runner.task.done()}")
-        lines.append(f"    Cancelled: {dispatcher.pool.timeout_runner.task.cancelled()}")
-        if dispatcher.pool.timeout_runner.task.done():
+        lines.append(f"    Done: {dispatcher.pool.timeout_runner.task.done()}")  # type: ignore[attr-defined]
+        lines.append(f"    Cancelled: {dispatcher.pool.timeout_runner.task.cancelled()}")  # type: ignore[attr-defined]
+        if dispatcher.pool.timeout_runner.task.done():  # type: ignore[attr-defined]
             try:
-                exc = dispatcher.pool.timeout_runner.task.exception()
+                exc = dispatcher.pool.timeout_runner.task.exception()  # type: ignore[attr-defined]
                 if exc:
                     lines.append(f"    Exception: {exc}")
                     lines.append(f"    Traceback:\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}")
@@ -144,10 +144,10 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
 
     # Dump queue/blocker state
     lines.append("\nQueue/Blocker State:")
-    lines.append(f"  Queued messages: {dispatcher.pool.queuer.count()}")
-    lines.append(f"  Blocked messages: {dispatcher.pool.blocker.count()}")
-    lines.append(f"  Active task count: {dispatcher.pool.active_task_ct()}")
-    lines.append(f"  Running count: {dispatcher.pool.get_running_count()}")
+    lines.append(f"  Queued messages: {dispatcher.pool.queuer.count()}")  # type: ignore[attr-defined]
+    lines.append(f"  Blocked messages: {dispatcher.pool.blocker.count()}")  # type: ignore[attr-defined]
+    lines.append(f"  Active task count: {dispatcher.pool.active_task_ct()}")  # type: ignore[attr-defined]
+    lines.append(f"  Running count: {dispatcher.pool.get_running_count()}")  # type: ignore[attr-defined]
 
     lines.append("=" * 80)
 
