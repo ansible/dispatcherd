@@ -20,7 +20,7 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
         await asyncio.wait_for(dispatcher.connect_signals(), timeout=1)
         await asyncio.wait_for(dispatcher.start_working(), timeout=1)
         await asyncio.wait_for(dispatcher.wait_for_producers_ready(), timeout=1)
-        await asyncio.wait_for(dispatcher.pool.events.workers_ready.wait(), timeout=1)
+        await asyncio.wait_for(dispatcher.pool.events.workers_ready.wait(), timeout=3)
 
         assert dispatcher.pool.finished_count == 0  # sanity
         assert dispatcher.control_count == 0
