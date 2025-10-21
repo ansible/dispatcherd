@@ -392,9 +392,9 @@ class WorkerPool(WorkerPoolProtocol):
                         elif exitcode < 0:
                             worker.error_message = f"Process killed by signal {-exitcode}"
                         else:
-                            worker.error_message = f"Process exited with code 0 (but was expected to be alive)"
+                            worker.error_message = "Process exited with code 0 (but was expected to be alive)"
                     else:
-                        worker.error_message = f"Process is not alive but exit code not available yet"
+                        worker.error_message = "Process is not alive but exit code not available yet"
                     worker.error_traceback = "No traceback available - worker died without sending error details"
 
                 worker.status = 'error'

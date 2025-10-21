@@ -19,7 +19,7 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
     lines.append("=" * 80)
 
     # Dump worker pool state
-    lines.append(f"\nWorker Pool Status:")
+    lines.append("\nWorker Pool Status:")
     lines.append(f"  Min workers: {dispatcher.pool.min_workers}")
     lines.append(f"  Max workers: {dispatcher.pool.max_workers}")
     lines.append(f"  Next worker ID: {dispatcher.pool.next_worker_id}")
@@ -46,22 +46,22 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
         # If worker is in error state, show error details if available
         if worker.status == 'error':
             if worker.error_type or worker.error_message:
-                lines.append(f"    ERROR DETAILS:")
+                lines.append("    ERROR DETAILS:")
                 if worker.error_type:
                     lines.append(f"      Type: {worker.error_type}")
                 if worker.error_message:
                     lines.append(f"      Message: {worker.error_message}")
                 if worker.error_traceback:
-                    lines.append(f"      Traceback:")
+                    lines.append("      Traceback:")
                     for line in worker.error_traceback.split('\n'):
                         if line:  # Skip empty lines
                             lines.append(f"        {line}")
             else:
-                lines.append(f"    NOTE: Worker in error state but no error details received")
-                lines.append(f"    This can happen if:")
-                lines.append(f"      1. Worker was killed by signal (SIGSEGV, SIGKILL, etc)")
-                lines.append(f"      2. Error event sent but not yet processed (race condition)")
-                lines.append(f"      3. Worker failed during shutdown/cleanup")
+                lines.append("    NOTE: Worker in error state but no error details received")
+                lines.append("    This can happen if:")
+                lines.append("      1. Worker was killed by signal (SIGSEGV, SIGKILL, etc)")
+                lines.append("      2. Error event sent but not yet processed (race condition)")
+                lines.append("      3. Worker failed during shutdown/cleanup")
                 exitcode = worker.process.exitcode()
                 if exitcode is not None:
                     lines.append(f"    Exit code available: {exitcode}")
@@ -71,9 +71,9 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
                         lines.append(f"      -> Process exited with error code {exitcode}")
 
     # Dump pool tasks state
-    lines.append(f"\nPool Task States:")
+    lines.append("\nPool Task States:")
     if dispatcher.pool.read_results_task:
-        lines.append(f"  read_results_task:")
+        lines.append("  read_results_task:")
         lines.append(f"    Done: {dispatcher.pool.read_results_task.done()}")
         lines.append(f"    Cancelled: {dispatcher.pool.read_results_task.cancelled()}")
         if dispatcher.pool.read_results_task.done():
@@ -85,10 +85,10 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
             except Exception as e:
                 lines.append(f"    Error getting exception: {e}")
     else:
-        lines.append(f"  read_results_task: None")
+        lines.append("  read_results_task: None")
 
     if dispatcher.pool.management_task:
-        lines.append(f"  management_task:")
+        lines.append("  management_task:")
         lines.append(f"    Done: {dispatcher.pool.management_task.done()}")
         lines.append(f"    Cancelled: {dispatcher.pool.management_task.cancelled()}")
         if dispatcher.pool.management_task.done():
@@ -100,11 +100,11 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
             except Exception as e:
                 lines.append(f"    Error getting exception: {e}")
     else:
-        lines.append(f"  management_task: None")
+        lines.append("  management_task: None")
 
     # Dump timeout runner task state
     if hasattr(dispatcher.pool.timeout_runner, 'task') and dispatcher.pool.timeout_runner.task:
-        lines.append(f"  timeout_runner.task:")
+        lines.append("  timeout_runner.task:")
         lines.append(f"    Done: {dispatcher.pool.timeout_runner.task.done()}")
         lines.append(f"    Cancelled: {dispatcher.pool.timeout_runner.task.cancelled()}")
         if dispatcher.pool.timeout_runner.task.done():
@@ -117,7 +117,7 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
                 lines.append(f"    Error getting exception: {e}")
 
     # Dump all asyncio tasks
-    lines.append(f"\nAll asyncio tasks:")
+    lines.append("\nAll asyncio tasks:")
     all_tasks = asyncio.all_tasks()
     lines.append(f"  Total tasks: {len(all_tasks)}")
     for i, task in enumerate(all_tasks):
@@ -135,7 +135,7 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
                 lines.append(f"    Error getting exception: {e}")
 
     # Dump event states
-    lines.append(f"\nEvent States:")
+    lines.append("\nEvent States:")
     lines.append(f"  workers_ready: {dispatcher.pool.events.workers_ready.is_set()}")
     lines.append(f"  queue_cleared: {dispatcher.pool.events.queue_cleared.is_set()}")
     lines.append(f"  work_cleared: {dispatcher.pool.events.work_cleared.is_set()}")
@@ -143,7 +143,7 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
     lines.append(f"  exit_event: {dispatcher.shared.exit_event.is_set()}")
 
     # Dump queue/blocker state
-    lines.append(f"\nQueue/Blocker State:")
+    lines.append("\nQueue/Blocker State:")
     lines.append(f"  Queued messages: {dispatcher.pool.queuer.count()}")
     lines.append(f"  Blocked messages: {dispatcher.pool.blocker.count()}")
     lines.append(f"  Active task count: {dispatcher.pool.active_task_ct()}")

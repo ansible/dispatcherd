@@ -162,7 +162,7 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.info(f"Control action {action} returned {type(return_data)}, done")
             return (None, None)
 
-    async def process_message_now(self, message: dict, producer: Optional[Producer] = None) -> tuple[Optional[str], Optional[str]]:
+    async def process_message_now(self, message: dict, producer: Producer | None = None) -> tuple[str | None, str | None]:
         """Route message to control action or to a worker via the pool. Does not consider task delays."""
         if 'control' in message:
             return await self.run_control_action(message['control'], control_data=message.get('control_data'), reply_to=message.get('reply_to'))
@@ -229,7 +229,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def main_as_task(self) -> None:
         """This should be called for the main loop if running as part of another asyncio program"""
-        metrics_task: Optional[asyncio.Task] = None
+        metrics_task: asyncio.Task | None = None
         if self.metrics:
             metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
             ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
