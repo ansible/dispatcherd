@@ -100,7 +100,7 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     Note this is likely to have problems if mixed with code running asyncio loops.
     It is mainly intended to be called from synchronous python.
     """
-    ctx = multiprocessing.get_context('fork')
+    ctx = multiprocessing.get_context('spawn')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
     process = ctx.Process(target=subprocess_main, args=(config, comms))
     try:
