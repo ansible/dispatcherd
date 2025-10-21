@@ -102,7 +102,7 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     """
     ctx = multiprocessing.get_context('fork')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
-    process = multiprocessing.Process(target=subprocess_main, args=(config, comms))
+    process = ctx.Process(target=subprocess_main, args=(config, comms))
     try:
         process.start()
         ready_msg = comms.q_out.get()
