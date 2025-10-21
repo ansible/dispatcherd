@@ -107,10 +107,11 @@ def dispatcher_service(config, main_events=(), pool_events=()):
         process.start()
         ready_msg = comms.q_out.get()
         if ready_msg != 'ready':
+            tb = ''
             if ready_msg == 'error':
                 tb = comms.q_out.get()
                 print(tb)
-            raise RuntimeError(f'Never got "ready" message from server, got {ready_msg}')
+            raise RuntimeError(f'Never got "ready" message from server, got {ready_msg}, tb={tb}')
         yield comms
     finally:
         comms.q_in.put('stop')
