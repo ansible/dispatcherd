@@ -206,7 +206,7 @@ class WorkerPool(WorkerPoolProtocol):
         process_manager: ProcessManager,
         shared: SharedAsyncObjectsProtocol,
         min_workers: int = 1,
-        max_workers: Optional[int] = None,
+        max_workers: int | None = None,
         scaledown_wait: float = 15.0,
         scaledown_interval: float = 15.0,
         worker_stop_wait: float = 30.0,

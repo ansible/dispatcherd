@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Union
+from typing import Optional
 
 from ..protocols import DispatcherMain
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
@@ -25,7 +25,7 @@ class ScheduleEntry(HasWakeup):
 
 
 class ScheduledProducer(BaseProducer):
-    def __init__(self, task_schedule: dict[str, dict[str, Union[int, str]]], shared: SharedAsyncObjectsProtocol) -> None:
+    def __init__(self, task_schedule: dict[str, dict[str, int | str]], shared: SharedAsyncObjectsProtocol) -> None:
         self.task_schedule = task_schedule
         self.schedule_entries: set[ScheduleEntry] = set()
         self.dispatcher: Optional[DispatcherMain] = None

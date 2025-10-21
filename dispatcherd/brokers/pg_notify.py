@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator
 
 import psycopg
 
@@ -42,15 +42,15 @@ class Broker(BrokerProtocol):
 
     def __init__(
         self,
-        config: Optional[dict] = None,
-        async_connection_factory: Optional[str] = None,
-        sync_connection_factory: Optional[str] = None,
-        sync_connection: Optional[psycopg.Connection] = None,
-        async_connection: Optional[psycopg.AsyncConnection] = None,
-        channels: Union[tuple, list] = (),
-        default_publish_channel: Optional[str] = None,
-        max_connection_idle_seconds: Optional[int] = 30,
-        max_self_check_message_age_seconds: Optional[int] = 2,
+        config: dict | None = None,
+        async_connection_factory: str | None = None,
+        sync_connection_factory: str | None = None,
+        sync_connection: psycopg.Connection | None = None,
+        async_connection: psycopg.AsyncConnection | None = None,
+        channels: tuple | list = (),
+        default_publish_channel: str | None = None,
+        max_connection_idle_seconds: int | None = 30,
+        max_self_check_message_age_seconds: int | None = 2,
     ) -> None:
         """
         config - kwargs to psycopg connect classes, if creating connection this way
@@ -119,7 +119,7 @@ class Broker(BrokerProtocol):
     def generate_self_check_channel_name(cls) -> str:
         return f"self_check_{str(uuid.uuid4()).replace('-', '_')}"
 
-    def get_publish_channel(self, channel: Optional[str] = None) -> str:
+    def get_publish_channel(self, channel: str | None = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
         if channel is not None:
             return channel
@@ -198,7 +198,7 @@ class Broker(BrokerProtocol):
             raise RuntimeError(f'self check failed, message received after {round(delta_seconds, 2)} seconds, broker-id {self.broker_id}')
 
     async def aprocess_notify(
-        self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
+        self, connected_callback: Callable[[], Coroutine[Any, Any, None]] | None = None
     ) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
         async with connection.cursor() as cur:
@@ -227,11 +227,11 @@ class Broker(BrokerProtocol):
                     await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
                 self.notify_queue = []
 
-    async def apublish_message_from_cursor(self, cursor: psycopg.AsyncCursor, channel: Optional[str] = None, message: str = '') -> None:
+    async def apublish_message_from_cursor(self, cursor: psycopg.AsyncCursor, channel: str | None = None, message: str = '') -> None:
         """The inner logic of async message publishing where we already have a cursor"""
         await cursor.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
-    async def apublish_message(self, channel: Optional[str] = None, origin: Union[str, int, None] = '', message: str = '') -> None:  # public
+    async def apublish_message(self, channel: str | None = None, origin: str | int | None = '', message: str = '') -> None:  # public
         """asyncio way to publish a message, used to send control in control-and-reply
 
         Not strictly necessary for the service itself if it sends replies in the workers,
@@ -281,7 +281,7 @@ class Broker(BrokerProtocol):
         assert self._sync_connection is not None
         return self._sync_connection
 
-    def process_notify(self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
+    def process_notify(self, connected_callback: Callable | None = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
         """Blocking method that listens for messages on subscribed pg_notify channels until timeout
 
         This has two different exit conditions:
@@ -304,7 +304,7 @@ class Broker(BrokerProtocol):
 
             cur.execute(self.get_unlisten_query())
 
-    def publish_message(self, channel: Optional[str] = None, message: str = '') -> str:
+    def publish_message(self, channel: str | None = None, message: str = '') -> str:
         """Synchronous method to submit a message to a pg_notify channel, returns the queue it was sent to"""
         connection = self.get_connection()
         channel = self.get_publish_channel(channel)
@@ -325,8 +325,8 @@ class Broker(BrokerProtocol):
 
 class ConnectionSaver:
     def __init__(self) -> None:
-        self._connection: Optional[psycopg.Connection] = None
-        self._async_connection: Optional[psycopg.AsyncConnection] = None
+        self._connection: psycopg.Connection | None = None
+        self._async_connection: psycopg.AsyncConnection | None = None
         self._lock = threading.Lock()
 
 
