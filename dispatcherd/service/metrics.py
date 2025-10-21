@@ -1,17 +1,14 @@
+import asyncio
 import logging
-from typing import Any, Generator
+from typing import Any, Generator, Optional
 
 # Metrics library
-from prometheus_client import CollectorRegistry, make_asgi_app
+from prometheus_client import CollectorRegistry, generate_latest
 
 # For production of the metrics
 from prometheus_client.core import CounterMetricFamily
 from prometheus_client.metrics_core import Metric
 from prometheus_client.registry import Collector
-
-# General ASGI python web server, interfaces with prometheus-client lib by the ASGI standard
-from uvicorn.config import Config
-from uvicorn.server import Server
 
 from ..protocols import DispatcherMain
 
@@ -49,26 +46,223 @@ class CustomCollector(Collector):
             yield m
 
 
+class CustomHttpServer:
+    """Called from DispatcherMetricsServer, but with the registry initialized"""
+
+    def __init__(self, registry: CollectorRegistry):
+        self.registry = registry
+        self.server: Optional[asyncio.Server] = None
+        self.total_connections = 0
+        self.metrics_requests_served = 0
+        self.bad_request_count = 0
+        self.internal_error_count = 0
+        self.not_found_count = 0
+        self.client_disconnect_count = 0
+        self.is_running = False
+
+    async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """
+        Callback passed to asyncio.start_server, called each time a request comes in
+
+        This materializes the metrics and sends it as the response
+        """
+        addr = writer.get_extra_info('peername')
+        logger.info(f"Received connection from {addr}")
+        self.total_connections += 1
+
+        try:
+            await self._process_request(reader, writer, addr)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(f"Unhandled error while serving metrics for {addr}")
+            if not writer.is_closing():
+                await self._send_response(
+                    writer=writer,
+                    status_line="HTTP/1.1 500 Internal Server Error",
+                    content_type="text/plain; charset=utf-8",
+                    body="Internal Server Error",
+                    addr=addr,
+                )
+            self.internal_error_count += 1
+        finally:
+            if not writer.is_closing():
+                writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                logger.debug(f"Error while closing writer for {addr}", exc_info=True)
+
+    async def _process_request(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        addr: Any,
+    ) -> None:
+        "Internal version of handle_request that does not handle server errors or closing writer"
+        request_line = await reader.readline()
+        if not request_line:
+            logger.info(f"Received blank line from {addr}, closing")
+            self.client_disconnect_count += 1
+            return
+
+        try:
+            request_line_str = request_line.decode('utf-8').strip()
+        except UnicodeDecodeError:
+            logger.warning(f"Invalid UTF-8 metrics request from {addr}")
+            self.bad_request_count += 1
+            await self._send_response(
+                writer=writer,
+                status_line="HTTP/1.1 400 Bad Request",
+                content_type="text/plain; charset=utf-8",
+                body="Bad Request",
+                addr=addr,
+            )
+            return
+
+        logger.info(f"Received metrics request: {request_line_str}")
+
+        # Parse the request line (simplified parsing)
+        try:
+            method, _, _ = request_line_str.split()
+        except ValueError:
+            logger.warning(f"Could not parse metrics request line: {request_line_str}")
+            # Respond with 400 Bad Request for malformed request line
+            self.bad_request_count += 1
+            await self._send_response(
+                writer=writer,
+                status_line="HTTP/1.1 400 Bad Request",
+                content_type="text/plain; charset=utf-8",
+                body="Bad Request",
+                addr=addr,
+            )
+            return
+
+        # Read headers (and ignore them for now)
+        while True:
+            header_line = await reader.readline()
+            if header_line == b'':
+                logger.warning(f"Client {addr} disconnected before completing headers")
+                self.client_disconnect_count += 1
+                return
+            if header_line == b'\r\n':
+                break
+
+        if method == 'GET':
+            try:
+                metrics_payload = generate_latest(self.registry)
+                body = metrics_payload.decode('utf-8')
+                status_line = "HTTP/1.1 200 OK"
+                content_type = "text/plain; version=0.0.4; charset=utf-8"
+                self.metrics_requests_served += 1
+            except Exception:
+                # Raising any exceptions would pose problems for the overall task system, so logged
+                logger.exception("Error generating metrics")
+                body = "Error generating metrics"
+                status_line = "HTTP/1.1 500 Internal Server Error"
+                content_type = "text/plain; charset=utf-8"
+                self.internal_error_count += 1
+        else:
+            # For any other path or method, respond with 404 Not Found
+            body = "Not Found"
+            status_line = "HTTP/1.1 404 Not Found"
+            content_type = "text/plain; charset=utf-8"
+            self.not_found_count += 1
+
+        await self._send_response(writer, status_line, content_type, body, addr)
+
+    async def _send_response(
+        self,
+        writer: asyncio.StreamWriter,
+        status_line: str,
+        content_type: str,
+        body: str,
+        addr: Any,
+    ) -> None:
+        body_bytes = body.encode('utf-8')
+        response_headers = f"{status_line}\r\n" f"Content-Type: {content_type}\r\n" f"Content-Length: {len(body_bytes)}\r\n" "Connection: close\r\n" "\r\n"
+        writer.write(response_headers.encode('utf-8') + body_bytes)
+        await writer.drain()
+        logger.info(f"Sent metrics {status_line} response to {addr}")
+
+    def get_status_data(self) -> dict[str, int]:
+        return {
+            'connections_total': self.total_connections,
+            'metrics_requests_served': self.metrics_requests_served,
+            'bad_requests': self.bad_request_count,
+            'internal_errors': self.internal_error_count,
+            'not_found_responses': self.not_found_count,
+            'client_disconnects': self.client_disconnect_count,
+            'is_running': self.is_running,
+        }
+
+    async def start(self, host: str, port: int, ready_event: asyncio.Event) -> None:
+        """Runs the server forever."""
+        try:
+            self.server = await asyncio.start_server(self.handle_request, host, port)
+        except Exception as e:
+            logger.error(f"Failed to start server on {host}:{port}: {e}")
+            ready_event.set()
+            self.server = None
+            # Potentially re-raise or handle more gracefully if this is critical
+            return
+
+        addr = self.server.sockets[0].getsockname()
+        logger.info(f'Serving dispatcherd metrics on {addr}')
+
+        # The ready event is useful for testing and any code-level integrations
+        try:
+            async with self.server:
+                ready_event.set()
+                self.is_running = True  # used for metrics, a shortcut better than checking tasks
+                await self.server.serve_forever()
+        finally:
+            self.is_running = False
+
+    async def stop(self) -> None:
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+            logger.debug("Dispatcherd metrics server stopped.")
+            self.server = None
+
+
 class DispatcherMetricsServer:
-    def __init__(self, port: int = 8070, log_level: str = 'info', host: str = "localhost") -> None:
+    def __init__(self, port: int = 8070, host: str = "localhost") -> None:
         self.port = port
-        self.log_level = log_level
         self.host = host
+        self.ready_event = asyncio.Event()
+        self.http_server: Optional[CustomHttpServer] = None
 
     async def start_server(self, dispatcher: DispatcherMain) -> None:
-        """Run Prometheus metrics ASGI app forever."""
+        """Run Prometheus metrics server forever."""
         registry = CollectorRegistry(auto_describe=True)
         registry.register(CustomCollector(dispatcher))
 
-        app = make_asgi_app(registry=registry)
+        # Instantiate CustomHttpServer with the registry
+        self.http_server = CustomHttpServer(registry=registry)
 
-        # Explanation:
-        # loop should default to asyncio anyway with uvicorn
-        # lifespan events are apart of ASGI 3.0 protocol, but prometheus client does not implement them
-        #   so it makes sense for that to be unconditionally off
-        config = Config(app=app, host=self.host, port=self.port, log_level=self.log_level, loop="asyncio", lifespan="off")
-        server = Server(config)
+        logger.info(f'Starting dispatcherd prometheus server on {self.host}:{self.port} using CustomHttpServer.')
 
-        # Host and port are printed in Uvicorn logging
-        logger.info(f'Starting dispatcherd prometheus server log_level={self.log_level}')
-        await server.serve()
+        # Start the CustomHttpServer
+        # The start method in CustomHttpServer is an async method that starts the server.
+        try:
+            await self.http_server.start(host=self.host, port=self.port, ready_event=self.ready_event)
+            logger.error('Metrics HTTP server exited unexpectedly')
+        except Exception:
+            logger.exception("CustomHttpServer failed to start or encountered an error")
+            # Depending on desired behavior, might re-raise or handle
+        finally:
+            # Ensure graceful shutdown if start() completes or raises an exception
+            # that's not KeyboardInterrupt (which is handled in CustomHttpServer's main example)
+            logger.info("Attempting to stop CustomHttpServer...")
+            await self.http_server.stop()  # Assuming stop is robust enough to be called even if start failed partially
+
+    def get_status_data(self) -> dict[str, Any]:
+        http_server_status = self.http_server.get_status_data() if self.http_server else {}
+        return {
+            'host': self.host,
+            'port': self.port,
+            'ready': self.ready_event.is_set(),
+            'http_server': http_server_status,
+        }

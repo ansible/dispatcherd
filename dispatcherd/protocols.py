@@ -272,6 +272,8 @@ class DispatcherMetricsServer(Protocol):
 
     async def start_server(self, dispatcher: 'DispatcherMain') -> None: ...
 
+    def get_status_data(self) -> dict[str, Any]: ...
+
 
 class DispatcherMain(Protocol):
     """
@@ -287,6 +289,7 @@ class DispatcherMain(Protocol):
     producers: Iterable[Producer]
     delayer: Delayer
     chunk_accumulator: ChunkAccumulator
+    metrics: Optional[DispatcherMetricsServer]
 
     received_count: int
     control_count: int

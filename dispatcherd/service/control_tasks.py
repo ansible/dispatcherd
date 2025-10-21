@@ -4,7 +4,7 @@ import logging
 
 from ..protocols import DispatcherMain
 
-__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status', 'chunks', 'set_log_level']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'metrics', 'main', 'status', 'chunks', 'set_log_level']
 
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,15 @@ async def producers(dispatcher: DispatcherMain, data: dict) -> dict:
     for producer in dispatcher.producers:
         ret[str(producer)] = producer.get_status_data()
     return ret
+
+
+async def metrics(dispatcher: DispatcherMain, data: dict) -> dict:
+    """Information about the metrics server, if enabled"""
+    metrics_server = getattr(dispatcher, 'metrics', None)
+    if metrics_server is None:
+        return {'enabled': False}
+
+    return {'enabled': True, 'status': metrics_server.get_status_data()}
 
 
 async def run(dispatcher: DispatcherMain, data: dict) -> dict:
