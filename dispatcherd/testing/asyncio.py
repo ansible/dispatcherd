@@ -58,6 +58,17 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
                             lines.append(f"        {line}")
             else:
                 lines.append(f"    NOTE: Worker in error state but no error details received")
+                lines.append(f"    This can happen if:")
+                lines.append(f"      1. Worker was killed by signal (SIGSEGV, SIGKILL, etc)")
+                lines.append(f"      2. Error event sent but not yet processed (race condition)")
+                lines.append(f"      3. Worker failed during shutdown/cleanup")
+                exitcode = worker.process.exitcode()
+                if exitcode is not None:
+                    lines.append(f"    Exit code available: {exitcode}")
+                    if exitcode < 0:
+                        lines.append(f"      -> Process was killed by signal {-exitcode}")
+                    elif exitcode > 0:
+                        lines.append(f"      -> Process exited with error code {exitcode}")
 
     # Dump pool tasks state
     lines.append(f"\nPool Task States:")

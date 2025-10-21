@@ -366,13 +366,37 @@ class WorkerPool(WorkerPoolProtocol):
         for worker in current_workers:
             # Check if the worker has died unexpectedly.
             if worker.expected_alive and not worker.process.is_alive():
-                logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
+                # Give read_results_forever a chance to process any error event in the queue
+                # before we mark this as an unexpected death
+                await asyncio.sleep(0.1)
+
+                # Check again in case read_results_forever updated the status
+                if worker.status in ('error', 'exited'):
+                    continue  # Already handled by read_results_forever
+
+                exitcode = worker.process.exitcode()
+                logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}, exitcode={exitcode}')
 
                 if worker.current_task:
                     uuid = worker.current_task.get('uuid', '<unknown>')
                     logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} but the worker died unexpectedly')
                     self.canceled_count += 1
                     worker.is_active_cancel = False  # Prevent further processing.
+
+                # If we don't already have error details, capture what we can
+                if not worker.error_type:
+                    worker.error_type = "UnexpectedDeath"
+                    if exitcode is not None:
+                        if exitcode > 0:
+                            worker.error_message = f"Process exited with error code {exitcode}"
+                        elif exitcode < 0:
+                            worker.error_message = f"Process killed by signal {-exitcode}"
+                        else:
+                            worker.error_message = f"Process exited with code 0 (but was expected to be alive)"
+                    else:
+                        worker.error_message = f"Process is not alive but exit code not available yet"
+                    worker.error_traceback = "No traceback available - worker died without sending error details"
+
                 worker.status = 'error'
                 worker.retired_at = time.monotonic()
 
