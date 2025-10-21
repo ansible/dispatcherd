@@ -6,11 +6,16 @@ import pytest
 from dispatcherd.service.process import ForkServerManager, ProcessManager, ProcessProxy
 
 
-def test_pass_messages_to_worker():
-    def work_loop(a, b, c, finished_queue, message_queue):
-        has_read = message_queue.get()
-        finished_queue.put(f'done {a} {b} {c} {has_read}')
+def work_loop(a, b, c, finished_queue, message_queue):
+    """
+    Due to the mechanics of multiprocessing, this needs to be at module level
+    to be pickleable, not defined inside the test function.
+    """
+    has_read = message_queue.get()
+    finished_queue.put(f'done {a} {b} {c} {has_read}')
 
+
+def test_pass_messages_to_worker():
     finished_q = Queue()
     process = ProcessProxy((1, 2, 3, finished_q), target=work_loop)
     process.start()

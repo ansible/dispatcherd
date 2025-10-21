@@ -62,21 +62,47 @@ def work_loop(worker_id: int, settings: str, finished_queue: multiprocessing.Que
     Worker function that processes messages from the queue and sends confirmation
     to the finished_queue once done.
     """
-    # Load settings passed from parent
-    # this assures that workers are all configured the same
-    # If user configured workers via preload_modules, do nothing here
-    if not is_setup():
-        config = json.loads(settings)
-        dispatcher_settings = setup(config=config)
-    else:
-        logger.debug(f'Not calling setup() for worker_id={worker_id} because environment is already configured')
-        dispatcher_settings = global_settings
+    try:
+        # Load settings passed from parent
+        # this assures that workers are all configured the same
+        # If user configured workers via preload_modules, do nothing here
+        if not is_setup():
+            config = json.loads(settings)
+            dispatcher_settings = setup(config=config)
+        else:
+            logger.debug(f'Not calling setup() for worker_id={worker_id} because environment is already configured')
+            dispatcher_settings = global_settings
 
-    worker_cls = dispatcher_settings.worker.get('worker_cls', 'dispatcherd.worker.task.TaskWorker')
-    worker_kwargs = dispatcher_settings.worker.get('worker_kwargs', {})
-    cls = cast(Type[TaskWorker], resolve_callable(worker_cls))
-    assert cls is not None
+        worker_cls = dispatcher_settings.worker.get('worker_cls', 'dispatcherd.worker.task.TaskWorker')
+        worker_kwargs = dispatcher_settings.worker.get('worker_kwargs', {})
+        cls = cast(Type[TaskWorker], resolve_callable(worker_cls))
+        assert cls is not None
 
-    worker = cls(worker_id=worker_id, finished_queue=finished_queue, message_queue=message_queue, **worker_kwargs)
+        worker = cls(worker_id=worker_id, finished_queue=finished_queue, message_queue=message_queue, **worker_kwargs)
 
-    work_loop_internal(worker)
+        work_loop_internal(worker)
+    except Exception:
+        import sys
+        import traceback as tb_module
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        tb_str = ''.join(tb_module.format_exception(exc_type, exc_value, exc_tb))
+
+        # Try to send error message to parent - this is critical since logs may not be visible
+        try:
+            error_msg = {
+                "worker": worker_id,
+                "event": "error",
+                "error_type": exc_type.__name__ if exc_type else "Unknown",
+                "error_message": str(exc_value),
+                "traceback": tb_str
+            }
+            finished_queue.put(error_msg)
+        except Exception:
+            # Last resort: at least try to log it
+            try:
+                logger.exception(f'Fatal exception in work_loop for worker_id={worker_id}, and failed to send error to parent')
+            except Exception:
+                pass  # Nothing more we can do
+
+        # Re-raise to ensure non-zero exit code
+        raise

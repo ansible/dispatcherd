@@ -37,6 +37,11 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.status: Literal['initialized', 'spawned', 'starting', 'ready', 'stopping', 'exited', 'error', 'retired'] = 'initialized'
         self.exit_msg_event = asyncio.Event()
 
+        # Error information (populated when worker sends "error" event)
+        self.error_type: Optional[str] = None
+        self.error_message: Optional[str] = None
+        self.error_traceback: Optional[str] = None
+
     async def start(self) -> None:
         if self.status != 'initialized':
             logger.error(f'Worker {self.worker_id} status is not initialized, can not start, status={self.status}')
@@ -635,3 +640,28 @@ class WorkerPool(WorkerPoolProtocol):
             elif event == 'done':
                 await self.process_finished(worker, message)
                 await self.drain_queue()
+
+            elif event == 'error':
+                # Worker subprocess encountered a fatal error and sent details back
+                error_type = message.get('error_type', 'Unknown')
+                error_message = message.get('error_message', 'No message')
+                error_traceback = message.get('traceback', 'No traceback available')
+
+                logger.error(f'Worker {worker_id} reported fatal error: {error_type}: {error_message}')
+                logger.error(f'Worker {worker_id} traceback:\n{error_traceback}')
+
+                async with self.workers.management_lock:
+                    worker.status = 'error'
+                    worker.error_type = error_type
+                    worker.error_message = error_message
+                    worker.error_traceback = error_traceback
+                    worker.retired_at = time.monotonic()
+                    worker.exit_msg_event.set()
+                    worker.process.message_queue.close()
+
+                # Cancel any current task
+                if worker.current_task:
+                    uuid = worker.current_task.get('uuid', '<unknown>')
+                    logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} when it encountered fatal error')
+                    self.canceled_count += 1
+                    worker.is_active_cancel = False

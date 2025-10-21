@@ -43,6 +43,22 @@ async def _dump_dispatcher_diagnostics(dispatcher: DispatcherMain) -> str:
         lines.append(f"    Counts for capacity: {worker.counts_for_capacity}")
         lines.append(f"    Inactive: {worker.inactive}")
 
+        # If worker is in error state, show error details if available
+        if worker.status == 'error':
+            if worker.error_type or worker.error_message:
+                lines.append(f"    ERROR DETAILS:")
+                if worker.error_type:
+                    lines.append(f"      Type: {worker.error_type}")
+                if worker.error_message:
+                    lines.append(f"      Message: {worker.error_message}")
+                if worker.error_traceback:
+                    lines.append(f"      Traceback:")
+                    for line in worker.error_traceback.split('\n'):
+                        if line:  # Skip empty lines
+                            lines.append(f"        {line}")
+            else:
+                lines.append(f"    NOTE: Worker in error state but no error details received")
+
     # Dump pool tasks state
     lines.append(f"\nPool Task States:")
     if dispatcher.pool.read_results_task:
