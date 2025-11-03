@@ -31,7 +31,7 @@ class CommunicationItems:
 
 async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
     """Replaces the DispatcherMain.main method, similar to how most asyncio tests work"""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     async with adispatcher_service(config) as dispatcher:
         comms.q_out.put('ready')
 
@@ -102,7 +102,7 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     """
     ctx = multiprocessing.get_context('fork')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
-    process = multiprocessing.Process(target=subprocess_main, args=(config, comms))
+    process = ctx.Process(target=subprocess_main, args=(config, comms))
     try:
         process.start()
         ready_msg = comms.q_out.get()

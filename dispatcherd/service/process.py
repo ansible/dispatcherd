@@ -100,7 +100,12 @@ class ProcessManager:
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         if self._loop:
             return self._loop
-        self._loop = asyncio.get_event_loop()
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop, create a new one
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
         return self._loop
 
     def create_process(  # type: ignore[no-untyped-def]

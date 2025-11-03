@@ -139,13 +139,65 @@ def is_valid_annotation(annotation):
     return True
 
 
+def normalize_annotation_str(annotation) -> str:
+    """Convert type annotation to PEP 604 format (X | Y instead of Union[X, Y])"""
+    import types
+    import typing
+
+    # Get the origin and args of the annotation
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    # Handle Union types (including Optional which is Union[X, None])
+    if origin is typing.Union or (hasattr(types, 'UnionType') and origin is types.UnionType):
+        # Convert Union[X, Y] to "X | Y"
+        arg_strs = [normalize_annotation_str(arg) for arg in args]
+        return ' | '.join(arg_strs)
+
+    # Handle Literal types
+    elif origin is Literal:
+        # Keep Literal as is, but format args properly
+        if args:
+            # For string literals, quote them
+            formatted_args = []
+            for arg in args:
+                if isinstance(arg, str):
+                    formatted_args.append(f"'{arg}'")
+                else:
+                    formatted_args.append(str(arg))
+            return f"typing.Literal[{', '.join(formatted_args)}]"
+        return str(annotation)
+
+    # Handle generic types like dict[str, int]
+    elif origin is not None:
+        origin_name = getattr(origin, '__name__', str(origin))
+        if args:
+            arg_strs = [normalize_annotation_str(arg) for arg in args]
+            return f"{origin_name}[{', '.join(arg_strs)}]"
+        return origin_name
+
+    # Handle basic types and None
+    elif annotation is type(None):
+        return 'None'
+    elif hasattr(annotation, '__name__'):
+        return annotation.__name__
+    else:
+        # Fallback for special types like Any, etc.
+        # typing.Any and similar special forms
+        ann_str = str(annotation)
+        # Keep typing.Any, typing.Literal etc as-is
+        if 'typing.' in ann_str:
+            return ann_str
+        return ann_str
+
+
 def schema_for_cls(cls: Type) -> dict[str, str]:
     signature = inspect.signature(cls.__init__)
     parameters = signature.parameters
     spec = {}
     for k, p in parameters.items():
         if is_valid_annotation(p.annotation):
-            spec[k] = str(p.annotation)
+            spec[k] = normalize_annotation_str(p.annotation)
     return spec
 
 
@@ -163,9 +215,9 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     pm_classes = (process.ProcessManager, process.ForkServerManager, process.SpawnServerManager)
     for pm_cls in pm_classes:
         ret['service']['process_manager_kwargs'].update(schema_for_cls(pm_cls))
-    ret['service']['process_manager_cls'] = str(Literal[tuple(pm_cls.__name__ for pm_cls in pm_classes)])
+    ret['service']['process_manager_cls'] = normalize_annotation_str(Literal[tuple(pm_cls.__name__ for pm_cls in pm_classes)])
 
-    ret['worker']['worker_cls'] = str(Any)
+    ret['worker']['worker_cls'] = normalize_annotation_str(Any)
     ret['worker']['worker_kwargs'] = schema_for_cls(TaskWorker)
 
     # Copy brokers and always add noop
