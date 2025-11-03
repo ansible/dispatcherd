@@ -100,7 +100,12 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     Note this is likely to have problems if mixed with code running asyncio loops.
     It is mainly intended to be called from synchronous python.
     """
-    ctx = multiprocessing.get_context('fork')
+    # Use forkserver for Python 3.14+ compatibility (fork is deprecated in multi-threaded contexts)
+    import sys as _sys
+    if _sys.version_info >= (3, 14):
+        ctx = multiprocessing.get_context('forkserver')
+    else:
+        ctx = multiprocessing.get_context('fork')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
     process = ctx.Process(target=subprocess_main, args=(config, comms))
     try:
@@ -109,7 +114,8 @@ def dispatcher_service(config, main_events=(), pool_events=()):
         if ready_msg != 'ready':
             if ready_msg == 'error':
                 tb = comms.q_out.get()
-                print(tb)
+                sys.stderr.write(f"Subprocess error:\n{tb}\n")
+                sys.stderr.flush()
             raise RuntimeError(f'Never got "ready" message from server, got {ready_msg}')
         yield comms
     finally:
