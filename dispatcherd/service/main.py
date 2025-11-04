@@ -3,7 +3,7 @@ import json
 import logging
 import signal
 from os import getpid
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Iterable
 from uuid import uuid4
 
 from ..processors.delayer import Delayer
@@ -26,8 +26,8 @@ class DispatcherMain(DispatcherMainProtocol):
         producers: Iterable[Producer],
         pool: WorkerPool,
         shared: SharedAsyncObjectsProtocol,
-        node_id: Optional[str] = None,
-        metrics: Optional[DispatcherMetricsServerProtocol] = None,
+        node_id: str | None = None,
+        metrics: DispatcherMetricsServerProtocol | None = None,
     ):
         self.received_count = 0
         self.control_count = 0
@@ -95,8 +95,8 @@ class DispatcherMain(DispatcherMainProtocol):
         return
 
     async def process_message(
-        self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
-    ) -> tuple[Optional[str], Optional[str]]:
+        self, payload: dict | str, producer: Producer | None = None, channel: str | None = None
+    ) -> tuple[str | None, str | None]:
         """Called by producers to trigger a new task
 
         Convert payload from producer into python dict
@@ -133,7 +133,7 @@ class DispatcherMain(DispatcherMainProtocol):
         # We should be at this line if task was delayed, and in that case there is no reply message
         return (None, None)
 
-    async def get_control_result(self, action: str, control_data: Optional[dict] = None) -> dict:
+    async def get_control_result(self, action: str, control_data: dict | None = None) -> dict:
         self.control_count += 1
         if (not hasattr(control_tasks, action)) or action.startswith('_'):
             logger.warning(f'Got invalid control request {action}, control_data: {control_data}')
@@ -144,7 +144,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 control_data = {}
             return await method(dispatcher=self, data=control_data)
 
-    async def run_control_action(self, action: str, control_data: Optional[dict] = None, reply_to: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+    async def run_control_action(self, action: str, control_data: dict | None = None, reply_to: str | None = None) -> tuple[str | None, str | None]:
         return_data = {}
 
         # Get the result
@@ -162,7 +162,7 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.info(f"Control action {action} returned {type(return_data)}, done")
             return (None, None)
 
-    async def process_message_now(self, message: dict, producer: Optional[Producer] = None) -> tuple[Optional[str], Optional[str]]:
+    async def process_message_now(self, message: dict, producer: Producer | None = None) -> tuple[str | None, str | None]:
         """Route message to control action or to a worker via the pool. Does not consider task delays."""
         if 'control' in message:
             return await self.run_control_action(message['control'], control_data=message.get('control_data'), reply_to=message.get('reply_to'))
@@ -229,7 +229,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def main_as_task(self) -> None:
         """This should be called for the main loop if running as part of another asyncio program"""
-        metrics_task: Optional[asyncio.Task] = None
+        metrics_task: asyncio.Task | None = None
         if self.metrics:
             metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
             ensure_fatal(metrics_task, exit_event=self.shared.exit_event)

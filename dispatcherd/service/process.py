@@ -4,7 +4,7 @@ import logging
 import multiprocessing
 from multiprocessing.context import BaseContext
 from types import ModuleType
-from typing import Any, Callable, Iterable, Optional, Union
+from typing import Any, Callable, Iterable
 
 from ..config import LazySettings
 from ..config import settings as global_settings
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class ProcessProxy:
     def __init__(
         self,
-        args: Optional[Iterable] = None,
-        kwargs: Optional[dict] = None,
+        args: Iterable | None = None,
+        kwargs: dict | None = None,
         target: Callable = work_loop,
-        ctx: Union[BaseContext, ModuleType] = multiprocessing,
+        ctx: BaseContext | ModuleType = multiprocessing,
     ) -> None:
         self.message_queue: multiprocessing.Queue = ctx.Queue()
         # This is intended use of multiprocessing context, but not available on BaseContext
@@ -33,17 +33,17 @@ class ProcessProxy:
     def start(self) -> None:
         self._process.start()
 
-    def join(self, timeout: Optional[int] = None) -> None:
+    def join(self, timeout: int | None = None) -> None:
         if timeout:
             self._process.join(timeout=timeout)
         else:
             self._process.join()
 
     @property
-    def pid(self) -> Optional[int]:
+    def pid(self) -> int | None:
         return self._process.pid
 
-    def exitcode(self) -> Optional[int]:
+    def exitcode(self) -> int | None:
         return self._process.exitcode
 
     def is_alive(self) -> bool:
@@ -59,7 +59,7 @@ class ProcessProxy:
         """Enter the runtime context and return this ProcessProxy."""
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_value: Optional[BaseException], traceback: Optional[Any]) -> Optional[bool]:
+    def __exit__(self, exc_type: type | None, exc_value: BaseException | None, traceback: Any | None) -> bool | None:
         """Ensure the process is terminated and joined when exiting the context.
 
         If the process is still alive, it will be terminated (or killed if necessary) and then joined.
@@ -78,7 +78,7 @@ class ProcessManager:
 
     def __init__(self, settings: LazySettings = global_settings) -> None:
         self.ctx = multiprocessing.get_context(self.mp_context)
-        self._finished_queue: Optional[multiprocessing.Queue] = self.ctx.Queue()
+        self._finished_queue: multiprocessing.Queue | None = self.ctx.Queue()
 
         # Settings will be passed to the workers to initialize dispatcher settings
         settings_config: dict = settings.serialize()
@@ -86,8 +86,6 @@ class ProcessManager:
         # JSON is more type-restrictive than python pickle, which multiprocessing otherwise uses
         # this assures we do not pass python objects inside of settings by accident
         self.settings_stash: str = json.dumps(settings_config)
-
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     @property
     def finished_queue(self) -> multiprocessing.Queue:
@@ -97,19 +95,8 @@ class ProcessManager:
         self._finished_queue = self.ctx.Queue()
         return self._finished_queue
 
-    def get_event_loop(self) -> asyncio.AbstractEventLoop:
-        if self._loop:
-            return self._loop
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop, create a new one
-            self._loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self._loop)
-        return self._loop
-
     def create_process(  # type: ignore[no-untyped-def]
-        self, args: Optional[Iterable[int | str | dict]] = None, kwargs: Optional[dict] = None, **proxy_kwargs
+        self, args: Iterable[int | str | dict] | None = None, kwargs: dict | None = None, **proxy_kwargs
     ) -> ProcessProxy:
         "Returns a ProcessProxy object, which itself contains a Process object, but actual subprocess is not yet started"
         # kwargs allow passing target for substituting the work_loop for testing
@@ -119,8 +106,8 @@ class ProcessManager:
         kwargs['finished_queue'] = self.finished_queue
         return ProcessProxy(args=args, kwargs=kwargs, ctx=self.ctx, **proxy_kwargs)
 
-    async def read_finished(self) -> dict[str, Union[str, int]]:
-        message = await self.get_event_loop().run_in_executor(None, self.finished_queue.get)
+    async def read_finished(self) -> dict[str, str | int]:
+        message = await asyncio.to_thread(self.finished_queue.get)
         return message
 
     def shutdown(self) -> None:
@@ -133,7 +120,7 @@ class ProcessManager:
 class ForkServerManager(ProcessManager):
     mp_context = 'forkserver'
 
-    def __init__(self, preload_modules: Optional[list[str]] = None, settings: LazySettings = global_settings):
+    def __init__(self, preload_modules: list[str] | None = None, settings: LazySettings = global_settings):
         super().__init__(settings=settings)
         self.ctx.set_forkserver_preload(preload_modules if preload_modules else [])
 

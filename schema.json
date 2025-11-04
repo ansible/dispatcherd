@@ -11,7 +11,7 @@
       "max_self_check_message_age_seconds": "int | None"
     },
     "socket": {
-      "socket_path": "str"
+      "socket_path": "<class 'str'>"
     },
     "noop": {}
   },
@@ -26,20 +26,20 @@
   },
   "service": {
     "pool_kwargs": {
-      "min_workers": "int",
+      "min_workers": "<class 'int'>",
       "max_workers": "int | None",
-      "scaledown_wait": "float",
-      "scaledown_interval": "float",
-      "worker_stop_wait": "float",
-      "worker_removal_wait": "float"
+      "scaledown_wait": "<class 'float'>",
+      "scaledown_interval": "<class 'float'>",
+      "worker_stop_wait": "<class 'float'>",
+      "worker_removal_wait": "<class 'float'>"
     },
     "main_kwargs": {
       "node_id": "str | None"
     },
     "metrics_kwargs": {
-      "port": "int",
-      "log_level": "str",
-      "host": "str"
+      "port": "<class 'int'>",
+      "log_level": "<class 'str'>",
+      "host": "<class 'str'>"
     },
     "process_manager_kwargs": {
       "preload_modules": "list[str] | None"
@@ -51,9 +51,9 @@
   },
   "worker": {
     "worker_kwargs": {
-      "worker_id": "int",
-      "idle_timeout": "int"
+      "worker_id": "<class 'int'>",
+      "idle_timeout": "<class 'int'>"
     },
-    "worker_cls": "Any"
+    "worker_cls": "typing.Any"
   }
 }

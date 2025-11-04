@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Union
 
 from ..protocols import DispatcherMain
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
@@ -20,15 +19,15 @@ class ScheduleEntry(HasWakeup):
     def mark_run(self) -> None:
         self.last_ran = time.monotonic()
 
-    def next_wakeup(self) -> Optional[float]:
+    def next_wakeup(self) -> float | None:
         return self.last_ran + self.period
 
 
 class ScheduledProducer(BaseProducer):
-    def __init__(self, task_schedule: dict[str, dict[str, Union[int, str]]], shared: SharedAsyncObjectsProtocol) -> None:
+    def __init__(self, task_schedule: dict[str, dict[str, int | str]], shared: SharedAsyncObjectsProtocol) -> None:
         self.task_schedule = task_schedule
         self.schedule_entries: set[ScheduleEntry] = set()
-        self.dispatcher: Optional[DispatcherMain] = None
+        self.dispatcher: DispatcherMain | None = None
         self.schedule_runner = NextWakeupRunner(self.schedule_entries, self.trigger_schedule, shared=shared, name='ScheduledProducer')
         super().__init__()
 
