@@ -66,7 +66,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 producer.events.ready_event.set()  # exits wait_task, producer had error
 
     async def connect_signals(self) -> None:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self.receive_signal)
 
@@ -94,9 +94,7 @@ class DispatcherMain(DispatcherMainProtocol):
     async def connected_callback(self, producer: Producer) -> None:
         return
 
-    async def process_message(
-        self, payload: dict | str, producer: Producer | None = None, channel: str | None = None
-    ) -> tuple[str | None, str | None]:
+    async def process_message(self, payload: dict | str, producer: Producer | None = None, channel: str | None = None) -> tuple[str | None, str | None]:
         """Called by producers to trigger a new task
 
         Convert payload from producer into python dict

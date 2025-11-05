@@ -31,7 +31,6 @@ class CommunicationItems:
 
 async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
     """Replaces the DispatcherMain.main method, similar to how most asyncio tests work"""
-    loop = asyncio.get_running_loop()
     async with adispatcher_service(config) as dispatcher:
         comms.q_out.put('ready')
 
@@ -48,7 +47,7 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
 
         while True:
             if new_message_task is None:
-                new_message_task = loop.run_in_executor(None, comms.q_in.get)
+                new_message_task = asyncio.create_task(asyncio.to_thread(comms.q_in.get))
 
             all_tasks = list(event_tasks.values()) + [new_message_task]
             await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
