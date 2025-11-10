@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 from multiprocessing import Queue
 
@@ -11,8 +12,10 @@ def test_pass_messages_to_worker():
         has_read = message_queue.get()
         finished_queue.put(f'done {a} {b} {c} {has_read}')
 
-    finished_q = Queue()
-    process = ProcessProxy((1, 2, 3, finished_q), target=work_loop)
+    # Use 'fork' context to allow local function pickling
+    ctx = multiprocessing.get_context('fork')
+    finished_q = ctx.Queue()
+    process = ProcessProxy((1, 2, 3, finished_q), target=work_loop, ctx=ctx)
     process.start()
 
     process.message_queue.put('start')

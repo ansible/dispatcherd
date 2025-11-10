@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Union
 
 from ..protocols import DispatcherMain
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
@@ -10,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class OnStartProducer(BaseProducer):
-    def __init__(self, task_list: dict[str, dict[str, Union[int, str]]], shared: SharedAsyncObjectsProtocol):
+    def __init__(self, task_list: dict[str, dict[str, int | str]], shared: SharedAsyncObjectsProtocol):
         self.task_list = task_list
         super().__init__()
 

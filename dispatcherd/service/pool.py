@@ -4,7 +4,7 @@ import multiprocessing
 import os
 import signal
 import time
-from typing import Any, Iterator, Literal, Optional
+from typing import Any, Iterator, Literal
 
 from ..processors.blocker import Blocker
 from ..processors.queuer import Queuer
@@ -25,11 +25,11 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     def __init__(self, worker_id: int, process: ProcessProxy) -> None:
         self.worker_id = worker_id
         self.process = process
-        self.current_task: Optional[dict] = None
+        self.current_task: dict | None = None
         self.created_at: float = time.monotonic()
-        self.started_at: Optional[float] = None
-        self.stopping_at: Optional[float] = None
-        self.retired_at: Optional[float] = None
+        self.started_at: float | None = None
+        self.stopping_at: float | None = None
+        self.retired_at: float | None = None
         self.is_active_cancel: bool = False
 
         # Tracking information for worker
@@ -152,7 +152,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.started_at = None
         self.finished_count += 1
 
-    def next_wakeup(self) -> Optional[float]:
+    def next_wakeup(self) -> float | None:
         """Used by next-run-runner for setting wakeups for task timeouts"""
         if self.is_active_cancel:
             return None
@@ -201,7 +201,7 @@ class WorkerPool(WorkerPoolProtocol):
         process_manager: ProcessManager,
         shared: SharedAsyncObjectsProtocol,
         min_workers: int = 1,
-        max_workers: Optional[int] = None,
+        max_workers: int | None = None,
         scaledown_wait: float = 15.0,
         scaledown_interval: float = 15.0,
         worker_stop_wait: float = 30.0,
@@ -217,8 +217,8 @@ class WorkerPool(WorkerPoolProtocol):
         self.shared = shared
 
         # internal asyncio tasks
-        self.read_results_task: Optional[asyncio.Task] = None
-        self.management_task: Optional[asyncio.Task] = None
+        self.read_results_task: asyncio.Task | None = None
+        self.management_task: asyncio.Task | None = None
         # other internal asyncio objects
         self.events: PoolEventsProtocol = PoolEvents()
 
@@ -240,7 +240,7 @@ class WorkerPool(WorkerPoolProtocol):
         # }
         # where 1 worker is currently in use, and a task using the 2nd worker
         # finished at <timestamp>, which is compared against out scale down wait time
-        self.last_used_by_ct: dict[int, Optional[float]] = {}
+        self.last_used_by_ct: dict[int, float | None] = {}
         self.scaledown_wait = scaledown_wait
         self.scaledown_interval = scaledown_interval  # seconds for poll to see if we should retire workers
         self.worker_stop_wait = worker_stop_wait  # seconds to wait for a worker to exit on its own before SIGTERM, SIGKILL

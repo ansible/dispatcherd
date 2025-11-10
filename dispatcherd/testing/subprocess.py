@@ -31,7 +31,6 @@ class CommunicationItems:
 
 async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
     """Replaces the DispatcherMain.main method, similar to how most asyncio tests work"""
-    loop = asyncio.get_event_loop()
     async with adispatcher_service(config) as dispatcher:
         comms.q_out.put('ready')
 
@@ -48,7 +47,7 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
 
         while True:
             if new_message_task is None:
-                new_message_task = loop.run_in_executor(None, comms.q_in.get)
+                new_message_task = asyncio.create_task(asyncio.to_thread(comms.q_in.get))
 
             all_tasks = list(event_tasks.values()) + [new_message_task]
             await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -100,16 +99,23 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     Note this is likely to have problems if mixed with code running asyncio loops.
     It is mainly intended to be called from synchronous python.
     """
-    ctx = multiprocessing.get_context('fork')
+    # Use forkserver for Python 3.14+ compatibility (fork is deprecated in multi-threaded contexts)
+    import sys as _sys
+
+    if _sys.version_info >= (3, 14):
+        ctx = multiprocessing.get_context('forkserver')
+    else:
+        ctx = multiprocessing.get_context('fork')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
-    process = multiprocessing.Process(target=subprocess_main, args=(config, comms))
+    process = ctx.Process(target=subprocess_main, args=(config, comms))
     try:
         process.start()
         ready_msg = comms.q_out.get()
         if ready_msg != 'ready':
             if ready_msg == 'error':
                 tb = comms.q_out.get()
-                print(tb)
+                sys.stderr.write(f"Subprocess error:\n{tb}\n")
+                sys.stderr.flush()
             raise RuntimeError(f'Never got "ready" message from server, got {ready_msg}')
         yield comms
     finally:

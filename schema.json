@@ -2,13 +2,13 @@
   "version": 2,
   "brokers": {
     "pg_notify": {
-      "config": "typing.Optional[dict]",
-      "async_connection_factory": "typing.Optional[str]",
-      "sync_connection_factory": "typing.Optional[str]",
-      "channels": "typing.Union[tuple, list]",
-      "default_publish_channel": "typing.Optional[str]",
-      "max_connection_idle_seconds": "typing.Optional[int]",
-      "max_self_check_message_age_seconds": "typing.Optional[int]"
+      "config": "dict | None",
+      "async_connection_factory": "str | None",
+      "sync_connection_factory": "str | None",
+      "channels": "tuple | list",
+      "default_publish_channel": "str | None",
+      "max_connection_idle_seconds": "int | None",
+      "max_self_check_message_age_seconds": "int | None"
     },
     "socket": {
       "socket_path": "<class 'str'>"
@@ -17,24 +17,24 @@
   },
   "producers": {
     "ScheduledProducer": {
-      "task_schedule": "dict[str, dict[str, typing.Union[int, str]]]"
+      "task_schedule": "dict[str, dict[str, int | str]]"
     },
     "OnStartProducer": {
-      "task_list": "dict[str, dict[str, typing.Union[int, str]]]"
+      "task_list": "dict[str, dict[str, int | str]]"
     },
     "ControlProducer": {}
   },
   "service": {
     "pool_kwargs": {
       "min_workers": "<class 'int'>",
-      "max_workers": "typing.Optional[int]",
+      "max_workers": "int | None",
       "scaledown_wait": "<class 'float'>",
       "scaledown_interval": "<class 'float'>",
       "worker_stop_wait": "<class 'float'>",
       "worker_removal_wait": "<class 'float'>"
     },
     "main_kwargs": {
-      "node_id": "typing.Optional[str]"
+      "node_id": "str | None"
     },
     "metrics_kwargs": {
       "port": "<class 'int'>",
@@ -42,7 +42,7 @@
       "host": "<class 'str'>"
     },
     "process_manager_kwargs": {
-      "preload_modules": "typing.Optional[list[str]]"
+      "preload_modules": "list[str] | None"
     },
     "process_manager_cls": "typing.Literal['ProcessManager', 'ForkServerManager', 'SpawnServerManager']"
   },
