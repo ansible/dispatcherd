@@ -503,17 +503,19 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def dispatch_task(self, message: dict) -> None:
         uuid = message.get("uuid", "<unknown>")
+        worker = None
         if unblocked_task := await self.blocker.process_task(message):
-            worker = self.queuer.get_worker_or_process_task(unblocked_task)
+            if self.shared.exit_event.is_set():
+                logger.warning(f'Not dispatching task (uuid={uuid}) because currently shutting down')
+                self.queuer.queued_messages.append(unblocked_task)
+                return
+            async with self.workers.management_lock:
+                worker = self.queuer.get_worker_or_process_task(unblocked_task)
+                if worker:
+                    logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
+                    await worker.start_task(unblocked_task)  # transitions status, need under lock
             if worker:
-                if self.shared.exit_event.is_set():
-                    logger.warning(f'Not dispatching task (uuid={uuid}) because currently shutting down')
-                    self.queuer.queued_messages.append(unblocked_task)
-                    return
-                logger.debug(f"Dispatching task (uuid={uuid}) to worker (id={worker.worker_id})")
-                async with self.workers.management_lock:
-                    await worker.start_task(unblocked_task)
-                    await self.post_task_start(unblocked_task)
+                await self.post_task_start(unblocked_task)
             else:
                 self.events.management_event.set()  # kick manager task to start auto-scale up if needed
 
