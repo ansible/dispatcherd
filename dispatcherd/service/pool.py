@@ -289,7 +289,7 @@ class WorkerPool(WorkerPoolProtocol):
             return bool(delta > self.scaledown_wait)
         return False
 
-    async def scale_workers(self) -> None:
+    async def scale_workers(self) -> int:
         """Initiates scale-up and scale-down actions
 
         Note that, because we are very async, this may just set the action in motion.
@@ -299,6 +299,7 @@ class WorkerPool(WorkerPoolProtocol):
         """
         available_workers = [worker for worker in self.workers if worker.counts_for_capacity]
         worker_ct = len(available_workers)
+        changed_ct = 0
 
         if worker_ct < self.min_workers:
             # Scale up to MIN for startup, or scale _back_ up to MIN if workers exited due to external signals
@@ -306,6 +307,7 @@ class WorkerPool(WorkerPoolProtocol):
             for _ in range(self.min_workers - worker_ct):
                 new_worker_id = await self.up()
                 worker_ids.append(new_worker_id)
+                changed_ct += 1
             logger.info(f'Starting subprocess for workers ids={worker_ids} (prior ct={worker_ct}) to satisfy min_workers')
 
         elif self.active_task_ct() > len(available_workers):
@@ -313,6 +315,7 @@ class WorkerPool(WorkerPoolProtocol):
             if worker_ct < self.max_workers:
                 # Scale up, below or to MAX
                 new_worker_id = await self.up()
+                changed_ct += 1
                 logger.info(f'Started worker id={new_worker_id} (prior ct={worker_ct}) to handle queue pressure')
             else:
                 # At MAX, nothing we can do, but let the user know anyway
@@ -326,7 +329,10 @@ class WorkerPool(WorkerPoolProtocol):
                         if worker.current_task is None:
                             logger.info(f'Scaling down worker id={worker.worker_id} (prior ct={worker_ct}) due to demand')
                             await worker.signal_stop()
+                            changed_ct -= 1
                             break
+
+        return changed_ct
 
     async def manage_new_workers(self) -> None:
         """This calls the .start() method to actually fork a new process for initialized workers
@@ -357,30 +363,29 @@ class WorkerPool(WorkerPoolProtocol):
         async with self.workers.management_lock:
             current_workers = list(self.workers)
 
-        remove_ids = []
-        for worker in current_workers:
-            # Check if the worker has died unexpectedly.
-            if worker.expected_alive and not worker.process.is_alive():
-                logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
+            remove_ids = []
+            for worker in current_workers:
+                # Check if the worker has died unexpectedly.
+                if worker.expected_alive and not worker.process.is_alive():
+                    logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
 
-                if worker.current_task:
-                    uuid = worker.current_task.get('uuid', '<unknown>')
-                    logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} but the worker died unexpectedly')
-                    self.canceled_count += 1
-                    worker.is_active_cancel = False  # Prevent further processing.
-                worker.status = 'error'
-                worker.retired_at = time.monotonic()
+                    if worker.current_task:
+                        uuid = worker.current_task.get('uuid', '<unknown>')
+                        logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} but the worker died unexpectedly')
+                        self.canceled_count += 1
+                        worker.is_active_cancel = False  # Prevent further processing.
+                    worker.status = 'error'
+                    worker.retired_at = time.monotonic()
 
-            if worker.status == 'exited':
-                await worker.stop()  # happy path
-            elif worker.status == 'stopping' and worker.stopping_at and (time.monotonic() - worker.stopping_at) > self.worker_stop_wait:
-                logger.warning(f'Worker id={worker.worker_id} failed to respond to stop signal')
-                await worker.stop()  # agressively bring down process
-            elif worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
-                remove_ids.append(worker.worker_id)
+                if worker.status == 'exited':
+                    await worker.stop()  # happy path
+                elif worker.status == 'stopping' and worker.stopping_at and (time.monotonic() - worker.stopping_at) > self.worker_stop_wait:
+                    logger.warning(f'Worker id={worker.worker_id} failed to respond to stop signal')
+                    await worker.stop()  # agressively bring down process
+                elif worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
+                    remove_ids.append(worker.worker_id)
 
-        # Phase 2: Remove workers from the collection under lock.
-        async with self.workers.management_lock:
+            # Phase 2: Remove workers from the collection under lock.
             for worker_id in remove_ids:
                 if worker_id in self.workers:
                     logger.debug(f'Fully removing worker id={worker_id}')
@@ -390,11 +395,13 @@ class WorkerPool(WorkerPoolProtocol):
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shared.exit_event.is_set():
 
-            await self.scale_workers()
+            scaled_ct = await self.scale_workers()
 
             await self.manage_new_workers()
 
-            await self.manage_old_workers()
+            # Do not look at old workers if we are scaling up
+            if scaled_ct <= 0:
+                await self.manage_old_workers()
 
             try:
                 await asyncio.wait_for(self.events.management_event.wait(), timeout=self.scaledown_interval)
