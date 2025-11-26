@@ -114,6 +114,38 @@ async def test_scale_down_condition(pool_factory):
 
 
 @pytest.mark.asyncio
+async def test_scale_up_worker_should_not_be_immediately_eligible_for_scaledown(test_settings):
+    """Scaling up due to demand should block a scale-down until the new worker actually does work."""
+    shared = SharedAsyncObjects()
+    process_manager = ProcessManager(settings=test_settings)
+    pool = WorkerPool(process_manager=process_manager, shared=shared, min_workers=1, max_workers=5, scaledown_wait=60.0)
+    DispatcherMain(producers=(), pool=pool, shared=shared)  # ensure dispatcher objects can be built without mocks
+
+    # Seed pool with ready workers that have been idle long enough to allow scale-down
+    existing_workers = 3
+    for _ in range(existing_workers):
+        worker_id = await pool.up()
+        worker = pool.workers.get_by_id(worker_id)
+        worker.status = 'ready'
+        worker.current_task = None
+
+    idle_timestamp = time.monotonic() - 120.0
+    pool.last_used_by_ct[existing_workers] = idle_timestamp
+    pool.last_used_by_ct[existing_workers + 1] = idle_timestamp  # stale timestamp for a previous high-water mark
+
+    # Queue pressure requires more workers, so scaling up should add one.
+    pool.queuer.queued_messages = [{'task': 'waiting.task'} for _ in range(existing_workers + 1)]
+    await pool.scale_workers()
+    assert len([worker for worker in pool.workers if worker.counts_for_capacity]) == existing_workers + 1
+
+    # Leave at least one queued task to simulate ongoing demand that should block scale-down.
+    pool.queuer.queued_messages = [{'task': 'waiting.task'}]
+
+    # Because there is still queued work, the new heuristic should block scale-down entirely.
+    assert pool.should_scale_down() is False
+
+
+@pytest.mark.asyncio
 async def test_error_while_scaling_up(pool_factory):
     """It is always possible that we fail to start workers due to OS errors. This should not error the whole program."""
     pool = pool_factory(min_workers=1, max_workers=1)

@@ -281,6 +281,8 @@ class WorkerPool(WorkerPoolProtocol):
 
     def should_scale_down(self) -> bool:
         "If True, we have not had enough work lately to justify the number of workers we are running"
+        if self.queuer.count():
+            return False  # never retire workers while backlog exists
         worker_ct = len([worker for worker in self.workers if worker.counts_for_capacity])
         last_used = self.last_used_by_ct.get(worker_ct)
         if last_used:
