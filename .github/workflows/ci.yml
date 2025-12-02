@@ -27,10 +27,26 @@ jobs:
         run: pip install -e .[pg_notify,metrics]
       - run: make postgres
       - run: pip install -r requirements_dev.txt
-      - name: Run synchronous tests
-        run: pytest tests/ -vv -s
-      - name: Run pytest-asyncio tests
-        run: pytest tests/ -vv -s -m asyncio
+      - name: Run synchronous tests with coverage
+        run: pytest tests/ -vv -s --cov=dispatcherd --cov-report=xml --cov-append
+      - name: Run pytest-asyncio tests with coverage
+        run: pytest tests/ -vv -s -m asyncio --cov=dispatcherd --cov-report=xml --cov-append
+      - name: Inject PR number into coverage.xml
+        if: |
+          matrix.py_version == '3.12' &&
+          github.event_name == 'pull_request'
+        run: |
+          if [ -f coverage.xml ]; then
+            sed -i '2i<!-- PR ${{ github.event.pull_request.number }} -->' coverage.xml
+            echo "Injected PR number ${{ github.event.pull_request.number }} into coverage.xml"
+          fi
+      - name: Upload coverage report
+        if: matrix.py_version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
 
   black:
     name: Run black
