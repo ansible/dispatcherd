@@ -281,8 +281,6 @@ class WorkerPool(WorkerPoolProtocol):
 
     def should_scale_down(self) -> bool:
         "If True, we have not had enough work lately to justify the number of workers we are running"
-        if self.queuer.count():
-            return False  # never retire workers while backlog exists
         worker_ct = len([worker for worker in self.workers if worker.counts_for_capacity])
         last_used = self.last_used_by_ct.get(worker_ct)
         if last_used:
@@ -301,6 +299,7 @@ class WorkerPool(WorkerPoolProtocol):
         """
         available_workers = [worker for worker in self.workers if worker.counts_for_capacity]
         worker_ct = len(available_workers)
+        active_task_ct = self.active_task_ct()
         changed_ct = 0
 
         if worker_ct < self.min_workers:
@@ -312,7 +311,7 @@ class WorkerPool(WorkerPoolProtocol):
                 changed_ct += 1
             logger.info(f'Starting subprocess for workers ids={worker_ids} (prior ct={worker_ct}) to satisfy min_workers')
 
-        elif self.active_task_ct() > len(available_workers):
+        elif active_task_ct > worker_ct:
             # have more messages to process than what we have workers
             if worker_ct < self.max_workers:
                 # Scale up, below or to MAX
@@ -322,6 +321,10 @@ class WorkerPool(WorkerPoolProtocol):
             else:
                 # At MAX, nothing we can do, but let the user know anyway
                 logger.warning(f'System at max_workers={self.max_workers} and queue pressure detected, capacity may be insufficient')
+
+        elif active_task_ct == worker_ct:
+            # Workers are exactly sufficient for queued work
+            pass
 
         elif worker_ct > self.min_workers:
             # Scale down above or to MIN, because surplus of workers have done nothing useful in <cutoff> time
@@ -334,6 +337,7 @@ class WorkerPool(WorkerPoolProtocol):
                             changed_ct -= 1
                             break
 
+        logger.debug(f'Ran scale_workers worker_ct={worker_ct}, active_task_ct={active_task_ct}, changed {changed_ct}')
         return changed_ct
 
     async def manage_new_workers(self) -> None:
@@ -361,14 +365,12 @@ class WorkerPool(WorkerPoolProtocol):
         The read_results_task will mark the worker status to exited
         This method will see the updated status, join the process, and remove it from self.workers
         """
-        # Phase 1: Get a consistent snapshot of workers.
-        async with self.workers.management_lock:
-            current_workers = list(self.workers)
-
-            remove_ids = []
-            for worker in current_workers:
-                # Check if the worker has died unexpectedly.
-                if worker.expected_alive and not worker.process.is_alive():
+        # Loop for process liveliness check
+        current_workers = list(self.workers)
+        for worker in current_workers:
+            # Check if the worker has died unexpectedly.
+            if worker.expected_alive and not worker.process.is_alive():
+                async with self.workers.management_lock:
                     logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
 
                     if worker.current_task:
@@ -378,6 +380,14 @@ class WorkerPool(WorkerPoolProtocol):
                         worker.is_active_cancel = False  # Prevent further processing.
                     worker.status = 'error'
                     worker.retired_at = time.monotonic()
+
+        # Loop for worker accounting
+        # Phase 1: Get a consistent snapshot of workers, also force stop of non-responding workers
+        async with self.workers.management_lock:
+            current_workers = list(self.workers)
+
+            remove_ids = []
+            for worker in current_workers:
 
                 if worker.status == 'exited':
                     await worker.stop()  # happy path
@@ -390,7 +400,12 @@ class WorkerPool(WorkerPoolProtocol):
             # Phase 2: Remove workers from the collection under lock.
             for worker_id in remove_ids:
                 if worker_id in self.workers:
-                    logger.debug(f'Fully removing worker id={worker_id}')
+                    retired_at = self.workers.get_by_id(worker_id).retired_at
+                    if retired_at:
+                        delta = time.monotonic() - retired_at
+                    else:
+                        delta = 0
+                    logger.debug(f'Fully removing worker id={worker_id}, retired {delta} seconds ago')
                     self.workers.remove_by_id(worker_id)
 
     async def manage_workers(self) -> None:
@@ -404,6 +419,8 @@ class WorkerPool(WorkerPoolProtocol):
             # Do not look at old workers if we are scaling up
             if scaled_ct <= 0:
                 await self.manage_old_workers()
+            else:
+                logger.debug(f'Not tending to old workers due to recent scaling up by {scaled_ct}')
 
             try:
                 await asyncio.wait_for(self.events.management_event.wait(), timeout=self.scaledown_interval)
