@@ -9,9 +9,11 @@ import psycopg
 
 from ..protocols import Broker as BrokerProtocol
 from ..protocols import BrokerSelfCheckStatus
-from ..utils import resolve_callable
+from ..utils import MessageChunker, resolve_callable
 
 logger = logging.getLogger(__name__)
+
+PG_NOTIFY_MAX_PAYLOAD_BYTES = 8000
 
 
 """This module exists under the theory that dispatcherd messaging should be swappable
@@ -114,6 +116,7 @@ class Broker(BrokerProtocol):
         # These variables track things so that we can exit, send, and re-enter
         self.notify_loop_active: bool = False
         self.notify_queue: list = []
+        self.chunker = MessageChunker(max_bytes=PG_NOTIFY_MAX_PAYLOAD_BYTES)
 
     @classmethod
     def generate_self_check_channel_name(cls) -> str:
@@ -213,7 +216,10 @@ class Broker(BrokerProtocol):
                 logger.debug('Starting listening for pg_notify notifications')
                 self.notify_loop_active = True
                 async for notify in connection.notifies(timeout=self.max_connection_idle_seconds):
-                    yield notify.channel, notify.payload
+                    assembled = self.chunker.consume(notify.payload)
+                    if assembled is None:
+                        continue
+                    yield notify.channel, assembled
                     if self.notify_queue:
                         break
                 else:
@@ -232,22 +238,22 @@ class Broker(BrokerProtocol):
         await cursor.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
 
     async def apublish_message(self, channel: str | None = None, origin: str | int | None = '', message: str = '') -> None:  # public
-        """asyncio way to publish a message, used to send control in control-and-reply
+        """asyncio way to publish a message, used to send control in control-and-reply"""
+        channel = self.get_publish_channel(channel)
+        message_chunks = self.chunker.split(message)
 
-        Not strictly necessary for the service itself if it sends replies in the workers,
-        but this may change in the future.
-        """
         if self.notify_loop_active:
-            self.notify_queue.append((channel, message))
+            for chunk in message_chunks:
+                self.notify_queue.append((channel, chunk))
             return
 
         connection = await self.aget_connection()
-        channel = self.get_publish_channel(channel)
 
         async with connection.cursor() as cur:
-            await self.apublish_message_from_cursor(cur, channel=channel, message=message)
+            for chunk in message_chunks:
+                await self.apublish_message_from_cursor(cur, channel=channel, message=chunk)
 
-        logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
+        logger.debug(f'Sent pg_notify message of {len(message)} chars as {len(message_chunks)} chunk(s) to {channel}')
 
     async def aclose(self) -> None:
         if self.owns_async_connection and self._async_connection:
@@ -300,7 +306,10 @@ class Broker(BrokerProtocol):
 
             logger.debug('Starting listening for pg_notify notifications')
             for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
-                yield (notify.channel, notify.payload)
+                assembled = self.chunker.consume(notify.payload)
+                if assembled is None:
+                    continue
+                yield (notify.channel, assembled)
 
             cur.execute(self.get_unlisten_query())
 
@@ -309,10 +318,13 @@ class Broker(BrokerProtocol):
         connection = self.get_connection()
         channel = self.get_publish_channel(channel)
 
-        with connection.cursor() as cur:
-            cur.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, message))
+        message_chunks = self.chunker.split(message)
 
-        logger.debug(f'Sent pg_notify message of {len(message)} chars to {channel}')
+        with connection.cursor() as cur:
+            for chunk in message_chunks:
+                cur.execute(self.NOTIFY_QUERY_TEMPLATE, (channel, chunk))
+
+        logger.debug(f'Sent pg_notify message of {len(message)} chars as {len(message_chunks)} chunk(s) to {channel}')
         return channel
 
     def close(self) -> None:

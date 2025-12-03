@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import socket
@@ -7,8 +6,11 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional,
 
 from ..protocols import Broker as BrokerProtocol
 from ..service.asyncio_tasks import named_wait
+from ..utils import JsonChunkStream, MessageChunker
 
 logger = logging.getLogger(__name__)
+
+SOCKET_MAX_MESSAGE_BYTES = 1024
 
 
 class Client:
@@ -39,21 +41,6 @@ class Client:
         self.replies_to_send = []
 
 
-def extract_json(message: str) -> Iterator[str]:
-    """With message that may be an incomplete JSON string, yield JSON-complete strings and leftover"""
-    decoder = json.JSONDecoder()
-    pos = 0
-    length = len(message)
-    while pos < length:
-        try:
-            _, index = decoder.raw_decode(message, pos)
-            json_msg = message[pos:index]
-            yield json_msg
-            pos = index
-        except json.JSONDecodeError:
-            break
-
-
 class Broker(BrokerProtocol):
     """A Unix socket client for dispatcher as simple as possible
 
@@ -70,6 +57,7 @@ class Broker(BrokerProtocol):
         self.clients: dict[int, Client] = {}
         self.sock: Optional[socket.socket] = None  # for synchronous clients
         self.incoming_queue: asyncio.Queue = asyncio.Queue()
+        self.chunker = MessageChunker(max_bytes=SOCKET_MAX_MESSAGE_BYTES)
 
     def __str__(self) -> str:
         return f'socket-broker-{self.socket_path}'
@@ -90,7 +78,10 @@ class Broker(BrokerProtocol):
                 if not line:
                     break  # disconnect
                 message = line.decode().strip()
-                await self.incoming_queue.put((client.client_id, message))
+                complete = self.chunker.consume(message)
+                if complete is None:
+                    continue
+                await self.incoming_queue.put((client.client_id, complete))
                 # Wait for caller to potentially fill a reply queue
                 # this should realistically never take more than a trivial amount of time
                 await asyncio.wait_for(named_wait(client.yield_clear, f'internal_wait_for_client_{client.client_id}'), timeout=2)
@@ -155,15 +146,20 @@ class Broker(BrokerProtocol):
         await self.incoming_queue.put((-1, 'stop'))
 
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
+        chunks = self.chunker.split(message)
         if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
                 if client.listen_loop_active:
-                    logger.info(f'Queued message len={len(message)} for client_id={origin}')
-                    client.queue_reply(message)
+                    logger.info(f'Queued message len={len(message)} ({len(chunks)} chunk(s)) for client_id={origin}')
+                    for chunk in chunks:
+                        client.queue_reply(chunk)
                 else:
-                    logger.warning(f'Not currently listening to client_id={origin}, attempting reply len={len(message)}, but might be dropped')
-                    client.write(message)
+                    logger.warning(
+                        f'Not currently listening to client_id={origin}, attempting reply len={len(message)}, but might be dropped'
+                    )
+                    for chunk in chunks:
+                        client.write(chunk)
                     await client.writer.drain()
             else:
                 logger.error(f'Client_id={origin} is not currently connected')
@@ -173,7 +169,8 @@ class Broker(BrokerProtocol):
             writer = None
             try:
                 _, writer = await asyncio.open_unix_connection(self.socket_path)
-                writer.write((message + '\n').encode())
+                for chunk in chunks:
+                    writer.write((chunk + '\n').encode())
                 await writer.drain()
             finally:
                 if writer:
@@ -193,27 +190,31 @@ class Broker(BrokerProtocol):
                     connected_callback()
 
                 received_ct = 0
-                buffer = ''
+                json_stream = JsonChunkStream()
                 while True:
-                    response = sock.recv(1024).decode().strip()
+                    response_bytes = sock.recv(SOCKET_MAX_MESSAGE_BYTES)
+                    if not response_bytes:
+                        logger.debug('Socket connection closed while waiting for replies')
+                        break
+                    response = response_bytes.decode().strip()
 
-                    current_message = buffer + response
-                    yielded_chars = 0
-                    for complete_msg in extract_json(current_message):
+                    for complete_msg in json_stream.feed(response):
+                        assembled = self.chunker.consume(complete_msg)
+                        if assembled is None:
+                            continue
                         received_ct += 1
-                        yield (0, complete_msg)
+                        yield (0, assembled)
                         if received_ct >= max_messages:
                             return
-                        yielded_chars += len(complete_msg)
-                    else:
-                        buffer = current_message[yielded_chars:]
-                        logger.info(f'Received incomplete message len={len(buffer)}, adding to buffer')
+                    if json_stream.pending:
+                        logger.info(f'Received incomplete message len={len(json_stream.pending)}, adding to buffer')
 
         finally:
             self.sock = None
 
     def _publish_from_sock(self, sock: socket.socket, message: str) -> None:
-        sock.sendall((message + "\n").encode())
+        for chunk in self.chunker.split(message):
+            sock.sendall((chunk + "\n").encode())
 
     def publish_message(self, channel: Optional[str] = None, message: Optional[str] = None) -> None:
         assert isinstance(message, str)

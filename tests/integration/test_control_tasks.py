@@ -74,3 +74,30 @@ def test_cancel_task(pg_dispatcher, pg_broker, pg_control, get_worker_data):
     assert status == 'work_cleared'
     delta = time.time() - start
     assert delta < 1.0  # less than sleep in test
+
+
+def test_pg_notify_large_control_reply(pg_dispatcher, pg_broker, pg_control, get_worker_data):
+    """Ensure pg_notify can transport replies larger than the native payload limit."""
+    big_value = 'x' * 9001
+    msg = json.dumps(
+        {
+            'task': 'lambda: __import__("time").sleep(3.1415)',
+            'uuid': 'big_payload_control',
+            'kwargs': {'blob': big_value},
+        }
+    )
+    pg_broker.publish_message(message=msg)
+
+    time.sleep(0.2)
+    running_jobs = pg_control.control_with_reply('running', timeout=2)
+    assert len(running_jobs) == 1
+    # Confirm the serialized payload that traveled over pg_notify exceeded 8k characters.
+    assert len(json.dumps(running_jobs[0])) > 8000
+
+    running_job = get_worker_data(running_jobs)
+    assert running_job['uuid'] == 'big_payload_control'
+    assert running_job['kwargs']['blob'] == big_value
+
+    pg_control.control_with_reply('cancel', data={'uuid': 'big_payload_control'}, timeout=1)
+    status = pg_dispatcher.q_out.get(timeout=2)
+    assert status == 'work_cleared'

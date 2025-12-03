@@ -1,6 +1,9 @@
 import importlib
+import json
+import logging
+import uuid
 from enum import Enum
-from typing import Callable, Optional, Protocol, Type, Union, runtime_checkable
+from typing import Callable, Dict, Optional, Protocol, Type, Union, runtime_checkable
 
 
 @runtime_checkable
@@ -50,3 +53,164 @@ class DuplicateBehavior(Enum):
     discard = 'discard'  # if task is submitted twice, discard the 2nd one
     serial = 'serial'  # hold duplicate submissions in queue but only run 1 at a time
     queue_one = 'queue_one'  # hold only 1 duplicate submission in queue, discard any more
+
+
+logger = logging.getLogger(__name__)
+
+CHUNK_MARKER = '__dispatcherd_chunk__'
+CHUNK_VERSION = 'dispatcherd.v1'
+DEFAULT_HEADER_RESERVE = 256
+
+
+class MessageChunker:
+    """Utility for splitting and reassembling large broker messages."""
+
+    def __init__(self, max_bytes: int | None = None, header_reserve: int = DEFAULT_HEADER_RESERVE) -> None:
+        self.max_bytes = max_bytes
+        self.header_reserve = header_reserve
+        self._pending_chunks: Dict[str, Dict[int, str]] = {}
+        self._final_indexes: Dict[str, int] = {}
+
+    def _serialize_chunk(self, chunk_id: str, seq: int, is_final: bool, payload: str) -> str:
+        chunk = {
+            CHUNK_MARKER: CHUNK_VERSION,
+            'id': chunk_id,
+            'seq': seq,
+            'final': is_final,
+            'payload': payload,
+        }
+        return json.dumps(chunk, separators=(',', ':'))
+
+    def split(self, message: str) -> list[str]:
+        """Return the message split into <= max_bytes sized chunks."""
+        if (self.max_bytes is None) or (len(message.encode('utf-8')) <= self.max_bytes):
+            return [message]
+
+        if self.max_bytes <= self.header_reserve:
+            raise ValueError('max_bytes must be larger than header reserve to enable chunking')
+
+        payload_limit = max(1, self.max_bytes - self.header_reserve)
+        chunk_id = uuid.uuid4().hex
+
+        chunks: list[str] = []
+        msg_len = len(message)
+        idx = 0
+        seq = 0
+        while idx < msg_len:
+            chunk_chars: list[str] = []
+            chunk_bytes = 0
+            # Build up a payload respecting the payload_limit in bytes.
+            while idx < msg_len:
+                char = message[idx]
+                encoded_char = char.encode('utf-8')
+                if chunk_bytes + len(encoded_char) > payload_limit:
+                    if not chunk_chars:
+                        raise ValueError('Unable to fit a single character inside configured payload limit')
+                    break
+                chunk_chars.append(char)
+                chunk_bytes += len(encoded_char)
+                idx += 1
+
+            if not chunk_chars:
+                raise RuntimeError('Chunk preparation created an empty payload, aborting')
+
+            chunk_payload = ''.join(chunk_chars)
+            is_final = idx >= msg_len
+            chunk_str = self._serialize_chunk(chunk_id, seq, is_final, chunk_payload)
+            encoded_chunk = chunk_str.encode('utf-8')
+
+            # Metadata grows with the sequence/index digits, so trim until the chunk fits.
+            while len(encoded_chunk) > self.max_bytes and chunk_chars:
+                idx -= 1
+                chunk_chars.pop()
+                chunk_payload = ''.join(chunk_chars)
+                is_final = idx >= msg_len
+                chunk_str = self._serialize_chunk(chunk_id, seq, is_final, chunk_payload)
+                encoded_chunk = chunk_str.encode('utf-8')
+
+            if len(encoded_chunk) > self.max_bytes:
+                raise RuntimeError('Chunk metadata exceeds the configured max bytes limit')
+
+            chunks.append(chunk_str)
+            seq += 1
+
+        return chunks
+
+    def consume(self, payload: str) -> str | None:
+        """Feed a payload to the chunker and return the assembled message when complete."""
+        if not isinstance(payload, str):
+            return payload
+
+        try:
+            decoded = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            return payload
+
+        if not isinstance(decoded, dict) or decoded.get(CHUNK_MARKER) != CHUNK_VERSION:
+            return payload
+
+        chunk_id = decoded.get('id')
+        seq = decoded.get('seq')
+        is_final = bool(decoded.get('final', False))
+        chunk_payload = decoded.get('payload', '')
+
+        if not isinstance(chunk_id, str) or not isinstance(seq, int):
+            logger.warning('Received chunk with invalid metadata: %s', decoded)
+            return None
+
+        if not isinstance(chunk_payload, str):
+            chunk_payload = str(chunk_payload)
+
+        buffer = self._pending_chunks.setdefault(chunk_id, {})
+        buffer[seq] = chunk_payload
+
+        if is_final:
+            self._final_indexes[chunk_id] = seq
+
+        final_seq = self._final_indexes.get(chunk_id)
+        if final_seq is None:
+            return None
+
+        if any(index not in buffer for index in range(final_seq + 1)):
+            return None
+
+        message = ''.join(buffer[index] for index in range(final_seq + 1))
+        self._pending_chunks.pop(chunk_id, None)
+        self._final_indexes.pop(chunk_id, None)
+        return message
+
+
+class JsonChunkStream:
+    """Incrementally extract discrete JSON strings from an incoming text stream."""
+
+    def __init__(self) -> None:
+        self._decoder = json.JSONDecoder()
+        self._buffer = ''
+
+    def feed(self, data: str) -> list[str]:
+        """Return a list of complete JSON strings extracted from the stream."""
+        if data:
+            self._buffer += data
+        complete: list[str] = []
+        while self._buffer:
+            stripped_buffer = self._buffer.lstrip()
+            if stripped_buffer != self._buffer:
+                self._buffer = stripped_buffer
+                if not self._buffer:
+                    break
+            try:
+                _, index = self._decoder.raw_decode(self._buffer)
+            except json.JSONDecodeError:
+                break
+            chunk_str = self._buffer[:index]
+            complete.append(chunk_str)
+            self._buffer = self._buffer[index:]
+        return complete
+
+    @property
+    def pending(self) -> str:
+        """Return any buffered partial JSON data."""
+        return self._buffer
+
+    def clear(self) -> None:
+        self._buffer = ''
