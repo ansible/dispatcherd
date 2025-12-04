@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 CHUNK_MARKER = '__dispatcherd_chunk__'
 CHUNK_VERSION = 'dispatcherd.v1'
-DEFAULT_HEADER_RESERVE = 256
 
 
 def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> str:
@@ -34,7 +33,13 @@ def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> s
     return json.dumps(chunk, separators=(',', ':'))
 
 
-def split_message(message: str, *, max_bytes: int | None = None, header_reserve: int = DEFAULT_HEADER_RESERVE) -> list[str]:
+def estimate_wrapper_bytes(message_id: str, chunk_index: int) -> int:
+    """Return the byte overhead introduced when wrapping an empty payload."""
+    chunk_bytes = _serialize_chunk(message_id, chunk_index, False, '').encode('utf-8')
+    return len(chunk_bytes)
+
+
+def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     """Split ``message`` into JSON chunks that respect ``max_bytes`` limits.
 
     Parameters
@@ -44,8 +49,6 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
     max_bytes:
         Maximum size (in bytes) allowed for each chunk. ``None`` disables
         chunking and returns the original message.
-    header_reserve:
-        Bytes deducted from ``max_bytes`` to account for metadata overhead.
 
     Returns
     -------
@@ -54,16 +57,15 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
 
     Example
     -------
-    >>> split_message('{"data":"x" * 10}', max_bytes=20, header_reserve=10)
-    ['{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":0,"final_chunk":true,"payload":"{"data":"x" * 10}"}']
+    >>> split_message('{"data":"' + 'x' * 30 + '"}', max_bytes=80)
+    [
+        '{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":0,"final_chunk":false,"payload":"{\\"data\\":\\"xxxxxxxxxxxxxxxxxxxx\\"}"}',
+        '{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":1,"final_chunk":true,"payload":"{\\"data\\":\\"xxxxxxxxxxxx\\"}"}',
+    ]
     """
     if (max_bytes is None) or (len(message.encode('utf-8')) <= max_bytes):
         return [message]
 
-    if max_bytes <= header_reserve:
-        raise ValueError('max_bytes must be larger than header reserve to enable chunking')
-
-    payload_limit = max(1, max_bytes - header_reserve)
     message_id = uuid.uuid4().hex
     message_bytes = message.encode('utf-8')
     total_len = len(message_bytes)
@@ -72,34 +74,25 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
     byte_pos = 0
     seq = 0
     while byte_pos < total_len:
-        end = min(byte_pos + payload_limit, total_len)
-        payload_bytes = message_bytes[byte_pos:end]
-        # Ensure we do not cut through a multibyte character
+        end = min(byte_pos + max_bytes, total_len)
+        chunk_str = ''
         while end > byte_pos:
-            try:
-                chunk_payload = payload_bytes.decode('utf-8')
-                break
-            except UnicodeDecodeError:
-                end -= 1
-                payload_bytes = message_bytes[byte_pos:end]
-        else:
-            raise ValueError('Unable to find valid UTF-8 boundary within payload limit')
-
-        is_final = end >= total_len
-        chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
-        encoded_chunk = chunk_str.encode('utf-8')
-
-        while len(encoded_chunk) > max_bytes and end > byte_pos:
-            end -= 1
             payload_bytes = message_bytes[byte_pos:end]
             try:
                 chunk_payload = payload_bytes.decode('utf-8')
             except UnicodeDecodeError:
+                end -= 1
                 continue
             is_final = end >= total_len
-            chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
-            encoded_chunk = chunk_str.encode('utf-8')
+            wrapper_bytes = estimate_wrapper_bytes(message_id, seq)
+            if len(payload_bytes) + wrapper_bytes <= max_bytes:
+                chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
+                break
+            end -= 1
+        else:
+            raise ValueError('Unable to build chunk that fits length constraints')
 
+        encoded_chunk = chunk_str.encode('utf-8')
         if len(encoded_chunk) > max_bytes:
             raise RuntimeError('Chunk metadata exceeds the configured max bytes limit')
 
@@ -145,11 +138,16 @@ class ChunkAccumulator:
 
         Scenarios
         ---------
-        1. The dict is not a chunk envelope -> ``(False, payload_dict, None)``
-        2. The dict is a chunk but more pieces are pending -> ``(True, None, message_id)``
-        3. All chunks are now available and decoded -> ``(True, completed_dict, message_id)``
-        4. Metadata missing/invalid -> ``(True, None, None)``
-        5. Reassembly fails JSON validation -> ``(True, None, message_id)``
+        1. Payload is not chunked: returns ``(False, payload_dict, None)`` so callers
+           can process it immediately.
+        2. Chunk received but more pieces pending: returns ``(True, None, message_id)``
+           allowing the caller to track which message is mid-flight.
+        3. Final chunk completes the message: returns ``(True, completed_dict, message_id)``
+           with the assembled payload ready for processing.
+        4. Chunk metadata missing/invalid: returns ``(True, None, None)`` to signal the
+           caller that the chunk could not be associated with a message.
+        5. Reassembly fails JSON validation: returns ``(True, None, message_id)`` so the
+           caller can log/handle the failure for that specific message.
         """
         chunk = parse_chunk_dict(payload_dict)
         if not chunk:
