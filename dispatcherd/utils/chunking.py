@@ -33,6 +33,13 @@ def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> s
     return json.dumps(chunk, separators=(',', ':'))
 
 
+def _wrapper_overhead_bytes(message_id: str, chunk_index: int) -> int:
+    """Estimate bytes added by chunk metadata for the given index."""
+    empty_chunk = _serialize_chunk(message_id, chunk_index, False, '')
+    empty_payload = json.dumps('')
+    return len(empty_chunk.encode('utf-8')) - len(empty_payload.encode('utf-8'))
+
+
 def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     """Split ``message`` into JSON chunks that respect ``max_bytes`` limits.
 
@@ -64,31 +71,24 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     message_bytes = message.encode('utf-8')
     total_len = len(message_bytes)
 
-    min_chunk_len = len(_serialize_chunk(message_id, 0, False, '').encode('utf-8'))
-    if max_bytes <= min_chunk_len:
-        raise ValueError('max_bytes too small to contain chunk metadata')
-
     chunks: list[str] = []
     byte_pos = 0
     seq = 0
     while byte_pos < total_len:
-        end = min(byte_pos + max_bytes, total_len)
-        chunk_str = ''
-        while end > byte_pos:
-            payload_bytes = message_bytes[byte_pos:end]
-            try:
-                chunk_payload = payload_bytes.decode('utf-8')
-            except UnicodeDecodeError:
-                end -= 1
-                continue
-            is_final = end >= total_len
-            chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
-            encoded_chunk = chunk_str.encode('utf-8')
-            if len(encoded_chunk) <= max_bytes:
-                break
-            end -= 1
-        else:
-            raise ValueError('Unable to build chunk that fits length constraints')
+        overhead = _wrapper_overhead_bytes(message_id, seq)
+        payload_budget = max_bytes - overhead
+        if payload_budget <= 0:
+            raise ValueError('max_bytes too small to contain chunk metadata')
+
+        end = min(byte_pos + payload_budget, total_len)
+        payload_bytes = message_bytes[byte_pos:end]
+        chunk_payload = payload_bytes.decode('utf-8')
+
+        is_final = end >= total_len
+        chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
+        encoded_chunk = chunk_str.encode('utf-8')
+        if len(encoded_chunk) > max_bytes:
+            raise RuntimeError('Chunk metadata exceeds the configured max bytes limit')
 
         chunks.append(chunk_str)
         byte_pos = end
