@@ -152,9 +152,7 @@ class Broker(BrokerProtocol):
                     for chunk in chunks:
                         client.queue_reply(chunk)
                 else:
-                    logger.warning(
-                        f'Not currently listening to client_id={origin}, attempting reply len={len(message)}, but might be dropped'
-                    )
+                    logger.warning(f'Not currently listening to client_id={origin}, attempting reply len={len(message)}, but might be dropped')
                     for chunk in chunks:
                         client.write(chunk)
                     await client.writer.drain()
