@@ -36,8 +36,7 @@ def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> s
 def _wrapper_overhead_bytes(message_id: str, chunk_index: int) -> int:
     """Estimate bytes added by chunk metadata for the given index."""
     empty_chunk = _serialize_chunk(message_id, chunk_index, False, '')
-    empty_payload = json.dumps('')
-    return len(empty_chunk.encode('utf-8')) - len(empty_payload.encode('utf-8'))
+    return len(empty_chunk.encode('utf-8'))
 
 
 def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
@@ -88,7 +87,7 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
         chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
         encoded_chunk = chunk_str.encode('utf-8')
         if len(encoded_chunk) > max_bytes:
-            raise RuntimeError('Chunk metadata exceeds the configured max bytes limit')
+            raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
 
         chunks.append(chunk_str)
         byte_pos = end
