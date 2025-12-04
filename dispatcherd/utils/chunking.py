@@ -92,23 +92,28 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     chunks: list[str] = []
     chunk_start = 0
     payload_bytes = 0
+    char_pos = 0
     seq = 0
-    for idx, char in enumerate(message):
+    while char_pos < total_chars:
+        char = message[char_pos]
         char_size = _escaped_char_bytes(char)
+        if char_size > payload_budget:
+            raise RuntimeError('Escaped payload size exceeds available chunk budget')
+
         if payload_bytes + char_size > payload_budget:
-            if idx == chunk_start:
-                raise RuntimeError('Escaped payload size exceeds available chunk budget')
-            chunk_payload = message[chunk_start:idx]
+            chunk_payload = message[chunk_start:char_pos]
             chunk_str = _serialize_chunk(message_id, seq, False, chunk_payload)
             encoded_chunk = chunk_str.encode('utf-8')
             if len(encoded_chunk) > max_bytes:
                 raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
             chunks.append(chunk_str)
             seq += 1
-            chunk_start = idx
+            chunk_start = char_pos
             payload_bytes = 0
+            continue
 
         payload_bytes += char_size
+        char_pos += 1
 
     if chunk_start < total_chars:
         chunk_payload = message[chunk_start:]

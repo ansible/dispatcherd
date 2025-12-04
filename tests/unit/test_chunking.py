@@ -66,7 +66,5 @@ def test_split_message_reaches_escape_limit_when_budget_too_small():
     payload = '{"data":"' + '😊' * 60 + '"}'
     max_bytes = 149  # payload budget smaller than escaped character count
 
-    chunks = split_message(payload, max_bytes=max_bytes)
-
-    assert len(chunks) > 1
-    assert ''.join(json.loads(chunk)['payload'] for chunk in chunks) == payload
+    with pytest.raises(RuntimeError):
+        split_message(payload, max_bytes=max_bytes)
