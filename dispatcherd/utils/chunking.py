@@ -33,12 +33,6 @@ def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> s
     return json.dumps(chunk, separators=(',', ':'))
 
 
-def estimate_wrapper_bytes(message_id: str, chunk_index: int) -> int:
-    """Return the byte overhead introduced when wrapping an empty payload."""
-    chunk_bytes = _serialize_chunk(message_id, chunk_index, False, '').encode('utf-8')
-    return len(chunk_bytes)
-
-
 def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     """Split ``message`` into JSON chunks that respect ``max_bytes`` limits.
 
@@ -70,6 +64,10 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     message_bytes = message.encode('utf-8')
     total_len = len(message_bytes)
 
+    min_chunk_len = len(_serialize_chunk(message_id, 0, False, '').encode('utf-8'))
+    if max_bytes <= min_chunk_len:
+        raise ValueError('max_bytes too small to contain chunk metadata')
+
     chunks: list[str] = []
     byte_pos = 0
     seq = 0
@@ -84,17 +82,13 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
                 end -= 1
                 continue
             is_final = end >= total_len
-            wrapper_bytes = estimate_wrapper_bytes(message_id, seq)
-            if len(payload_bytes) + wrapper_bytes <= max_bytes:
-                chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
+            chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
+            encoded_chunk = chunk_str.encode('utf-8')
+            if len(encoded_chunk) <= max_bytes:
                 break
             end -= 1
         else:
             raise ValueError('Unable to build chunk that fits length constraints')
-
-        encoded_chunk = chunk_str.encode('utf-8')
-        if len(encoded_chunk) > max_bytes:
-            raise RuntimeError('Chunk metadata exceeds the configured max bytes limit')
 
         chunks.append(chunk_str)
         byte_pos = end
