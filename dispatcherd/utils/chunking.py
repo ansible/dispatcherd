@@ -14,6 +14,7 @@ Typical usage is a two-step process:
 import json
 import logging
 import uuid
+from functools import lru_cache
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,15 @@ def _wrapper_overhead_bytes(message_id: str, chunk_index: int) -> int:
     """Estimate bytes added by chunk metadata for the given index."""
     empty_chunk = _serialize_chunk(message_id, chunk_index, False, '')
     return len(empty_chunk.encode('utf-8'))
+
+
+@lru_cache(maxsize=512)
+def _escaped_char_bytes(character: str) -> int:
+    """Return byte length impact of JSON-encoding a single character."""
+    if len(character) != 1:
+        raise ValueError('Function expects a single character input')
+    encoded = json.dumps(character)
+    return len(encoded[1:-1].encode('utf-8'))
 
 
 def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
@@ -67,30 +77,39 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
         return [message]
 
     message_id = uuid.uuid4().hex
-    message_bytes = message.encode('utf-8')
-    total_len = len(message_bytes)
+    total_chars = len(message)
 
     chunks: list[str] = []
-    byte_pos = 0
+    char_pos = 0
     seq = 0
-    while byte_pos < total_len:
+    while char_pos < total_chars:
         overhead = _wrapper_overhead_bytes(message_id, seq)
         payload_budget = max_bytes - overhead
         if payload_budget <= 0:
             raise ValueError('max_bytes too small to contain chunk metadata')
 
-        end = min(byte_pos + payload_budget, total_len)
-        payload_bytes = message_bytes[byte_pos:end]
-        chunk_payload = payload_bytes.decode('utf-8')
+        end = char_pos
+        payload_bytes = 0
+        while end < total_chars:
+            char = message[end]
+            char_size = _escaped_char_bytes(char)
+            if payload_bytes + char_size > payload_budget:
+                break
+            payload_bytes += char_size
+            end += 1
 
-        is_final = end >= total_len
+        if end == char_pos:
+            raise RuntimeError('Escaped payload size exceeds available chunk budget')
+
+        chunk_payload = message[char_pos:end]
+        is_final = end >= total_chars
         chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
         encoded_chunk = chunk_str.encode('utf-8')
         if len(encoded_chunk) > max_bytes:
             raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
 
         chunks.append(chunk_str)
-        byte_pos = end
+        char_pos = end
         seq += 1
 
     return chunks

@@ -60,3 +60,13 @@ def test_split_message_handles_escaped_characters_without_backtracking():
     assert len(chunks) > 1
     reassembled = ''.join(json.loads(chunk)['payload'] for chunk in chunks)
     assert reassembled == payload
+
+
+def test_split_message_reaches_escape_limit_when_budget_too_small():
+    payload = '{"data":"' + '😊' * 60 + '"}'
+    max_bytes = 149  # payload budget smaller than escaped character count
+
+    chunks = split_message(payload, max_bytes=max_bytes)
+
+    assert len(chunks) > 1
+    assert ''.join(json.loads(chunk)['payload'] for chunk in chunks) == payload
