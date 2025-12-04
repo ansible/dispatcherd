@@ -135,17 +135,12 @@ class MessageChunker:
         return chunks
 
     @staticmethod
-    def parse_chunk(payload: str) -> Optional[dict]:
-        try:
-            decoded = json.loads(payload)
-        except (TypeError, json.JSONDecodeError):
+    def parse_chunk_dict(candidate: dict) -> Optional[dict]:
+        if not isinstance(candidate, dict):
             return None
-
-        if not isinstance(decoded, dict):
+        if candidate.get(CHUNK_MARKER) != CHUNK_VERSION:
             return None
-        if decoded.get(CHUNK_MARKER) != CHUNK_VERSION:
-            return None
-        return decoded
+        return candidate
 
 
 class ChunkAccumulator:
@@ -155,11 +150,11 @@ class ChunkAccumulator:
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.final_indexes: Dict[str, int] = {}
 
-    def ingest(self, payload: str) -> tuple[bool, Optional[str], Optional[str]]:
-        """Process a payload and return (is_chunk, completed_payload, message_id)."""
-        chunk = MessageChunker.parse_chunk(payload)
+    def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
+        """Process a JSON-decoded payload dict and return (is_chunk, completed_message_dict, message_id)."""
+        chunk = MessageChunker.parse_chunk_dict(payload_dict)
         if not chunk:
-            return (False, payload, None)
+            return (False, payload_dict, None)
 
         message_id = chunk.get('message_id') or chunk.get('id')
         seq = chunk.get('chunk_index')
@@ -190,10 +185,20 @@ class ChunkAccumulator:
         if any(index not in buffer for index in range(final_seq + 1)):
             return (True, None, message_id)
 
-        message = ''.join(buffer[index] for index in range(final_seq + 1))
+        message_str = ''.join(buffer[index] for index in range(final_seq + 1))
+        try:
+            message_dict = json.loads(message_str)
+            if not isinstance(message_dict, dict):
+                raise ValueError('assembled payload is not a dict')
+        except Exception:
+            logger.exception(f'Failed to decode chunked message message_id={message_id}')
+            self.pending_messages.pop(message_id, None)
+            self.final_indexes.pop(message_id, None)
+            return (True, None, message_id)
+
         self.pending_messages.pop(message_id, None)
         self.final_indexes.pop(message_id, None)
-        return (True, message, message_id)
+        return (True, message_dict, message_id)
 
     def clear(self) -> None:
         self.pending_messages.clear()

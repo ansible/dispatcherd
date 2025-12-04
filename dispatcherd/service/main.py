@@ -104,23 +104,29 @@ class DispatcherMain(DispatcherMainProtocol):
         Delay tasks when applicable
         Send to next layer of internal processing
         """
-        message: dict | str | None = payload
-        if isinstance(payload, str):
-            is_chunk, assembled, message_id = self.chunk_accumulator.ingest(payload)
-            if is_chunk:
-                if assembled is None:
-                    logger.debug(f'Received chunk for message_id={message_id}, waiting for remainder')
-                    return (None, None)
-                payload = assembled
+        if isinstance(payload, dict):
+            decoded = payload
+        elif isinstance(payload, str):
             try:
-                message = json.loads(payload)
+                decoded = json.loads(payload)
             except Exception:
-                message = {'task': payload}
-        elif isinstance(payload, dict):
-            message = payload
+                logger.error('Received payload that is not valid JSON string')
+                return (None, None)
+            if not isinstance(decoded, dict):
+                logger.error('Decoded payload was not dict after json parsing')
+                return (None, None)
         else:
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
+
+        is_chunk, assembled_message, message_id = self.chunk_accumulator.ingest_dict(decoded)
+        if is_chunk:
+            if assembled_message is None:
+                logger.debug(f'Received chunk for message_id={message_id}, waiting for remainder')
+                return (None, None)
+            message = assembled_message
+        else:
+            message = decoded
 
         if 'self_check' in message:
             if isinstance(producer, BrokeredProducer):
