@@ -204,38 +204,3 @@ class ChunkAccumulator:
         self.pending_messages.clear()
         self.final_indexes.clear()
 
-
-class JsonChunkStream:
-    """Incrementally extract discrete JSON strings from an incoming text stream."""
-
-    def __init__(self) -> None:
-        self._decoder = json.JSONDecoder()
-        self._buffer = ''
-
-    def feed(self, data: str) -> list[str]:
-        """Return a list of complete JSON strings extracted from the stream."""
-        if data:
-            self._buffer += data
-        complete: list[str] = []
-        while self._buffer:
-            stripped_buffer = self._buffer.lstrip()
-            if stripped_buffer != self._buffer:
-                self._buffer = stripped_buffer
-                if not self._buffer:
-                    break
-            try:
-                _, index = self._decoder.raw_decode(self._buffer)
-            except json.JSONDecodeError:
-                break
-            chunk_str = self._buffer[:index]
-            complete.append(chunk_str)
-            self._buffer = self._buffer[index:]
-        return complete
-
-    @property
-    def pending(self) -> str:
-        """Return any buffered partial JSON data."""
-        return self._buffer
-
-    def clear(self) -> None:
-        self._buffer = ''

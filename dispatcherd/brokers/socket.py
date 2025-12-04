@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional,
 
 from ..protocols import Broker as BrokerProtocol
 from ..service.asyncio_tasks import named_wait
-from ..utils import JsonChunkStream, MessageChunker
+from ..utils import MessageChunker
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class Broker(BrokerProtocol):
                 line = await client.reader.readline()
                 if not line:
                     break  # disconnect
-                message = line.decode().strip()
+                message = line.decode().rstrip('\n')
                 await self.incoming_queue.put((client.client_id, message))
                 # Wait for caller to potentially fill a reply queue
                 # this should realistically never take more than a trivial amount of time
@@ -185,22 +185,21 @@ class Broker(BrokerProtocol):
                     connected_callback()
 
                 received_ct = 0
-                json_stream = JsonChunkStream()
+                buffer = ''
                 while True:
-                    response_bytes = sock.recv(SOCKET_MAX_MESSAGE_BYTES)
-                    if not response_bytes:
+                    data = sock.recv(SOCKET_MAX_MESSAGE_BYTES)
+                    if not data:
                         logger.debug('Socket connection closed while waiting for replies')
                         break
-                    response = response_bytes.decode().strip()
-
-                    for complete_msg in json_stream.feed(response):
+                    buffer += data.decode()
+                    while '\n' in buffer:
+                        message, buffer = buffer.split('\n', 1)
+                        if not message:
+                            continue
                         received_ct += 1
-                        yield (0, complete_msg)
+                        yield (0, message)
                         if received_ct >= max_messages:
                             return
-                    if json_stream.pending:
-                        logger.info(f'Received incomplete message len={len(json_stream.pending)}, adding to buffer')
-
         finally:
             self.sock = None
 
