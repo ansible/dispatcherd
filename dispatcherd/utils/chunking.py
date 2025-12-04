@@ -88,6 +88,9 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     payload_budget = max_bytes - overhead
     if payload_budget <= 0:
         raise ValueError('max_bytes too small to contain chunk metadata')
+    if payload_budget < 12:
+        # `_escaped_char_bytes` tops out at 12 bytes for astral plane codepoints, the largest unicode char
+        raise ValueError('max_bytes too small to encode payload characters')
 
     chunks: list[str] = []
     chunk_start = 0
@@ -99,8 +102,6 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
         if not is_final:
             char = message[char_pos]
             char_size = _escaped_char_bytes(char)
-            if char_size > payload_budget:
-                raise RuntimeError('Escaped payload size exceeds available chunk budget')
 
         if is_final or (payload_bytes + char_size > payload_budget):
             # Add a chunk

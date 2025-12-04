@@ -66,5 +66,5 @@ def test_split_message_reaches_escape_limit_when_budget_too_small():
     payload = '{"data":"' + '😊' * 60 + '"}'
     max_bytes = 149  # payload budget smaller than escaped character count
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError):
         split_message(payload, max_bytes=max_bytes)
