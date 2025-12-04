@@ -65,38 +65,38 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
 
     payload_limit = max(1, max_bytes - header_reserve)
     message_id = uuid.uuid4().hex
+    message_bytes = message.encode('utf-8')
+    total_len = len(message_bytes)
 
     chunks: list[str] = []
-    msg_len = len(message)
-    idx = 0
+    byte_pos = 0
     seq = 0
-    while idx < msg_len:
-        chunk_chars: list[str] = []
-        chunk_bytes = 0
-        while idx < msg_len:
-            char = message[idx]
-            encoded_char = char.encode('utf-8')
-            if chunk_bytes + len(encoded_char) > payload_limit:
-                if not chunk_chars:
-                    raise ValueError('Unable to fit a single character inside configured payload limit')
+    while byte_pos < total_len:
+        end = min(byte_pos + payload_limit, total_len)
+        payload_bytes = message_bytes[byte_pos:end]
+        # Ensure we do not cut through a multibyte character
+        while end > byte_pos:
+            try:
+                chunk_payload = payload_bytes.decode('utf-8')
                 break
-            chunk_chars.append(char)
-            chunk_bytes += len(encoded_char)
-            idx += 1
+            except UnicodeDecodeError:
+                end -= 1
+                payload_bytes = message_bytes[byte_pos:end]
+        else:
+            raise ValueError('Unable to find valid UTF-8 boundary within payload limit')
 
-        if not chunk_chars:
-            raise RuntimeError('Chunk preparation created an empty payload, aborting')
-
-        chunk_payload = ''.join(chunk_chars)
-        is_final = idx >= msg_len
+        is_final = end >= total_len
         chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
         encoded_chunk = chunk_str.encode('utf-8')
 
-        while len(encoded_chunk) > max_bytes and chunk_chars:
-            idx -= 1
-            chunk_chars.pop()
-            chunk_payload = ''.join(chunk_chars)
-            is_final = idx >= msg_len
+        while len(encoded_chunk) > max_bytes and end > byte_pos:
+            end -= 1
+            payload_bytes = message_bytes[byte_pos:end]
+            try:
+                chunk_payload = payload_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                continue
+            is_final = end >= total_len
             chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
             encoded_chunk = chunk_str.encode('utf-8')
 
@@ -104,6 +104,7 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
             raise RuntimeError('Chunk metadata exceeds the configured max bytes limit')
 
         chunks.append(chunk_str)
+        byte_pos = end
         seq += 1
 
     return chunks
