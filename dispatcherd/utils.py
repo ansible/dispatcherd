@@ -63,20 +63,18 @@ DEFAULT_HEADER_RESERVE = 256
 
 
 class MessageChunker:
-    """Utility for splitting and reassembling large broker messages."""
+    """Utility for splitting broker messages into chunk envelopes."""
 
     def __init__(self, max_bytes: int | None = None, header_reserve: int = DEFAULT_HEADER_RESERVE) -> None:
         self.max_bytes = max_bytes
         self.header_reserve = header_reserve
-        self._pending_chunks: Dict[str, Dict[int, str]] = {}
-        self._final_indexes: Dict[str, int] = {}
 
     def _serialize_chunk(self, chunk_id: str, seq: int, is_final: bool, payload: str) -> str:
         chunk = {
             CHUNK_MARKER: CHUNK_VERSION,
-            'id': chunk_id,
-            'seq': seq,
-            'final': is_final,
+            'message_id': chunk_id,
+            'chunk_index': seq,
+            'final_chunk': is_final,
             'payload': payload,
         }
         return json.dumps(chunk, separators=(',', ':'))
@@ -136,48 +134,70 @@ class MessageChunker:
 
         return chunks
 
-    def consume(self, payload: str) -> str | None:
-        """Feed a payload to the chunker and return the assembled message when complete."""
-        if not isinstance(payload, str):
-            return payload
-
+    @staticmethod
+    def parse_chunk(payload: str) -> Optional[dict]:
         try:
             decoded = json.loads(payload)
         except (TypeError, json.JSONDecodeError):
-            return payload
-
-        if not isinstance(decoded, dict) or decoded.get(CHUNK_MARKER) != CHUNK_VERSION:
-            return payload
-
-        chunk_id = decoded.get('id')
-        seq = decoded.get('seq')
-        is_final = bool(decoded.get('final', False))
-        chunk_payload = decoded.get('payload', '')
-
-        if not isinstance(chunk_id, str) or not isinstance(seq, int):
-            logger.warning('Received chunk with invalid metadata: %s', decoded)
             return None
 
-        if not isinstance(chunk_payload, str):
-            chunk_payload = str(chunk_payload)
+        if not isinstance(decoded, dict):
+            return None
+        if decoded.get(CHUNK_MARKER) != CHUNK_VERSION:
+            return None
+        return decoded
 
-        buffer = self._pending_chunks.setdefault(chunk_id, {})
-        buffer[seq] = chunk_payload
 
-        if is_final:
-            self._final_indexes[chunk_id] = seq
+class ChunkAccumulator:
+    """Track partial chunked messages keyed by message id."""
 
-        final_seq = self._final_indexes.get(chunk_id)
+    def __init__(self) -> None:
+        self.pending_messages: Dict[str, Dict[int, str]] = {}
+        self.final_indexes: Dict[str, int] = {}
+
+    def ingest(self, payload: str) -> tuple[bool, Optional[str], Optional[str]]:
+        """Process a payload and return (is_chunk, completed_payload, message_id)."""
+        chunk = MessageChunker.parse_chunk(payload)
+        if not chunk:
+            return (False, payload, None)
+
+        message_id = chunk.get('message_id') or chunk.get('id')
+        seq = chunk.get('chunk_index')
+        is_final = chunk.get('final_chunk')
+        if seq is None:
+            seq = chunk.get('seq')
+        if is_final is None:
+            is_final = chunk.get('final')
+
+        if not isinstance(message_id, str) or not isinstance(seq, int):
+            logger.warning('Received chunk with invalid metadata: %s', chunk)
+            return (True, None, None)
+
+        payload_str = chunk.get('payload', '')
+        if not isinstance(payload_str, str):
+            payload_str = str(payload_str)
+
+        buffer = self.pending_messages.setdefault(message_id, {})
+        buffer[seq] = payload_str
+
+        if bool(is_final):
+            self.final_indexes[message_id] = seq
+
+        final_seq = self.final_indexes.get(message_id)
         if final_seq is None:
-            return None
+            return (True, None, message_id)
 
         if any(index not in buffer for index in range(final_seq + 1)):
-            return None
+            return (True, None, message_id)
 
         message = ''.join(buffer[index] for index in range(final_seq + 1))
-        self._pending_chunks.pop(chunk_id, None)
-        self._final_indexes.pop(chunk_id, None)
-        return message
+        self.pending_messages.pop(message_id, None)
+        self.final_indexes.pop(message_id, None)
+        return (True, message, message_id)
+
+    def clear(self) -> None:
+        self.pending_messages.clear()
+        self.final_indexes.clear()
 
 
 class JsonChunkStream:

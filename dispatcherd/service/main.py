@@ -14,6 +14,7 @@ from ..protocols import DispatcherMetricsServer as DispatcherMetricsServerProtoc
 from ..protocols import Producer
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
+from ..utils import ChunkAccumulator
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal, wait_for_any
 
@@ -47,6 +48,7 @@ class DispatcherMain(DispatcherMainProtocol):
         self.metrics = metrics
 
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
+        self.chunk_accumulator = ChunkAccumulator()
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
@@ -102,8 +104,14 @@ class DispatcherMain(DispatcherMainProtocol):
         Delay tasks when applicable
         Send to next layer of internal processing
         """
-        # TODO: more structured validation of the incoming payload from publishers
+        message: dict | str | None = payload
         if isinstance(payload, str):
+            is_chunk, assembled, message_id = self.chunk_accumulator.ingest(payload)
+            if is_chunk:
+                if assembled is None:
+                    logger.debug(f'Received chunk for message_id={message_id}, waiting for remainder')
+                    return (None, None)
+                payload = assembled
             try:
                 message = json.loads(payload)
             except Exception:

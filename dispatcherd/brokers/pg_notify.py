@@ -216,10 +216,7 @@ class Broker(BrokerProtocol):
                 logger.debug('Starting listening for pg_notify notifications')
                 self.notify_loop_active = True
                 async for notify in connection.notifies(timeout=self.max_connection_idle_seconds):
-                    assembled = self.chunker.consume(notify.payload)
-                    if assembled is None:
-                        continue
-                    yield notify.channel, assembled
+                    yield notify.channel, notify.payload
                     if self.notify_queue:
                         break
                 else:
@@ -306,10 +303,7 @@ class Broker(BrokerProtocol):
 
             logger.debug('Starting listening for pg_notify notifications')
             for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
-                assembled = self.chunker.consume(notify.payload)
-                if assembled is None:
-                    continue
-                yield (notify.channel, assembled)
+                yield (notify.channel, notify.payload)
 
             cur.execute(self.get_unlisten_query())
 

@@ -78,10 +78,7 @@ class Broker(BrokerProtocol):
                 if not line:
                     break  # disconnect
                 message = line.decode().strip()
-                complete = self.chunker.consume(message)
-                if complete is None:
-                    continue
-                await self.incoming_queue.put((client.client_id, complete))
+                await self.incoming_queue.put((client.client_id, message))
                 # Wait for caller to potentially fill a reply queue
                 # this should realistically never take more than a trivial amount of time
                 await asyncio.wait_for(named_wait(client.yield_clear, f'internal_wait_for_client_{client.client_id}'), timeout=2)
@@ -199,11 +196,8 @@ class Broker(BrokerProtocol):
                     response = response_bytes.decode().strip()
 
                     for complete_msg in json_stream.feed(response):
-                        assembled = self.chunker.consume(complete_msg)
-                        if assembled is None:
-                            continue
                         received_ct += 1
-                        yield (0, assembled)
+                        yield (0, complete_msg)
                         if received_ct >= max_messages:
                             return
                     if json_stream.pending:
