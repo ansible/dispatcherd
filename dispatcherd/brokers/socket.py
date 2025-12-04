@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional,
 
 from ..protocols import Broker as BrokerProtocol
 from ..service.asyncio_tasks import named_wait
-from ..utils import MessageChunker
+from ..utils import split_message
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class Broker(BrokerProtocol):
         self.clients: dict[int, Client] = {}
         self.sock: Optional[socket.socket] = None  # for synchronous clients
         self.incoming_queue: asyncio.Queue = asyncio.Queue()
-        self.chunker = MessageChunker(max_bytes=SOCKET_MAX_MESSAGE_BYTES)
+        self.max_message_bytes = SOCKET_MAX_MESSAGE_BYTES
 
     def __str__(self) -> str:
         return f'socket-broker-{self.socket_path}'
@@ -143,7 +143,7 @@ class Broker(BrokerProtocol):
         await self.incoming_queue.put((-1, 'stop'))
 
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
-        chunks = self.chunker.split(message)
+        chunks = split_message(message, max_bytes=self.max_message_bytes)
         if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
@@ -204,7 +204,7 @@ class Broker(BrokerProtocol):
             self.sock = None
 
     def _publish_from_sock(self, sock: socket.socket, message: str) -> None:
-        for chunk in self.chunker.split(message):
+        for chunk in split_message(message, max_bytes=self.max_message_bytes):
             sock.sendall((chunk + "\n").encode())
 
     def publish_message(self, channel: Optional[str] = None, message: Optional[str] = None) -> None:

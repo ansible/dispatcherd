@@ -9,7 +9,7 @@ import psycopg
 
 from ..protocols import Broker as BrokerProtocol
 from ..protocols import BrokerSelfCheckStatus
-from ..utils import MessageChunker, resolve_callable
+from ..utils import split_message, resolve_callable
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class Broker(BrokerProtocol):
         # These variables track things so that we can exit, send, and re-enter
         self.notify_loop_active: bool = False
         self.notify_queue: list = []
-        self.chunker = MessageChunker(max_bytes=PG_NOTIFY_MAX_PAYLOAD_BYTES)
+        self.max_message_bytes = PG_NOTIFY_MAX_PAYLOAD_BYTES
 
     @classmethod
     def generate_self_check_channel_name(cls) -> str:
@@ -237,7 +237,7 @@ class Broker(BrokerProtocol):
     async def apublish_message(self, channel: str | None = None, origin: str | int | None = '', message: str = '') -> None:  # public
         """asyncio way to publish a message, used to send control in control-and-reply"""
         channel = self.get_publish_channel(channel)
-        message_chunks = self.chunker.split(message)
+        message_chunks = split_message(message, max_bytes=self.max_message_bytes)
 
         if self.notify_loop_active:
             for chunk in message_chunks:
@@ -312,7 +312,7 @@ class Broker(BrokerProtocol):
         connection = self.get_connection()
         channel = self.get_publish_channel(channel)
 
-        message_chunks = self.chunker.split(message)
+        message_chunks = split_message(message, max_bytes=self.max_message_bytes)
 
         with connection.cursor() as cur:
             for chunk in message_chunks:

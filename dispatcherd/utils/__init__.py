@@ -8,7 +8,7 @@ from .task_serialization import (
     resolve_callable,
     serialize_task,
 )
-from .chunking import ChunkAccumulator, MessageChunker
+from .chunking import ChunkAccumulator, split_message, parse_chunk_dict
 
 __all__ = [
     'DuplicateBehavior',
@@ -18,5 +18,6 @@ __all__ = [
     'resolve_callable',
     'serialize_task',
     'ChunkAccumulator',
-    'MessageChunker',
+    'split_message',
+    'parse_chunk_dict',
 ]
