@@ -21,7 +21,8 @@ import json
 
 import pytest
 
-from dispatcherd.utils import split_message
+from dispatcherd.utils import ChunkAccumulator, split_message
+from dispatcherd.utils.chunking import CHUNK_MARKER, _wrapper_overhead_bytes
 
 
 def test_split_message_handles_unicode_boundaries():
@@ -101,3 +102,105 @@ def test_split_boundary_cases():
             reconstructed.append(chunk_payload)
 
         assert ''.join(reconstructed) == payload
+
+
+def test_split_message_respects_exact_size_limits():
+    payload = '{"data":"xyz"}'
+    max_bytes = len(payload.encode('utf-8'))
+
+    assert split_message(payload, max_bytes=max_bytes) == [payload]
+
+
+def test_split_message_errors_when_metadata_cannot_fit():
+    payload = '{"data":"' + 'x' * 200 + '"}'
+    with pytest.raises(ValueError):
+        split_message(payload, max_bytes=100)
+
+
+def test_wrapper_overhead_increases_with_chunk_index_digits():
+    message_id = 'abcd' * 8
+    single_digit = _wrapper_overhead_bytes(message_id, 9)
+    double_digit = _wrapper_overhead_bytes(message_id, 10)
+    assert double_digit > single_digit
+
+
+def _make_chunk_dicts(payload: str, *, max_bytes: int) -> list[dict]:
+    chunks = split_message(payload, max_bytes=max_bytes)
+    return [json.loads(chunk) for chunk in chunks]
+
+
+def test_chunk_accumulator_passthrough_for_non_chunk_payloads():
+    acc = ChunkAccumulator()
+    payload = {'data': 'plain'}
+
+    assert acc.ingest_dict(payload) == (False, payload, None)
+
+
+def test_chunk_accumulator_assembles_in_order():
+    payload = {'data': 'x' * 200}
+    chunk_dicts = _make_chunk_dicts(json.dumps(payload), max_bytes=200)
+    assert len(chunk_dicts) > 1
+
+    acc = ChunkAccumulator()
+    message_id = None
+    for idx, chunk in enumerate(chunk_dicts):
+        is_chunk, completed, msg_id = acc.ingest_dict(chunk)
+        assert is_chunk
+        if idx < len(chunk_dicts) - 1:
+            assert completed is None
+        else:
+            assert completed == payload
+        if message_id is None:
+            message_id = msg_id
+        assert msg_id == message_id
+
+
+def test_chunk_accumulator_handles_out_of_order_chunks():
+    payload = {'data': 'z' * 500}
+    chunk_dicts = _make_chunk_dicts(json.dumps(payload), max_bytes=220)
+    assert len(chunk_dicts) >= 3
+
+    acc = ChunkAccumulator()
+    ingest_order = [1, len(chunk_dicts) - 1] + list(range(2, len(chunk_dicts) - 1)) + [0]
+
+    completed = None
+    msg_id = None
+    for index in ingest_order:
+        is_chunk, completed, msg_id = acc.ingest_dict(chunk_dicts[index])
+        assert is_chunk
+        if index != ingest_order[-1]:
+            assert completed is None
+
+    assert completed == payload
+    assert msg_id
+
+
+def test_chunk_accumulator_rejects_missing_metadata():
+    payload = {'data': 'oops' * 80}
+    chunk = _make_chunk_dicts(json.dumps(payload), max_bytes=200)[0]
+    chunk.pop('chunk_index', None)
+
+    acc = ChunkAccumulator()
+    assert acc.ingest_dict(chunk) == (True, None, None)
+
+
+def test_chunk_accumulator_raises_on_version_mismatch():
+    payload = {'data': 'x' * 50}
+    chunk = _make_chunk_dicts(json.dumps(payload), max_bytes=80)[0]
+    chunk[CHUNK_MARKER] = 'dispatcherd.v0'
+
+    acc = ChunkAccumulator()
+    with pytest.raises(ValueError):
+        acc.ingest_dict(chunk)
+
+
+def test_chunk_accumulator_clears_state_after_completion():
+    payload = {'data': 'cleanup' * 40}
+    chunk_dicts = _make_chunk_dicts(json.dumps(payload), max_bytes=220)
+    assert len(chunk_dicts) > 1
+
+    acc = ChunkAccumulator()
+    for chunk in chunk_dicts:
+        acc.ingest_dict(chunk)
+    assert acc.pending_messages == {}
+    assert acc.final_indexes == {}
