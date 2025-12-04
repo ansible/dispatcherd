@@ -1,59 +1,21 @@
-import importlib
+"""Message chunking utilities shared across dispatcherd components.
+
+Typical usage is a two-step process:
+
+1. A producer (e.g., a broker implementation) instantiates :class:`MessageChunker`
+   and calls :meth:`MessageChunker.split` on JSON strings before sending them.
+   Each returned chunk is itself a valid JSON document that includes metadata
+   describing the parent message.
+2. A consumer (e.g., :class:`dispatcherd.service.main.DispatcherMain`) creates a
+   single :class:`ChunkAccumulator` instance and feeds every decoded JSON dict to
+   :meth:`ChunkAccumulator.ingest_dict`.  Once all chunks for a message arrive,
+   the accumulator returns the fully reconstructed message dict.
+"""
+
 import json
 import logging
 import uuid
-from enum import Enum
-from typing import Callable, Dict, Optional, Protocol, Type, Union, runtime_checkable
-
-
-@runtime_checkable
-class RunnableClass(Protocol):
-    def run(self, *args, **kwargs) -> None: ...
-
-
-MODULE_METHOD_DELIMITER = '.'
-
-
-DispatcherCallable = Union[Callable, Type[RunnableClass]]
-
-
-def resolve_callable(task: str) -> Optional[Callable]:
-    """
-    Transform a dotted notation task into an imported, callable function, e.g.,
-
-    awx.main.tasks.system.delete_inventory
-    awx.main.tasks.jobs.RunProjectUpdate
-
-    In AWX this also did validation that the method was marked as a task.
-    That is out of scope of this method now.
-    This is mainly used by the worker.
-    """
-    if task.startswith('lambda'):
-        return eval(task)
-
-    if MODULE_METHOD_DELIMITER not in task:
-        raise RuntimeError(f'Given task name can not be parsed as task {task}')
-
-    module_name, target = task.rsplit(MODULE_METHOD_DELIMITER, 1)
-    module = importlib.import_module(module_name)
-    _call = None
-    if hasattr(module, target):
-        _call = getattr(module, target, None)
-
-    return _call
-
-
-def serialize_task(f: Callable) -> str:
-    """The reverse of resolve_callable, transform callable into dotted notation"""
-    return MODULE_METHOD_DELIMITER.join([f.__module__, f.__name__])
-
-
-class DuplicateBehavior(Enum):
-    parallel = 'parallel'  # run multiple versions of same task at same time
-    discard = 'discard'  # if task is submitted twice, discard the 2nd one
-    serial = 'serial'  # hold duplicate submissions in queue but only run 1 at a time
-    queue_one = 'queue_one'  # hold only 1 duplicate submission in queue, discard any more
-
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +25,14 @@ DEFAULT_HEADER_RESERVE = 256
 
 
 class MessageChunker:
-    """Utility for splitting broker messages into chunk envelopes."""
+    """Producer-side helper for splitting large payloads into chunk envelopes.
+
+    Instantiate with the desired maximum size (in bytes) and call :meth:`split`
+    with a JSON string.  The method returns one or more JSON strings whose size
+    does not exceed the limit.  Each chunk contains metadata such as the message
+    id, chunk index, and a flag indicating the final chunk, allowing the
+    consumer to reassemble the original payload.
+    """
 
     def __init__(self, max_bytes: int | None = None, header_reserve: int = DEFAULT_HEADER_RESERVE) -> None:
         self.max_bytes = max_bytes
@@ -80,7 +49,7 @@ class MessageChunker:
         return json.dumps(chunk, separators=(',', ':'))
 
     def split(self, message: str) -> list[str]:
-        """Return the message split into <= max_bytes sized chunks."""
+        """Split ``message`` into JSON chunks that respect ``max_bytes``."""
         if (self.max_bytes is None) or (len(message.encode('utf-8')) <= self.max_bytes):
             return [message]
 
@@ -97,7 +66,6 @@ class MessageChunker:
         while idx < msg_len:
             chunk_chars: list[str] = []
             chunk_bytes = 0
-            # Build up a payload respecting the payload_limit in bytes.
             while idx < msg_len:
                 char = message[idx]
                 encoded_char = char.encode('utf-8')
@@ -117,7 +85,6 @@ class MessageChunker:
             chunk_str = self._serialize_chunk(chunk_id, seq, is_final, chunk_payload)
             encoded_chunk = chunk_str.encode('utf-8')
 
-            # Metadata grows with the sequence/index digits, so trim until the chunk fits.
             while len(encoded_chunk) > self.max_bytes and chunk_chars:
                 idx -= 1
                 chunk_chars.pop()
@@ -136,6 +103,7 @@ class MessageChunker:
 
     @staticmethod
     def parse_chunk_dict(candidate: dict) -> Optional[dict]:
+        """Return the candidate dict when it matches the chunk envelope schema."""
         if not isinstance(candidate, dict):
             return None
         if candidate.get(CHUNK_MARKER) != CHUNK_VERSION:
@@ -144,14 +112,26 @@ class MessageChunker:
 
 
 class ChunkAccumulator:
-    """Track partial chunked messages keyed by message id."""
+    """Consumer-side helper for reassembling message chunks.
+
+    Create one accumulator per dispatcher (or per consumer) and feed every
+    decoded JSON dict to :meth:`ingest_dict`.  The method returns a tuple:
+
+    ``(is_chunk, completed_message, message_id)``
+
+    * ``is_chunk`` indicates whether the payload was part of the chunking
+      protocol.
+    * ``completed_message`` is the reconstructed dict when the final chunk has
+      been seen; otherwise it is ``None``.
+    * ``message_id`` allows callers to reference partial state for logging.
+    """
 
     def __init__(self) -> None:
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.final_indexes: Dict[str, int] = {}
 
     def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
-        """Process a JSON-decoded payload dict and return (is_chunk, completed_message_dict, message_id)."""
+        """Process a decoded payload dict and assemble chunked messages."""
         chunk = MessageChunker.parse_chunk_dict(payload_dict)
         if not chunk:
             return (False, payload_dict, None)
@@ -201,6 +181,6 @@ class ChunkAccumulator:
         return (True, message_dict, message_id)
 
     def clear(self) -> None:
+        """Reset all tracking data, dropping any inflight messages."""
         self.pending_messages.clear()
         self.final_indexes.clear()
-
