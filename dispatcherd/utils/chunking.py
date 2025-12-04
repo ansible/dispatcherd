@@ -73,17 +73,22 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
         '{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":1,"final_chunk":true,"payload":"{\\"data\\":\\"xxxxxxxxxxxx\\"}"}',
     ]
     """
-    if (max_bytes is None) or (len(message.encode('utf-8')) <= max_bytes):
+    if max_bytes is None:
+        return [message]
+
+    message_byte_length = len(message.encode('utf-8'))
+    if message_byte_length <= max_bytes:
         return [message]
 
     message_id = uuid.uuid4().hex
     total_chars = len(message)
+    # Overhead is worst-case, because we can not have more chunks than there are bytes
+    overhead = _wrapper_overhead_bytes(message_id, message_byte_length)
 
     chunks: list[str] = []
     char_pos = 0
     seq = 0
     while char_pos < total_chars:
-        overhead = _wrapper_overhead_bytes(message_id, seq)
         payload_budget = max_bytes - overhead
         if payload_budget <= 0:
             raise ValueError('max_bytes too small to contain chunk metadata')
