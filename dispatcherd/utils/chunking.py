@@ -35,7 +35,28 @@ def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> s
 
 
 def split_message(message: str, *, max_bytes: int | None = None, header_reserve: int = DEFAULT_HEADER_RESERVE) -> list[str]:
-    """Split ``message`` into JSON chunks that respect ``max_bytes`` limits."""
+    """Split ``message`` into JSON chunks that respect ``max_bytes`` limits.
+
+    Parameters
+    ----------
+    message:
+        String to split.
+    max_bytes:
+        Maximum size (in bytes) allowed for each chunk. ``None`` disables
+        chunking and returns the original message.
+    header_reserve:
+        Bytes deducted from ``max_bytes`` to account for metadata overhead.
+
+    Returns
+    -------
+    list[str]
+        One or more JSON strings ready to send.
+
+    Example
+    -------
+    >>> split_message('{"data":"x" * 10}', max_bytes=20, header_reserve=10)
+    ['{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":0,"final_chunk":true,"payload":"{"data":"x" * 10}"}']
+    """
     if (max_bytes is None) or (len(message.encode('utf-8')) <= max_bytes):
         return [message]
 
@@ -43,7 +64,7 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
         raise ValueError('max_bytes must be larger than header reserve to enable chunking')
 
     payload_limit = max(1, max_bytes - header_reserve)
-    chunk_id = uuid.uuid4().hex
+    message_id = uuid.uuid4().hex
 
     chunks: list[str] = []
     msg_len = len(message)
@@ -68,7 +89,7 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
 
         chunk_payload = ''.join(chunk_chars)
         is_final = idx >= msg_len
-        chunk_str = _serialize_chunk(chunk_id, seq, is_final, chunk_payload)
+        chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
         encoded_chunk = chunk_str.encode('utf-8')
 
         while len(encoded_chunk) > max_bytes and chunk_chars:
@@ -76,7 +97,7 @@ def split_message(message: str, *, max_bytes: int | None = None, header_reserve:
             chunk_chars.pop()
             chunk_payload = ''.join(chunk_chars)
             is_final = idx >= msg_len
-            chunk_str = _serialize_chunk(chunk_id, seq, is_final, chunk_payload)
+            chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
             encoded_chunk = chunk_str.encode('utf-8')
 
         if len(encoded_chunk) > max_bytes:
@@ -119,7 +140,16 @@ class ChunkAccumulator:
         self.final_indexes: Dict[str, int] = {}
 
     def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
-        """Process a decoded payload dict and assemble chunked messages."""
+        """Process a decoded payload dict and assemble chunked messages.
+
+        Scenarios
+        ---------
+        1. The dict is not a chunk envelope -> ``(False, payload_dict, None)``
+        2. The dict is a chunk but more pieces are pending -> ``(True, None, message_id)``
+        3. All chunks are now available and decoded -> ``(True, completed_dict, message_id)``
+        4. Metadata missing/invalid -> ``(True, None, None)``
+        5. Reassembly fails JSON validation -> ``(True, None, message_id)``
+        """
         chunk = parse_chunk_dict(payload_dict)
         if not chunk:
             return (False, payload_dict, None)
