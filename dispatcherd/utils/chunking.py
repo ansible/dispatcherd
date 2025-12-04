@@ -85,37 +85,38 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     # Overhead is worst-case, because we can not have more chunks than there are bytes
     overhead = _wrapper_overhead_bytes(message_id, message_byte_length)
 
+    payload_budget = max_bytes - overhead
+    if payload_budget <= 0:
+        raise ValueError('max_bytes too small to contain chunk metadata')
+
     chunks: list[str] = []
-    char_pos = 0
+    chunk_start = 0
+    payload_bytes = 0
     seq = 0
-    while char_pos < total_chars:
-        payload_budget = max_bytes - overhead
-        if payload_budget <= 0:
-            raise ValueError('max_bytes too small to contain chunk metadata')
+    for idx, char in enumerate(message):
+        char_size = _escaped_char_bytes(char)
+        if payload_bytes + char_size > payload_budget:
+            if idx == chunk_start:
+                raise RuntimeError('Escaped payload size exceeds available chunk budget')
+            chunk_payload = message[chunk_start:idx]
+            chunk_str = _serialize_chunk(message_id, seq, False, chunk_payload)
+            encoded_chunk = chunk_str.encode('utf-8')
+            if len(encoded_chunk) > max_bytes:
+                raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
+            chunks.append(chunk_str)
+            seq += 1
+            chunk_start = idx
+            payload_bytes = 0
 
-        end = char_pos
-        payload_bytes = 0
-        while end < total_chars:
-            char = message[end]
-            char_size = _escaped_char_bytes(char)
-            if payload_bytes + char_size > payload_budget:
-                break
-            payload_bytes += char_size
-            end += 1
+        payload_bytes += char_size
 
-        if end == char_pos:
-            raise RuntimeError('Escaped payload size exceeds available chunk budget')
-
-        chunk_payload = message[char_pos:end]
-        is_final = end >= total_chars
-        chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
+    if chunk_start < total_chars:
+        chunk_payload = message[chunk_start:]
+        chunk_str = _serialize_chunk(message_id, seq, True, chunk_payload)
         encoded_chunk = chunk_str.encode('utf-8')
         if len(encoded_chunk) > max_bytes:
             raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
-
         chunks.append(chunk_str)
-        char_pos = end
-        seq += 1
 
     return chunks
 
