@@ -94,15 +94,20 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     payload_bytes = 0
     char_pos = 0
     seq = 0
-    while char_pos < total_chars:
-        char = message[char_pos]
-        char_size = _escaped_char_bytes(char)
-        if char_size > payload_budget:
-            raise RuntimeError('Escaped payload size exceeds available chunk budget')
+    while char_pos <= total_chars:
+        is_final = char_pos == total_chars
+        char_size = 0  # unused during forced final flush
+        if not is_final:
+            char = message[char_pos]
+            char_size = _escaped_char_bytes(char)
+            if char_size > payload_budget:
+                raise RuntimeError('Escaped payload size exceeds available chunk budget')
+        elif chunk_start == total_chars:
+            break  # no data left to flush
 
-        if payload_bytes + char_size > payload_budget:
+        if is_final or (payload_bytes + char_size > payload_budget):
             chunk_payload = message[chunk_start:char_pos]
-            chunk_str = _serialize_chunk(message_id, seq, False, chunk_payload)
+            chunk_str = _serialize_chunk(message_id, seq, is_final, chunk_payload)
             encoded_chunk = chunk_str.encode('utf-8')
             if len(encoded_chunk) > max_bytes:
                 raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
@@ -110,18 +115,12 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
             seq += 1
             chunk_start = char_pos
             payload_bytes = 0
+            if is_final:
+                break
             continue
 
         payload_bytes += char_size
         char_pos += 1
-
-    if chunk_start < total_chars:
-        chunk_payload = message[chunk_start:]
-        chunk_str = _serialize_chunk(message_id, seq, True, chunk_payload)
-        encoded_chunk = chunk_str.encode('utf-8')
-        if len(encoded_chunk) > max_bytes:
-            raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
-        chunks.append(chunk_str)
 
     return chunks
 
