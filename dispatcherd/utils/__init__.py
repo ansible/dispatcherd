@@ -1,14 +1,14 @@
 """Utility helpers for dispatcherd."""
 
+from .chunking import ChunkAccumulator, parse_chunk_dict, split_message
 from .task_serialization import (
-    DuplicateBehavior,
-    DispatcherCallable,
     MODULE_METHOD_DELIMITER,
+    DispatcherCallable,
+    DuplicateBehavior,
     RunnableClass,
     resolve_callable,
     serialize_task,
 )
-from .chunking import ChunkAccumulator, split_message, parse_chunk_dict
 
 __all__ = [
     'DuplicateBehavior',

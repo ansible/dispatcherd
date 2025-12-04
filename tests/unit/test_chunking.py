@@ -44,6 +44,7 @@ def test_split_message_handles_unicode_boundaries():
             message_id = chunk_dict['message_id']
         assert chunk_dict['message_id'] == message_id
         assert chunk_dict['chunk_index'] == idx
+        assert chunk_dict['payload']
 
         reconstructed_parts.append(chunk_dict['payload'])
 
@@ -58,7 +59,12 @@ def test_split_message_handles_escaped_characters_without_backtracking():
     chunks = split_message(payload, max_bytes=max_bytes)
 
     assert len(chunks) > 1
-    reassembled = ''.join(json.loads(chunk)['payload'] for chunk in chunks)
+    reassembled_parts = []
+    for chunk in chunks:
+        payload_part = json.loads(chunk)['payload']
+        assert payload_part
+        reassembled_parts.append(payload_part)
+    reassembled = ''.join(reassembled_parts)
     assert reassembled == payload
 
 
@@ -68,3 +74,30 @@ def test_split_message_reaches_escape_limit_when_budget_too_small():
 
     with pytest.raises(ValueError):
         split_message(payload, max_bytes=max_bytes)
+
+
+def test_split_boundary_cases():
+    "By testing every character count we assure we clip at some point"
+    max_bytes = 300
+    pattern = 'a'
+
+    for multiplier in range(1, 1000):
+        payload = '{"data":"' + (pattern * multiplier) + '"}'
+        chunks = split_message(payload, max_bytes=max_bytes)
+
+        first_chunk_dict = json.loads(chunks[0])
+        if 'payload' not in first_chunk_dict:
+            assert len(chunks) == 1
+            assert chunks[0] == payload
+            continue
+
+        reconstructed = []
+        for chunk in chunks:
+            encoded = chunk.encode('utf-8')
+            assert len(encoded) <= max_bytes
+
+            chunk_payload = json.loads(chunk)['payload']
+            assert chunk_payload
+            reconstructed.append(chunk_payload)
+
+        assert ''.join(reconstructed) == payload

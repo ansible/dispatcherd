@@ -211,12 +211,11 @@ class ChunkAccumulator:
                 raise ValueError('assembled payload is not a dict')
         except Exception:
             logger.exception(f'Failed to decode chunked message message_id={message_id}')
+            return (True, None, message_id)
+        finally:
             self.pending_messages.pop(message_id, None)
             self.final_indexes.pop(message_id, None)
-            return (True, None, message_id)
 
-        self.pending_messages.pop(message_id, None)
-        self.final_indexes.pop(message_id, None)
         return (True, message_dict, message_id)
 
     def clear(self) -> None:
