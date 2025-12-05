@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 from .factories import get_broker
 from .protocols import Broker
@@ -83,7 +83,7 @@ class Control:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
     @staticmethod
-    def parse_replies(received_replies: list[Union[str, dict]]) -> list[dict]:
+    def parse_replies(received_replies: Sequence[Union[str, dict]]) -> list[dict]:
         ret = []
         for i, payload in enumerate(received_replies):
             if isinstance(payload, dict):
