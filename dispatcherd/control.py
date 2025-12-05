@@ -8,17 +8,55 @@ from typing import Optional, Union
 from .factories import get_broker
 from .protocols import Broker
 from .service.asyncio_tasks import ensure_fatal
+from .utils import ChunkAccumulator
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
 
+def _ingest_reply_payload(
+    accumulator: ChunkAccumulator,
+    results: list[dict],
+    payload: Union[str, dict],
+    *,
+    idx: int | None = None,
+) -> bool:
+    """Decode payload fragments and append completed replies to ``results``."""
+    decoded: Optional[dict] = None
+    if isinstance(payload, dict):
+        decoded = payload
+    else:
+        try:
+            candidate = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            logger.warning(f"Invalid JSON for reply {idx}: {payload[:100]}... (Error: {exc})")
+            results.append({'error': 'JSON parse error', 'original': payload})
+            return True
+        if isinstance(candidate, dict):
+            decoded = candidate
+        else:
+            logger.warning(f"Control reply {idx} decoded as non-dict: {candidate}")
+            results.append({'error': 'JSON parse error', 'original': payload})
+            return True
+
+    is_chunk, assembled, _ = accumulator.ingest_dict(decoded)
+    if is_chunk:
+        if assembled is not None:
+            results.append(assembled)
+            return True
+        return False
+
+    results.append(decoded)
+    return True
+
+
 class BrokerCallbacks:
     def __init__(self, queuename: Optional[str], broker: Broker, send_message: str, expected_replies: int = 1) -> None:
-        self.received_replies: list[str] = []
+        self.received_replies: list[dict] = []
         self.queuename = queuename
         self.broker = broker
         self.send_message = send_message
         self.expected_replies = expected_replies
+        self._chunk_accumulator = ChunkAccumulator()
 
     async def connected_callback(self) -> None:
         await self.broker.apublish_message(channel=self.queuename, message=self.send_message)
@@ -29,9 +67,9 @@ class BrokerCallbacks:
         This gets ran in an async task, and timing out will be accomplished by the main code
         """
         async for channel, payload in self.broker.aprocess_notify(connected_callback=self.connected_callback):
-            self.received_replies.append(payload)
-            if len(self.received_replies) >= self.expected_replies:
-                return
+            if _ingest_reply_payload(self._chunk_accumulator, self.received_replies, payload, idx=len(self.received_replies)):
+                if len(self.received_replies) >= self.expected_replies:
+                    return
 
 
 class Control:
@@ -45,9 +83,12 @@ class Control:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
     @staticmethod
-    def parse_replies(received_replies: list[str]) -> list[dict]:
+    def parse_replies(received_replies: list[Union[str, dict]]) -> list[dict]:
         ret = []
         for i, payload in enumerate(received_replies):
+            if isinstance(payload, dict):
+                ret.append(payload)
+                continue
             try:
                 item_as_dict = json.loads(payload)
                 ret.append(item_as_dict)
@@ -98,6 +139,7 @@ class Control:
         reply_queue = Control.generate_reply_queue_name()
         send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
 
+        reply_accumulator = ChunkAccumulator()
         try:
             broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
         except TypeError:
@@ -106,11 +148,13 @@ class Control:
         def connected_callback() -> None:
             broker.publish_message(channel=self.queuename, message=send_message)
 
-        replies = []
+        replies: list[dict] = []
         try:
-            for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=expected_replies, timeout=timeout):
-                reply_data = json.loads(payload)
-                replies.append(reply_data)
+            max_messages = expected_replies * 100
+            for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=max_messages, timeout=timeout):
+                if _ingest_reply_payload(reply_accumulator, replies, payload, idx=len(replies)):
+                    if len(replies) >= expected_replies:
+                        break
             logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
             return replies
         finally:
