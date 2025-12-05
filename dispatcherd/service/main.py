@@ -110,8 +110,8 @@ class DispatcherMain(DispatcherMainProtocol):
             try:
                 decoded = json.loads(payload)
             except Exception:
-                logger.error('Received payload that is not valid JSON string')
-                return (None, None)
+                logger.warning('Received payload that is not valid JSON string; assuming bare task body')
+                decoded = {'task': payload}
             if not isinstance(decoded, dict):
                 logger.error('Decoded payload was not dict after json parsing')
                 return (None, None)
