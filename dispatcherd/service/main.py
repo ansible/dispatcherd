@@ -185,7 +185,7 @@ class DispatcherMain(DispatcherMainProtocol):
         """Drop expired chunk fragments during normal message processing."""
         if self.chunk_accumulator.message_timeout_seconds <= 0:
             return
-        expired = await self.chunk_accumulator.aexpire_pending_messages()
+        expired = await self.chunk_accumulator.aexpire_partial_messages()
         if expired:
             logger.info(
                 'Dropping %d incomplete chunked message(s) older than %.1fs: %s',

@@ -237,7 +237,7 @@ class ChunkAccumulator:
 
         return (True, message_dict, message_id)
 
-    def expire_pending_messages(self, *, current_time: float | None = None) -> list[str]:
+    def expire_partial_messages(self, *, current_time: float | None = None) -> list[str]:
         """Drop in-flight messages that have exceeded ``self.message_timeout_seconds``."""
         if current_time is None:
             current_time = time.monotonic()
@@ -250,7 +250,7 @@ class ChunkAccumulator:
                 self.message_started_at.pop(message_id, None)
         return expired
 
-    async def aexpire_pending_messages(self) -> list[str]:
-        """Async wrapper for :meth:`expire_pending_messages`."""
+    async def aexpire_partial_messages(self) -> list[str]:
+        """Async wrapper for :meth:`expire_partial_messages`."""
         async with self._lock:
-            return self.expire_pending_messages()
+            return self.expire_partial_messages()

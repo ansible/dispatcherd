@@ -218,7 +218,7 @@ def test_chunk_accumulator_expires_old_messages():
     msg_id = first_chunk['message_id']
     started_at = acc.message_started_at[msg_id]
 
-    expired_ids = acc.expire_pending_messages(current_time=started_at + acc.message_timeout_seconds)
+    expired_ids = acc.expire_partial_messages(current_time=started_at + acc.message_timeout_seconds + 1.0)
     assert msg_id in expired_ids
     assert msg_id not in acc.pending_messages
     assert msg_id not in acc.final_indexes
