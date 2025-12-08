@@ -5,10 +5,10 @@ Test plan
 * split_message
   - handles multi-byte unicode payloads without splitting characters
   - respects max_bytes limit 1) equal to message len 2) smaller than metadata overhead
-  - produces deterministic chunk metadata (chunk_index ordering, message_id consistency)
+  - produces deterministic chunk metadata (index ordering, message_id consistency)
   - raises helpful errors when max_bytes too small
 * estimate_wrapper_bytes
-  - overhead grows with chunk_index digits
+  - overhead grows with index digits
 * ChunkAccumulator.ingest_dict
   - returns passthrough for non-chunk payloads
   - assembles multiple chunks in order
@@ -35,6 +35,7 @@ def test_split_message_handles_unicode_boundaries():
 
     reconstructed_parts = []
     message_id = None
+    total_chunks = None
 
     for idx, chunk in enumerate(chunks):
         encoded = chunk.encode('utf-8')
@@ -44,7 +45,10 @@ def test_split_message_handles_unicode_boundaries():
         if message_id is None:
             message_id = chunk_dict['message_id']
         assert chunk_dict['message_id'] == message_id
-        assert chunk_dict['chunk_index'] == idx
+        assert chunk_dict['index'] == idx
+        if total_chunks is None:
+            total_chunks = chunk_dict['total']
+        assert chunk_dict['total'] == len(chunks)
         assert chunk_dict['payload']
 
         reconstructed_parts.append(chunk_dict['payload'])
@@ -71,7 +75,7 @@ def test_split_message_handles_escaped_characters_without_backtracking():
 
 def test_split_message_reaches_escape_limit_when_budget_too_small():
     payload = '{"data":"' + '😊' * 60 + '"}'
-    max_bytes = 149  # payload budget smaller than escaped character count
+    max_bytes = 100  # payload budget smaller than escaped character count
 
     with pytest.raises(ValueError):
         split_message(payload, max_bytes=max_bytes)
@@ -117,10 +121,10 @@ def test_split_message_errors_when_metadata_cannot_fit():
         split_message(payload, max_bytes=100)
 
 
-def test_wrapper_overhead_increases_with_chunk_index_digits():
+def test_wrapper_overhead_increases_with_index_digits():
     message_id = 'abcd' * 8
-    single_digit = _wrapper_overhead_bytes(message_id, 9)
-    double_digit = _wrapper_overhead_bytes(message_id, 10)
+    single_digit = _wrapper_overhead_bytes(message_id, 9, 9)
+    double_digit = _wrapper_overhead_bytes(message_id, 10, 10)
     assert double_digit > single_digit
 
 
@@ -178,7 +182,7 @@ def test_chunk_accumulator_handles_out_of_order_chunks():
 def test_chunk_accumulator_rejects_missing_metadata():
     payload = {'data': 'oops' * 80}
     chunk = _make_chunk_dicts(json.dumps(payload), max_bytes=200)[0]
-    chunk.pop('chunk_index', None)
+    chunk.pop('index', None)
 
     acc = ChunkAccumulator()
     assert acc.ingest_dict(chunk) == (True, None, None)
@@ -203,7 +207,7 @@ def test_chunk_accumulator_clears_state_after_completion():
     for chunk in chunk_dicts:
         acc.ingest_dict(chunk)
     assert acc.pending_messages == {}
-    assert acc.final_indexes == {}
+    assert acc.expected_totals == {}
     assert acc.message_started_at == {}
 
 
@@ -221,5 +225,5 @@ def test_chunk_accumulator_expires_old_messages():
     expired_ids = acc.expire_partial_messages(current_time=started_at + acc.message_timeout_seconds + 1.0)
     assert msg_id in expired_ids
     assert msg_id not in acc.pending_messages
-    assert msg_id not in acc.final_indexes
+    assert msg_id not in acc.expected_totals
     assert msg_id not in acc.message_started_at

@@ -46,8 +46,12 @@ def _ingest_reply_payload(
         if assembled is not None:
             results.append(assembled)
             return True
-        idx = decoded.get('chunk_index', -1)
-        logger.debug(f'Processed partial for message_id={message_id} chunk_index={idx}')
+        if message_id:
+            received, expected = accumulator.get_progress(message_id)
+            logger.debug(f'Processed chunk {received}/{expected} for message_id={message_id}')
+        else:
+            idx = decoded.get('index', decoded.get('chunk_index', -1))
+            logger.error(f'Processed partial chunk_index={idx} with missing message_id metadata')
         return False
 
     results.append(decoded)

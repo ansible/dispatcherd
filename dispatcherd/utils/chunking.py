@@ -22,23 +22,23 @@ from typing import Dict, Optional
 logger = logging.getLogger(__name__)
 
 CHUNK_MARKER = '__dispatcherd_chunk__'
-CHUNK_VERSION = 'dispatcherd.v1'
+CHUNK_VERSION = 'v1'
 
 
-def _serialize_chunk(chunk_id: str, seq: int, is_final: bool, payload: str) -> str:
+def _serialize_chunk(chunk_id: str, seq: int, total: int, payload: str) -> str:
     chunk = {
         CHUNK_MARKER: CHUNK_VERSION,
         'message_id': chunk_id,
-        'chunk_index': seq,
-        'final_chunk': is_final,
+        'index': seq,
+        'total': total,
         'payload': payload,
     }
     return json.dumps(chunk, separators=(',', ':'))
 
 
-def _wrapper_overhead_bytes(message_id: str, chunk_index: int) -> int:
+def _wrapper_overhead_bytes(message_id: str, chunk_index: int, total_chunks: int) -> int:
     """Estimate bytes added by chunk metadata for the given index."""
-    empty_chunk = _serialize_chunk(message_id, chunk_index, False, '')
+    empty_chunk = _serialize_chunk(message_id, chunk_index, total_chunks, '')
     return len(empty_chunk.encode('utf-8'))
 
 
@@ -71,8 +71,8 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     -------
     >>> split_message('{"data":"' + 'x' * 30 + '"}', max_bytes=80)
     [
-        '{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":0,"final_chunk":false,"payload":"{\\"data\\":\\"xxxxxxxxxxxxxxxxxxxx\\"}"}',
-        '{"__dispatcherd_chunk__":"dispatcherd.v1","message_id":"...","chunk_index":1,"final_chunk":true,"payload":"{\\"data\\":\\"xxxxxxxxxxxx\\"}"}',
+        '{"__dispatcherd_chunk__":"v1","message_id":"...","index":0,"total":2,"payload":"{\\"data\\":\\"xxxxxxxxxxxxxxxxxxxx\\"}"}',
+        '{"__dispatcherd_chunk__":"v1","message_id":"...","index":1,"total":2,"payload":"{\\"data\\":\\"xxxxxxxxxxxx\\"}"}',
     ]
     """
     if max_bytes is None:
@@ -85,7 +85,7 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
     message_id = uuid.uuid4().hex
     total_chars = len(message)
     # Overhead is worst-case, because we can not have more chunks than there are bytes
-    overhead = _wrapper_overhead_bytes(message_id, message_byte_length)
+    overhead = _wrapper_overhead_bytes(message_id, message_byte_length, message_byte_length)
 
     payload_budget = max_bytes - overhead
     if payload_budget <= 0:
@@ -94,7 +94,7 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
         # `_escaped_char_bytes` tops out at 12 bytes for astral plane codepoints, the largest unicode char
         raise ValueError('max_bytes too small to encode payload characters')
 
-    chunks: list[str] = []
+    chunk_payloads: list[str] = []
     chunk_start = 0
     payload_bytes = 0
     char_pos = 0
@@ -106,14 +106,8 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
             char_size = _escaped_char_bytes(char)
 
         if is_final or (payload_bytes + char_size > payload_budget):
-            # Add a chunk
             chunk_payload = message[chunk_start:char_pos]
-            chunk_index = len(chunks)
-            chunk_str = _serialize_chunk(message_id, chunk_index, is_final, chunk_payload)
-            encoded_chunk = chunk_str.encode('utf-8')
-            if len(encoded_chunk) > max_bytes:
-                raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
-            chunks.append(chunk_str)
+            chunk_payloads.append(chunk_payload)
             # Reset the per-chunk variables
             chunk_start = char_pos
             payload_bytes = 0
@@ -123,6 +117,15 @@ def split_message(message: str, *, max_bytes: int | None = None) -> list[str]:
 
         payload_bytes += char_size
         char_pos += 1
+
+    total_chunks = len(chunk_payloads)
+    chunks: list[str] = []
+    for index, chunk_payload in enumerate(chunk_payloads):
+        chunk_str = _serialize_chunk(message_id, index, total_chunks, chunk_payload)
+        encoded_chunk = chunk_str.encode('utf-8')
+        if len(encoded_chunk) > max_bytes:
+            raise RuntimeError(f'Chunk metadata {len(encoded_chunk)} exceeds the configured max bytes limit {max_bytes}')
+        chunks.append(chunk_str)
 
     return chunks
 
@@ -162,7 +165,7 @@ class ChunkAccumulator:
         self.message_timeout_seconds = message_timeout_seconds
         self.cleanup_interval_seconds = max(0.01, cleanup_interval_seconds)
         self.pending_messages: Dict[str, Dict[int, str]] = {}
-        self.final_indexes: Dict[str, int] = {}
+        self.expected_totals: Dict[str, int] = {}
         self.message_started_at: Dict[str, float] = {}
         self._lock = asyncio.Lock()
 
@@ -192,10 +195,15 @@ class ChunkAccumulator:
             return (False, payload_dict, None)
 
         message_id = chunk.get('message_id') or chunk.get('id')
-        seq = chunk.get('chunk_index')
-        is_final = chunk.get('final_chunk')
+        seq = chunk.get('index')
         if seq is None:
-            seq = chunk.get('seq')
+            seq = chunk.get('chunk_index')
+        total = chunk.get('total')
+        if total is not None:
+            if not isinstance(total, int) or total <= 0:
+                logger.warning('Received chunk with invalid total: %s', chunk)
+                return (True, None, None)
+        is_final = chunk.get('final_chunk')
         if is_final is None:
             is_final = chunk.get('final')
 
@@ -212,17 +220,23 @@ class ChunkAccumulator:
             self.message_started_at[message_id] = time.monotonic()
         buffer[seq] = payload_str
 
-        if bool(is_final):
-            self.final_indexes[message_id] = seq
+        if total is not None:
+            existing_total = self.expected_totals.get(message_id)
+            if existing_total is not None and existing_total != total:
+                logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
+            self.expected_totals[message_id] = total
 
-        final_seq = self.final_indexes.get(message_id)
-        if final_seq is None:
+        if total is None and isinstance(is_final, bool) and is_final:
+            self.expected_totals[message_id] = seq + 1
+
+        expected_total = self.expected_totals.get(message_id)
+        if expected_total is None:
             return (True, None, message_id)
 
-        if any(index not in buffer for index in range(final_seq + 1)):
+        if any(index not in buffer for index in range(expected_total)):
             return (True, None, message_id)
 
-        message_str = ''.join(buffer[index] for index in range(final_seq + 1))
+        message_str = ''.join(buffer[index] for index in range(expected_total))
         try:
             message_dict = json.loads(message_str)
             if not isinstance(message_dict, dict):
@@ -232,7 +246,7 @@ class ChunkAccumulator:
             return (True, None, message_id)
         finally:
             self.pending_messages.pop(message_id, None)
-            self.final_indexes.pop(message_id, None)
+            self.expected_totals.pop(message_id, None)
             self.message_started_at.pop(message_id, None)
 
         return (True, message_dict, message_id)
@@ -242,11 +256,11 @@ class ChunkAccumulator:
         if current_time is None:
             current_time = time.monotonic()
         expired: list[str] = []
-        for message_id, started_at in self.message_started_at.items():
+        for message_id, started_at in list(self.message_started_at.items()):
             if (current_time - started_at) >= self.message_timeout_seconds:
                 expired.append(message_id)
                 self.pending_messages.pop(message_id, None)
-                self.final_indexes.pop(message_id, None)
+                self.expected_totals.pop(message_id, None)
                 self.message_started_at.pop(message_id, None)
         return expired
 
@@ -254,3 +268,9 @@ class ChunkAccumulator:
         """Async wrapper for :meth:`expire_partial_messages`."""
         async with self._lock:
             return self.expire_partial_messages()
+
+    def get_progress(self, message_id: str) -> tuple[int, Optional[int]]:
+        """Return (received_chunks, expected_total) for logging/debugging."""
+        buffer = self.pending_messages.get(message_id, {})
+        expected_total = self.expected_totals.get(message_id)
+        return (len(buffer), expected_total)

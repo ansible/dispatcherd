@@ -33,30 +33,28 @@ like debug information.
 #### Chunked Messages
 
 Large submissions may exceed a broker's payload limit (pg_notify limits payloads to roughly 8KB).
-Before a message is published, dispatcherd brokers should split messages into multiples
-so that it avoids hitting the max message length.
-
-Each of the chunked messages are a JSON wrapper of metadata, where the "payload" key contains
-a subset of the larger message, which is also probably JSON.
+Before a message is published, dispatcherd brokers call
+`dispatcherd.utils.chunking.split_message`, which produces one or more JSON envelopes.
+Each chunk wraps a slice of the original JSON payload so that it can be reassembled on the other end.
 
 ```json
 {
-  "__dispatcherd_chunk__": "dispatcherd.v1",
+  "__dispatcherd_chunk__": "v1",
   "message_id": "4e66bf05b4b14222be14817a5eb918b4",
-  "chunk_index": 0,
-  "final_chunk": false,
+  "index": 0,
+  "total": 3,
   "payload": "{\"uuid\":\"9760671a-6261-45aa-881a-f66929ff9725\",\"args\":[4]}"
 }
 ```
 
-If a message is not over the limit, it should not be chunked.
+If a message is not over the limit, it is sent as-is without the chunk wrapper.
 
 The chunk envelope establishes the contract for multipart messages:
 
-- `__dispatcherd_chunk__` identifies the chunk protocol version and is required.
+- `__dispatcherd_chunk__` identifies the chunk protocol version (`v1`) and is required.
 - `message_id` is a per-message identifier used to correlate all pieces.
-- `chunk_index` starts at ``0`` and increases by ``1`` for every chunk.
-- `final_chunk` is ``true`` only for the final piece of the original message.
+- `index` starts at ``0`` and increases by ``1`` for every chunk.
+- `total` is the total number of chunks (repeated on every piece).
 - `payload` contains an escaped slice of the original JSON string, so consumers
   reassemble the string data (not decoded dicts) before deserializing the complete message.
 
@@ -74,8 +72,8 @@ if is_chunk and completed_payload:
     handle_task(completed_payload)
 ```
 
-`ChunkAccumulator` tracks in-flight `message_id`s, waits until every index from ``0`` to
-the final chunk has been seen, and discards stale fragments after
+`ChunkAccumulator` tracks in-flight `message_id`s, waits until every index from ``0`` through
+``total - 1`` has arrived, and discards stale fragments after
 `message_timeout_seconds` (configured via `chunk_message_timeout_seconds` on the service).
 Control replies use the same chunk envelope when they are large, so all inbound broker
 traffic can be fed through a single accumulator.

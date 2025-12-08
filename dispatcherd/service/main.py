@@ -127,7 +127,11 @@ class DispatcherMain(DispatcherMainProtocol):
         is_chunk, assembled_message, message_id = await self.chunk_accumulator.aingest_dict(decoded)
         if is_chunk:
             if assembled_message is None:
-                logger.debug(f'Received chunk for message_id={message_id}, waiting for remainder')
+                if message_id:
+                    received, expected = self.chunk_accumulator.get_progress(message_id)
+                    logger.debug('Received chunk %d/%d for message_id=%s, waiting for remainder', received, expected, message_id)
+                else:
+                    logger.error('Received chunk with invalid metadata, waiting for remainder')
                 return (None, None)
             message = assembled_message
         else:
