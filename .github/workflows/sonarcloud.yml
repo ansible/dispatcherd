@@ -44,23 +44,29 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: Download coverage artifact
+      - name: Download coverage artifacts
         uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: CI
           run_id: ${{ github.event.workflow_run.id }}
-          name: coverage-report
+          pattern: coverage-report-*
 
-      - name: Get PR number
+      - name: Get PR number and coverage files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          # Try to get PR number from coverage.xml first (most reliable for forks)
-          if [ -f coverage.xml ]; then
-            PR_NUMBER=$(grep -m 1 '<!-- PR' coverage.xml | awk '{print $3}' || echo "")
+          # Find all downloaded coverage XML files
+          coverage_files=$(find . -name "coverage.xml" -type f | tr '\n' ',' | sed 's/,$//')
+          echo "Found coverage files: $coverage_files"
+          echo "COVERAGE_PATHS=$coverage_files" >> $GITHUB_ENV
+
+          # Try to get PR number from first coverage.xml (most reliable for forks)
+          first_coverage=$(find . -name "coverage.xml" -type f | head -1)
+          if [ -f "$first_coverage" ]; then
+            PR_NUMBER=$(grep -m 1 '<!-- PR' "$first_coverage" | awk '{print $3}' || echo "")
           fi
 
           # Fallback to GitHub API if not found in coverage.xml
@@ -111,6 +117,7 @@ jobs:
             -Dsonar.pullrequest.key=${{ env.PR_NUMBER }}
             -Dsonar.pullrequest.branch=${{ env.PR_HEAD }}
             -Dsonar.pullrequest.base=${{ env.PR_BASE }}
+            -Dsonar.python.coverage.reportPaths=${{ env.COVERAGE_PATHS }}
 
   sonar-branch-analysis:
     name: SonarCloud Branch Analysis
@@ -125,14 +132,14 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: Download coverage artifact
+      - name: Download coverage artifacts
         continue-on-error: true
         uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: CI
           run_id: ${{ github.event.workflow_run.id }}
-          name: coverage-report
+          pattern: coverage-report-*
 
       - name: Print Analysis Summary
         env:
@@ -144,7 +151,12 @@ jobs:
           echo "Branch: ${BRANCH_NAME}"
           echo "Commit SHA: ${COMMIT_SHA}"
 
-          if [ -f coverage.xml ]; then
+          # Find all downloaded coverage XML files
+          coverage_files=$(find . -name "coverage.xml" -type f | tr '\n' ',' | sed 's/,$//')
+          echo "Coverage files: ${coverage_files:-none}"
+          echo "COVERAGE_PATHS=$coverage_files" >> $GITHUB_ENV
+
+          if [ -n "$coverage_files" ]; then
             echo "Coverage: Available"
           else
             echo "Coverage: Not available"
@@ -159,3 +171,4 @@ jobs:
           args: >
             -Dsonar.scm.revision=${{ github.event.workflow_run.head_sha }}
             -Dsonar.branch.name=${{ github.event.workflow_run.head_branch }}
+            ${{ env.COVERAGE_PATHS && format('-Dsonar.python.coverage.reportPaths={0}', env.COVERAGE_PATHS) || '' }}
