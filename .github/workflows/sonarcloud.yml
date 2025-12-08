@@ -1,0 +1,174 @@
+# SonarCloud Analysis Workflow for dispatcherd
+#
+# This workflow runs SonarCloud analysis triggered by CI workflow completion.
+# It runs in the base repository context, allowing access to secrets even for PRs from forks.
+#
+# FLOW: CI completes → workflow_run triggers this workflow → appropriate job runs
+#
+# JOB 1: sonar-pr-analysis (for PRs)
+# - Triggered by: workflow_run (CI on pull_request)
+# - Steps: Download coverage → Get PR info → Run SonarCloud PR analysis
+# - Quality gate: Focuses on new/changed code in PR only
+#
+# JOB 2: sonar-branch-analysis (for branches)
+# - Triggered by: workflow_run (CI on push to main)
+# - Steps: Download coverage → Run SonarCloud branch analysis
+# - Quality gate: Focuses on overall project health
+
+name: SonarCloud
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions: read-all
+
+jobs:
+  sonar-pr-analysis:
+    name: SonarCloud PR Analysis
+    runs-on: ubuntu-latest
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.repository == 'ansible/dispatcherd'
+    steps:
+      # Security note: Checking out fork code is safe here because:
+      # 1. This workflow runs in base repo context via workflow_run trigger
+      # 2. No untrusted code is executed - only static analysis is performed
+      # 3. All actions used are trusted (official GitHub & SonarSource actions)
+      # 4. This is the standard pattern for SonarCloud fork PR analysis
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Download coverage artifacts
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: CI
+          run_id: ${{ github.event.workflow_run.id }}
+          pattern: coverage-report-*
+
+      - name: Get PR number and coverage files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          # Find all downloaded coverage XML files
+          coverage_files=$(find . -name "coverage.xml" -type f | tr '\n' ',' | sed 's/,$//')
+          echo "Found coverage files: $coverage_files"
+          echo "COVERAGE_PATHS=$coverage_files" >> $GITHUB_ENV
+
+          # Try to get PR number from first coverage.xml (most reliable for forks)
+          first_coverage=$(find . -name "coverage.xml" -type f | head -1)
+          if [ -f "$first_coverage" ]; then
+            PR_NUMBER=$(grep -m 1 '<!-- PR' "$first_coverage" | awk '{print $3}' || echo "")
+          fi
+
+          # Fallback to GitHub API if not found in coverage.xml
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            PR_NUMBER=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              /repos/${REPO}/actions/runs/${RUN_ID} \
+              --jq '.pull_requests[0].number')
+          fi
+
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "::error::Could not determine PR number from coverage.xml or GitHub API"
+            exit 1
+          fi
+
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          echo "Found PR #$PR_NUMBER"
+
+      - name: Get PR metadata
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # Get PR details
+          PR_DATA=$(gh api repos/${REPO}/pulls/${{ env.PR_NUMBER }})
+          PR_BASE=$(echo "$PR_DATA" | jq -r '.base.ref')
+          PR_HEAD=$(echo "$PR_DATA" | jq -r '.head.ref')
+
+          echo "PR_BASE=$PR_BASE" >> $GITHUB_ENV
+          echo "PR_HEAD=$PR_HEAD" >> $GITHUB_ENV
+
+          echo "🔍 SonarCloud PR Analysis"
+          echo "========================="
+          echo "PR Number: #${{ env.PR_NUMBER }}"
+          echo "Base Branch: $PR_BASE"
+          echo "Head Branch: $PR_HEAD"
+          echo "Commit SHA: ${COMMIT_SHA}"
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+            -Dsonar.pullrequest.key=${{ env.PR_NUMBER }}
+            -Dsonar.pullrequest.branch=${{ env.PR_HEAD }}
+            -Dsonar.pullrequest.base=${{ env.PR_BASE }}
+            -Dsonar.python.coverage.reportPaths=${{ env.COVERAGE_PATHS }}
+
+  sonar-branch-analysis:
+    name: SonarCloud Branch Analysis
+    runs-on: ubuntu-latest
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.repository == 'ansible/dispatcherd'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Download coverage artifacts
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: CI
+          run_id: ${{ github.event.workflow_run.id }}
+          pattern: coverage-report-*
+
+      - name: Print Analysis Summary
+        env:
+          BRANCH_NAME: ${{ github.event.workflow_run.head_branch }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          echo "🔍 SonarCloud Branch Analysis"
+          echo "============================="
+          echo "Branch: ${BRANCH_NAME}"
+          echo "Commit SHA: ${COMMIT_SHA}"
+
+          # Find all downloaded coverage XML files
+          coverage_files=$(find . -name "coverage.xml" -type f | tr '\n' ',' | sed 's/,$//')
+          echo "Coverage files: ${coverage_files:-none}"
+          echo "COVERAGE_PATHS=$coverage_files" >> $GITHUB_ENV
+
+          if [ -n "$coverage_files" ]; then
+            echo "Coverage: Available"
+          else
+            echo "Coverage: Not available"
+          fi
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+            -Dsonar.branch.name=${{ github.event.workflow_run.head_branch }}
+            ${{ env.COVERAGE_PATHS && format('-Dsonar.python.coverage.reportPaths={0}', env.COVERAGE_PATHS) || '' }}

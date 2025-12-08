@@ -1,4 +1,5 @@
 pytest
 pytest-asyncio
 pytest-benchmark
+pytest-cov
 httpx
