@@ -47,17 +47,13 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             self.node_id = str(uuid4())
 
-        if chunk_message_timeout_seconds <= 0:
-            raise ValueError('chunk_message_timeout_seconds must be positive')
-        if chunk_cleanup_interval_seconds is None:
-            chunk_cleanup_interval_seconds = min(60.0, max(5.0, chunk_message_timeout_seconds / 10))
-
         self.metrics = metrics
 
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
-        self.chunk_accumulator = ChunkAccumulator()
-        self.chunk_message_timeout_seconds = chunk_message_timeout_seconds
-        self._chunk_cleanup_interval = max(0.01, chunk_cleanup_interval_seconds)
+        self.chunk_accumulator = ChunkAccumulator(
+            message_timeout_seconds=chunk_message_timeout_seconds,
+            cleanup_interval_seconds=chunk_cleanup_interval_seconds,
+        )
         self._chunk_cleanup_task: asyncio.Task | None = None
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
@@ -105,7 +101,7 @@ class DispatcherMain(DispatcherMainProtocol):
         await self._stop_chunk_cleanup_task()
 
     def _ensure_chunk_cleanup_task(self) -> None:
-        if self._chunk_cleanup_task or self.chunk_message_timeout_seconds <= 0:
+        if self._chunk_cleanup_task or self.chunk_accumulator.message_timeout_seconds <= 0:
             return
         self._chunk_cleanup_task = asyncio.create_task(self._chunk_cleanup_loop(), name='chunk_cleanup')
         ensure_fatal(self._chunk_cleanup_task, exit_event=self.shared.exit_event)
@@ -114,17 +110,15 @@ class DispatcherMain(DispatcherMainProtocol):
         try:
             while not self.shared.exit_event.is_set():
                 try:
-                    await asyncio.wait_for(self.shared.exit_event.wait(), timeout=self._chunk_cleanup_interval)
+                    await asyncio.wait_for(self.shared.exit_event.wait(), timeout=self.chunk_accumulator.cleanup_interval_seconds)
                     break
                 except asyncio.TimeoutError:
-                    expired = await self.chunk_accumulator.aexpire_pending_messages(
-                        older_than_seconds=self.chunk_message_timeout_seconds
-                    )
+                    expired = await self.chunk_accumulator.aexpire_pending_messages()
                     if expired:
                         logger.info(
                             'Dropping %d incomplete chunked message(s) older than %.1fs: %s',
                             len(expired),
-                            self.chunk_message_timeout_seconds,
+                            self.chunk_accumulator.message_timeout_seconds,
                             expired,
                         )
         except asyncio.CancelledError:

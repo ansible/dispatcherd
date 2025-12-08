@@ -153,7 +153,14 @@ class ChunkAccumulator:
     * ``message_id`` allows callers to reference partial state for logging.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, message_timeout_seconds: float = 30 * 60, cleanup_interval_seconds: float | None = None) -> None:
+        if message_timeout_seconds <= 0:
+            raise ValueError('message_timeout_seconds must be positive')
+        if cleanup_interval_seconds is None:
+            cleanup_interval_seconds = min(60.0, max(5.0, message_timeout_seconds / 10))
+
+        self.message_timeout_seconds = message_timeout_seconds
+        self.cleanup_interval_seconds = max(0.01, cleanup_interval_seconds)
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.final_indexes: Dict[str, int] = {}
         self.message_started_at: Dict[str, float] = {}
@@ -230,31 +237,20 @@ class ChunkAccumulator:
 
         return (True, message_dict, message_id)
 
-    def clear(self) -> None:
-        """Reset all tracking data, dropping any inflight messages."""
-        self.pending_messages.clear()
-        self.final_indexes.clear()
-        self.message_started_at.clear()
-
-    async def aclear(self) -> None:
-        """Async wrapper for :meth:`clear`."""
-        async with self._lock:
-            self.clear()
-
-    def expire_pending_messages(self, *, older_than_seconds: float, current_time: float | None = None) -> list[str]:
-        """Drop in-flight messages that have been incomplete for ``older_than_seconds``."""
+    def expire_pending_messages(self, *, current_time: float | None = None) -> list[str]:
+        """Drop in-flight messages that have exceeded ``self.message_timeout_seconds``."""
         if current_time is None:
             current_time = time.monotonic()
         expired: list[str] = []
         for message_id, started_at in list(self.message_started_at.items()):
-            if (current_time - started_at) >= older_than_seconds:
+            if (current_time - started_at) >= self.message_timeout_seconds:
                 expired.append(message_id)
                 self.pending_messages.pop(message_id, None)
                 self.final_indexes.pop(message_id, None)
                 self.message_started_at.pop(message_id, None)
         return expired
 
-    async def aexpire_pending_messages(self, *, older_than_seconds: float) -> list[str]:
+    async def aexpire_pending_messages(self) -> list[str]:
         """Async wrapper for :meth:`expire_pending_messages`."""
         async with self._lock:
-            return self.expire_pending_messages(older_than_seconds=older_than_seconds)
+            return self.expire_pending_messages()
