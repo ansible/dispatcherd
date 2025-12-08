@@ -63,5 +63,6 @@ def is_valid_uuid(uuid_str: str) -> bool:
         True if the string matches UUID format, False otherwise
     """
     import re
+
     uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     return bool(re.match(uuid_pattern, uuid_str.lower()))
