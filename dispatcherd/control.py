@@ -38,11 +38,13 @@ def _ingest_reply_payload(
             results.append({'error': 'JSON parse error', 'original': payload})
             return True
 
-    is_chunk, assembled, _ = accumulator.ingest_dict(decoded)
+    is_chunk, assembled, message_id = accumulator.ingest_dict(decoded)
     if is_chunk:
         if assembled is not None:
             results.append(assembled)
             return True
+        idx = decoded.get('chunk_index', -1)
+        logger.debug(f'Processed partial for message_id={message_id} chunk_index={idx}')
         return False
 
     results.append(decoded)

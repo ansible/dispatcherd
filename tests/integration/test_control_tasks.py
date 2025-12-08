@@ -81,9 +81,9 @@ def test_pg_notify_large_control_reply(pg_dispatcher, pg_broker, pg_control, get
     big_value = 'x' * 9001
     msg = json.dumps(
         {
-            'task': 'lambda: __import__("time").sleep(3.1415)',
+            'task': 'lambda *args: __import__("time").sleep(3.1415)',
             'uuid': 'big_payload_control',
-            'kwargs': {'blob': big_value},
+            'args': [big_value],
         }
     )
     pg_broker.publish_message(message=msg)
@@ -96,7 +96,7 @@ def test_pg_notify_large_control_reply(pg_dispatcher, pg_broker, pg_control, get
 
     running_job = get_worker_data(running_jobs)
     assert running_job['uuid'] == 'big_payload_control'
-    assert running_job['kwargs']['blob'] == big_value
+    assert running_job['args'] == [big_value]
 
     pg_control.control_with_reply('cancel', data={'uuid': 'big_payload_control'}, timeout=1)
     status = pg_dispatcher.q_out.get(timeout=2)
