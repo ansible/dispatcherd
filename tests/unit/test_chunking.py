@@ -208,7 +208,7 @@ def test_chunk_accumulator_clears_state_after_completion():
         acc.ingest_dict(chunk)
     assert acc.pending_messages == {}
     assert acc.expected_totals == {}
-    assert acc.message_started_at == {}
+    assert acc.assembly_started_at == {}
 
 
 def test_chunk_accumulator_expires_old_messages():
@@ -220,10 +220,10 @@ def test_chunk_accumulator_expires_old_messages():
     first_chunk = chunk_dicts[0]
     acc.ingest_dict(first_chunk)
     msg_id = first_chunk['message_id']
-    started_at = acc.message_started_at[msg_id]
+    started_at = acc.assembly_started_at[msg_id]
 
     expired_ids = acc.expire_partial_messages(current_time=started_at + acc.message_timeout_seconds + 1.0)
     assert msg_id in expired_ids
     assert msg_id not in acc.pending_messages
     assert msg_id not in acc.expected_totals
-    assert msg_id not in acc.message_started_at
+    assert msg_id not in acc.assembly_started_at

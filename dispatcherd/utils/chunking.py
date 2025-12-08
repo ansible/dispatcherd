@@ -36,9 +36,9 @@ def _serialize_chunk(chunk_id: str, seq: int, total: int, payload: str) -> str:
     return json.dumps(chunk, separators=(',', ':'))
 
 
-def _wrapper_overhead_bytes(message_id: str, chunk_index: int, total_chunks: int) -> int:
+def _wrapper_overhead_bytes(message_id: str, index: int, total_chunks: int) -> int:
     """Estimate bytes added by chunk metadata for the given index."""
-    empty_chunk = _serialize_chunk(message_id, chunk_index, total_chunks, '')
+    empty_chunk = _serialize_chunk(message_id, index, total_chunks, '')
     return len(empty_chunk.encode('utf-8'))
 
 
@@ -166,7 +166,7 @@ class ChunkAccumulator:
         self.cleanup_interval_seconds = max(0.01, cleanup_interval_seconds)
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.expected_totals: Dict[str, int] = {}
-        self.message_started_at: Dict[str, float] = {}
+        self.assembly_started_at: Dict[str, float] = {}
         self._lock = asyncio.Lock()
 
     async def aingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
@@ -176,6 +176,8 @@ class ChunkAccumulator:
 
     def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
         """Process a decoded payload dict and assemble chunked messages.
+
+        Returns (message is assembled True or False, final message as dict, message id)
 
         Scenarios
         ---------
@@ -194,49 +196,32 @@ class ChunkAccumulator:
         if not chunk:
             return (False, payload_dict, None)
 
-        message_id = chunk.get('message_id') or chunk.get('id')
+        # Unpack chunk message into local vars
+        message_id = chunk.get('message_id')
         seq = chunk.get('index')
-        if seq is None:
-            seq = chunk.get('chunk_index')
         total = chunk.get('total')
-        if total is not None:
-            if not isinstance(total, int) or total <= 0:
-                logger.warning('Received chunk with invalid total: %s', chunk)
-                return (True, None, None)
-        is_final = chunk.get('final_chunk')
-        if is_final is None:
-            is_final = chunk.get('final')
+        payload_str = chunk.get('payload', '')
 
-        if not isinstance(message_id, str) or not isinstance(seq, int):
+        if not isinstance(message_id, str) or not isinstance(seq, int) or not isinstance(total, int) or not isinstance(payload_str, str):
             logger.warning('Received chunk with invalid metadata: %s', chunk)
             return (True, None, None)
 
-        payload_str = chunk.get('payload', '')
-        if not isinstance(payload_str, str):
-            payload_str = str(payload_str)
-
+        # Save data to buffer, the current chunk and the expected total
         buffer = self.pending_messages.setdefault(message_id, {})
-        if message_id not in self.message_started_at:
-            self.message_started_at[message_id] = time.monotonic()
+        if message_id not in self.assembly_started_at:
+            self.assembly_started_at[message_id] = time.monotonic()
         buffer[seq] = payload_str
 
-        if total is not None:
-            existing_total = self.expected_totals.get(message_id)
-            if existing_total is not None and existing_total != total:
-                logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
-            self.expected_totals[message_id] = total
+        existing_total = self.expected_totals.get(message_id)
+        if existing_total is not None and existing_total != total:
+            logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
+        self.expected_totals[message_id] = total
 
-        if total is None and isinstance(is_final, bool) and is_final:
-            self.expected_totals[message_id] = seq + 1
-
-        expected_total = self.expected_totals.get(message_id)
-        if expected_total is None:
+        # Message is still partially assembled after adding this one, normal, not done yet
+        if any(index not in buffer for index in range(total)):
             return (True, None, message_id)
 
-        if any(index not in buffer for index in range(expected_total)):
-            return (True, None, message_id)
-
-        message_str = ''.join(buffer[index] for index in range(expected_total))
+        message_str = ''.join(buffer[index] for index in range(total))
         try:
             message_dict = json.loads(message_str)
             if not isinstance(message_dict, dict):
@@ -247,7 +232,7 @@ class ChunkAccumulator:
         finally:
             self.pending_messages.pop(message_id, None)
             self.expected_totals.pop(message_id, None)
-            self.message_started_at.pop(message_id, None)
+            self.assembly_started_at.pop(message_id, None)
 
         return (True, message_dict, message_id)
 
@@ -256,12 +241,12 @@ class ChunkAccumulator:
         if current_time is None:
             current_time = time.monotonic()
         expired: list[str] = []
-        for message_id, started_at in list(self.message_started_at.items()):
+        for message_id, started_at in list(self.assembly_started_at.items()):
             if (current_time - started_at) >= self.message_timeout_seconds:
                 expired.append(message_id)
                 self.pending_messages.pop(message_id, None)
                 self.expected_totals.pop(message_id, None)
-                self.message_started_at.pop(message_id, None)
+                self.assembly_started_at.pop(message_id, None)
         return expired
 
     async def aexpire_partial_messages(self) -> list[str]:
