@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Optional, Sequence, Union
+from typing import Optional, Union
 
 from .factories import get_broker
 from .protocols import Broker
@@ -30,7 +30,7 @@ def _ingest_reply_payload(
     else:
         try:
             candidate = json.loads(payload)
-        except json.JSONDecodeError as exc:
+        except Exception:
             logger.warning(f"Invalid JSON for reply {idx}: {payload[:100]}, using as-is")
             results.append({'error': JSON_ERROR_STR, 'original': payload})
             return True
@@ -56,7 +56,7 @@ def _ingest_reply_payload(
 
 class BrokerCallbacks:
     def __init__(self, queuename: Optional[str], broker: Broker, send_message: str, expected_replies: int = 1) -> None:
-        self.received_replies: list[dict|str] = []
+        self.received_replies: list[dict | str] = []
         self.queuename = queuename
         self.broker = broker
         self.send_message = send_message
