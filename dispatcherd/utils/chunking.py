@@ -11,8 +11,10 @@ Typical usage is a two-step process:
    the accumulator returns the fully reconstructed message dict.
 """
 
+import asyncio
 import json
 import logging
+import time
 import uuid
 from functools import lru_cache
 from typing import Dict, Optional
@@ -154,6 +156,13 @@ class ChunkAccumulator:
     def __init__(self) -> None:
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.final_indexes: Dict[str, int] = {}
+        self.message_started_at: Dict[str, float] = {}
+        self._lock = asyncio.Lock()
+
+    async def aingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
+        """Async wrapper that serializes :meth:`ingest_dict` mutations."""
+        async with self._lock:
+            return self.ingest_dict(payload_dict)
 
     def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
         """Process a decoded payload dict and assemble chunked messages.
@@ -192,6 +201,8 @@ class ChunkAccumulator:
             payload_str = str(payload_str)
 
         buffer = self.pending_messages.setdefault(message_id, {})
+        if message_id not in self.message_started_at:
+            self.message_started_at[message_id] = time.monotonic()
         buffer[seq] = payload_str
 
         if bool(is_final):
@@ -215,6 +226,7 @@ class ChunkAccumulator:
         finally:
             self.pending_messages.pop(message_id, None)
             self.final_indexes.pop(message_id, None)
+            self.message_started_at.pop(message_id, None)
 
         return (True, message_dict, message_id)
 
@@ -222,3 +234,27 @@ class ChunkAccumulator:
         """Reset all tracking data, dropping any inflight messages."""
         self.pending_messages.clear()
         self.final_indexes.clear()
+        self.message_started_at.clear()
+
+    async def aclear(self) -> None:
+        """Async wrapper for :meth:`clear`."""
+        async with self._lock:
+            self.clear()
+
+    def expire_pending_messages(self, *, older_than_seconds: float, current_time: float | None = None) -> list[str]:
+        """Drop in-flight messages that have been incomplete for ``older_than_seconds``."""
+        if current_time is None:
+            current_time = time.monotonic()
+        expired: list[str] = []
+        for message_id, started_at in list(self.message_started_at.items()):
+            if (current_time - started_at) >= older_than_seconds:
+                expired.append(message_id)
+                self.pending_messages.pop(message_id, None)
+                self.final_indexes.pop(message_id, None)
+                self.message_started_at.pop(message_id, None)
+        return expired
+
+    async def aexpire_pending_messages(self, *, older_than_seconds: float) -> list[str]:
+        """Async wrapper for :meth:`expire_pending_messages`."""
+        async with self._lock:
+            return self.expire_pending_messages(older_than_seconds=older_than_seconds)

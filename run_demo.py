@@ -6,7 +6,7 @@ import sys
 
 from dispatcherd.config import setup
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
-from dispatcherd.utils import MODULE_METHOD_DELIMITER
+from dispatcherd.utils import MODULE_METHOD_DELIMITER, split_message
 from dispatcherd.processors.delayer import Delayer
 from dispatcherd.processors.blocker import Blocker
 from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout
@@ -44,6 +44,13 @@ def main():
     print('writing 15 messages fast')
     for i in range(15):
         broker.publish_message(message=f'lambda: {i}')
+
+    print('')
+    print('sending an intentionally incomplete chunked message to watch cleanup logs')
+    large_task = json.dumps({'task': 'lambda: "chunk me"', 'uuid': 'demo-chunk', 'data': 'y' * 5000})
+    chunk = split_message(large_task, max_bytes=200)[0]
+    broker.publish_message(message=chunk)
+    print('  wrote first chunk only; the dispatcher should eventually abandon it')
 
     print('')
     print(' -------- Actions involving control-and-reply ---------')

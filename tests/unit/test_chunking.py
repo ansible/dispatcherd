@@ -204,3 +204,22 @@ def test_chunk_accumulator_clears_state_after_completion():
         acc.ingest_dict(chunk)
     assert acc.pending_messages == {}
     assert acc.final_indexes == {}
+    assert acc.message_started_at == {}
+
+
+def test_chunk_accumulator_expires_old_messages():
+    payload = {'data': 'expire_me' * 60}
+    chunk_dicts = _make_chunk_dicts(json.dumps(payload), max_bytes=300)
+    assert len(chunk_dicts) > 1
+
+    acc = ChunkAccumulator()
+    first_chunk = chunk_dicts[0]
+    acc.ingest_dict(first_chunk)
+    msg_id = first_chunk['message_id']
+    started_at = acc.message_started_at[msg_id]
+
+    expired_ids = acc.expire_pending_messages(older_than_seconds=0, current_time=started_at)
+    assert msg_id in expired_ids
+    assert msg_id not in acc.pending_messages
+    assert msg_id not in acc.final_indexes
+    assert msg_id not in acc.message_started_at

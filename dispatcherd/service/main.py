@@ -29,6 +29,8 @@ class DispatcherMain(DispatcherMainProtocol):
         shared: SharedAsyncObjectsProtocol,
         node_id: str | None = None,
         metrics: DispatcherMetricsServerProtocol | None = None,
+        chunk_message_timeout_seconds: float = 30 * 60,
+        chunk_cleanup_interval_seconds: float | None = None,
     ):
         self.received_count = 0
         self.control_count = 0
@@ -45,10 +47,18 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             self.node_id = str(uuid4())
 
+        if chunk_message_timeout_seconds <= 0:
+            raise ValueError('chunk_message_timeout_seconds must be positive')
+        if chunk_cleanup_interval_seconds is None:
+            chunk_cleanup_interval_seconds = min(60.0, max(5.0, chunk_message_timeout_seconds / 10))
+
         self.metrics = metrics
 
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
         self.chunk_accumulator = ChunkAccumulator()
+        self.chunk_message_timeout_seconds = chunk_message_timeout_seconds
+        self._chunk_cleanup_interval = max(0.01, chunk_cleanup_interval_seconds)
+        self._chunk_cleanup_task: asyncio.Task | None = None
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
@@ -92,6 +102,45 @@ class DispatcherMain(DispatcherMainProtocol):
 
         logger.debug('Setting event to exit main loop')
         self.shared.exit_event.set()
+        await self._stop_chunk_cleanup_task()
+
+    def _ensure_chunk_cleanup_task(self) -> None:
+        if self._chunk_cleanup_task or self.chunk_message_timeout_seconds <= 0:
+            return
+        self._chunk_cleanup_task = asyncio.create_task(self._chunk_cleanup_loop(), name='chunk_cleanup')
+        ensure_fatal(self._chunk_cleanup_task, exit_event=self.shared.exit_event)
+
+    async def _chunk_cleanup_loop(self) -> None:
+        try:
+            while not self.shared.exit_event.is_set():
+                try:
+                    await asyncio.wait_for(self.shared.exit_event.wait(), timeout=self._chunk_cleanup_interval)
+                    break
+                except asyncio.TimeoutError:
+                    expired = await self.chunk_accumulator.aexpire_pending_messages(
+                        older_than_seconds=self.chunk_message_timeout_seconds
+                    )
+                    if expired:
+                        logger.info(
+                            'Dropping %d incomplete chunked message(s) older than %.1fs: %s',
+                            len(expired),
+                            self.chunk_message_timeout_seconds,
+                            expired,
+                        )
+        except asyncio.CancelledError:
+            logger.debug('Chunk cleanup task canceled')
+            raise
+
+    async def _stop_chunk_cleanup_task(self) -> None:
+        if not self._chunk_cleanup_task:
+            return
+        self._chunk_cleanup_task.cancel()
+        try:
+            await self._chunk_cleanup_task
+        except asyncio.CancelledError:
+            logger.debug('Chunk cleanup task canceled via shutdown')
+        finally:
+            self._chunk_cleanup_task = None
 
     async def connected_callback(self, producer: Producer) -> None:
         return
@@ -119,7 +168,7 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
 
-        is_chunk, assembled_message, message_id = self.chunk_accumulator.ingest_dict(decoded)
+        is_chunk, assembled_message, message_id = await self.chunk_accumulator.aingest_dict(decoded)
         if is_chunk:
             if assembled_message is None:
                 logger.debug(f'Received chunk for message_id={message_id}, waiting for remainder')
@@ -203,6 +252,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
                     ensure_fatal(task, exit_event=producer.events.recycle_event)
+        self._ensure_chunk_cleanup_task()
 
     async def cancel_tasks(self) -> None:
         for task in asyncio.all_tasks():
