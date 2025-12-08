@@ -173,7 +173,7 @@ class Broker(BrokerProtocol):
                     await writer.wait_closed()
 
     def process_notify(
-        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
+        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
     ) -> Iterator[tuple[Union[int, str], str]]:
         try:
             with socket.socket(socket.AF_UNIX) as sock:
@@ -198,7 +198,7 @@ class Broker(BrokerProtocol):
                             continue
                         received_ct += 1
                         yield (0, message)
-                        if received_ct >= max_messages:
+                        if max_messages is not None and received_ct >= max_messages:
                             return
         finally:
             self.sock = None

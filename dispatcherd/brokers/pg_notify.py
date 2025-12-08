@@ -287,7 +287,7 @@ class Broker(BrokerProtocol):
         assert self._sync_connection is not None
         return self._sync_connection
 
-    def process_notify(self, connected_callback: Callable | None = None, timeout: float = 5.0, max_messages: int = 1) -> Iterator[tuple[str, str]]:
+    def process_notify(self, connected_callback: Callable | None = None, timeout: float = 5.0, max_messages: int | None = 1) -> Iterator[tuple[str, str]]:
         """Blocking method that listens for messages on subscribed pg_notify channels until timeout
 
         This has two different exit conditions:

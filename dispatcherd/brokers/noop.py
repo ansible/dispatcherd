@@ -41,7 +41,7 @@ class Broker(BrokerProtocol):
         pass
 
     def process_notify(
-        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
+        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
     ) -> Iterator[tuple[Union[int, str], str]]:
         """No-op implementation that yields nothing."""
         if connected_callback:
