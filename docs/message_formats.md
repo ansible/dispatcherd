@@ -30,6 +30,56 @@ message will also contain a `"reply_to"` key for the channel to send the reply t
 The message sent to the reply channel will have some other purpose-specific information,
 like debug information.
 
+#### Chunked Messages
+
+Large submissions may exceed a broker's payload limit (pg_notify limits payloads to roughly 8KB).
+Before a message is published, dispatcherd brokers should split messages into multiples
+so that it avoids hitting the max message length.
+
+Each of the chunked messages are a JSON wrapper of metadata, where the "payload" key contains
+a subset of the larger message, which is also probably JSON.
+
+```json
+{
+  "__dispatcherd_chunk__": "dispatcherd.v1",
+  "message_id": "4e66bf05b4b14222be14817a5eb918b4",
+  "chunk_index": 0,
+  "final_chunk": false,
+  "payload": "{\"uuid\":\"9760671a-6261-45aa-881a-f66929ff9725\",\"args\":[4]}"
+}
+```
+
+If a message is not over the limit, it should not be chunked.
+
+The chunk envelope establishes the contract for multipart messages:
+
+- `__dispatcherd_chunk__` identifies the chunk protocol version and is required.
+- `message_id` is a per-message identifier used to correlate all pieces.
+- `chunk_index` starts at ``0`` and increases by ``1`` for every chunk.
+- `final_chunk` is ``true`` only for the final piece of the original message.
+- `payload` contains an escaped slice of the original JSON string, so consumers
+  reassemble the string data (not decoded dicts) before deserializing the complete message.
+
+Consumers **must** detect the marker and reassemble the original payload before trying to
+interpret it as a task. The helper in `dispatcherd/utils/chunking.py` provides both sides
+of this protocol:
+
+```python
+from dispatcherd.utils import ChunkAccumulator
+
+accumulator = ChunkAccumulator()
+is_chunk, completed_payload, message_id = accumulator.ingest_dict(received_dict)
+if is_chunk and completed_payload:
+    # completed_payload is the dict described in "Broker Message Format"
+    handle_task(completed_payload)
+```
+
+`ChunkAccumulator` tracks in-flight `message_id`s, waits until every index from ``0`` to
+the final chunk has been seen, and discards stale fragments after
+`message_timeout_seconds` (configured via `chunk_message_timeout_seconds` on the service).
+Control replies use the same chunk envelope when they are large, so all inbound broker
+traffic can be fed through a single accumulator.
+
 ### Internal Worker Pool Format
 
 The main process and workers communicate through conventional IPC queues.

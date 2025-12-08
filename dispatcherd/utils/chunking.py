@@ -242,7 +242,7 @@ class ChunkAccumulator:
         if current_time is None:
             current_time = time.monotonic()
         expired: list[str] = []
-        for message_id, started_at in list(self.message_started_at.items()):
+        for message_id, started_at in self.message_started_at.items():
             if (current_time - started_at) >= self.message_timeout_seconds:
                 expired.append(message_id)
                 self.pending_messages.pop(message_id, None)
