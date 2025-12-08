@@ -50,3 +50,18 @@ class DuplicateBehavior(Enum):
     discard = 'discard'  # if task is submitted twice, discard the 2nd one
     serial = 'serial'  # hold duplicate submissions in queue but only run 1 at a time
     queue_one = 'queue_one'  # hold only 1 duplicate submission in queue, discard any more
+
+
+def is_valid_uuid(uuid_str: str) -> bool:
+    """
+    Check if a string is a valid UUID format.
+
+    Args:
+        uuid_str: String to validate as UUID
+
+    Returns:
+        True if the string matches UUID format, False otherwise
+    """
+    import re
+    uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    return bool(re.match(uuid_pattern, uuid_str.lower()))
