@@ -42,7 +42,6 @@ async def test_dispatcher_drops_stale_chunked_messages():
         pool=pool,
         shared=shared,
         chunk_message_timeout_seconds=0.05,
-        chunk_cleanup_interval_seconds=0.01,
     )
 
     await dispatcher.start_working()

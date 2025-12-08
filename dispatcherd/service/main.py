@@ -30,7 +30,6 @@ class DispatcherMain(DispatcherMainProtocol):
         node_id: str | None = None,
         metrics: DispatcherMetricsServerProtocol | None = None,
         chunk_message_timeout_seconds: float = 30 * 60,
-        chunk_cleanup_interval_seconds: float | None = None,
     ):
         self.received_count = 0
         self.control_count = 0
@@ -52,9 +51,7 @@ class DispatcherMain(DispatcherMainProtocol):
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
         self.chunk_accumulator = ChunkAccumulator(
             message_timeout_seconds=chunk_message_timeout_seconds,
-            cleanup_interval_seconds=chunk_cleanup_interval_seconds,
         )
-        self._chunk_cleanup_task: asyncio.Task | None = None
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
@@ -98,43 +95,6 @@ class DispatcherMain(DispatcherMainProtocol):
 
         logger.debug('Setting event to exit main loop')
         self.shared.exit_event.set()
-        await self._stop_chunk_cleanup_task()
-
-    def _ensure_chunk_cleanup_task(self) -> None:
-        if self._chunk_cleanup_task or self.chunk_accumulator.message_timeout_seconds <= 0:
-            return
-        self._chunk_cleanup_task = asyncio.create_task(self._chunk_cleanup_loop(), name='chunk_cleanup')
-        ensure_fatal(self._chunk_cleanup_task, exit_event=self.shared.exit_event)
-
-    async def _chunk_cleanup_loop(self) -> None:
-        try:
-            while not self.shared.exit_event.is_set():
-                try:
-                    await asyncio.wait_for(self.shared.exit_event.wait(), timeout=self.chunk_accumulator.cleanup_interval_seconds)
-                    break
-                except asyncio.TimeoutError:
-                    expired = await self.chunk_accumulator.aexpire_pending_messages()
-                    if expired:
-                        logger.info(
-                            'Dropping %d incomplete chunked message(s) older than %.1fs: %s',
-                            len(expired),
-                            self.chunk_accumulator.message_timeout_seconds,
-                            expired,
-                        )
-        except asyncio.CancelledError:
-            logger.debug('Chunk cleanup task canceled')
-            raise
-
-    async def _stop_chunk_cleanup_task(self) -> None:
-        if not self._chunk_cleanup_task:
-            return
-        self._chunk_cleanup_task.cancel()
-        try:
-            await self._chunk_cleanup_task
-        except asyncio.CancelledError:
-            logger.debug('Chunk cleanup task canceled via shutdown')
-        finally:
-            self._chunk_cleanup_task = None
 
     async def connected_callback(self, producer: Producer) -> None:
         return
@@ -162,6 +122,8 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
 
+        await self._expire_pending_chunks()
+
         is_chunk, assembled_message, message_id = await self.chunk_accumulator.aingest_dict(decoded)
         if is_chunk:
             if assembled_message is None:
@@ -183,7 +145,9 @@ class DispatcherMain(DispatcherMainProtocol):
         self.received_count += 1
 
         if immediate_message := await self.delayer.process_task(message):
-            return await self.process_message_now(immediate_message, producer=producer)
+            result = await self.process_message_now(immediate_message, producer=producer)
+            await self._expire_pending_chunks()
+            return result
 
         # We should be at this line if task was delayed, and in that case there is no reply message
         return (None, None)
@@ -217,6 +181,19 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.info(f"Control action {action} returned {type(return_data)}, done")
             return (None, None)
 
+    async def _expire_pending_chunks(self) -> None:
+        """Drop expired chunk fragments during normal message processing."""
+        if self.chunk_accumulator.message_timeout_seconds <= 0:
+            return
+        expired = await self.chunk_accumulator.aexpire_pending_messages()
+        if expired:
+            logger.info(
+                'Dropping %d incomplete chunked message(s) older than %.1fs: %s',
+                len(expired),
+                self.chunk_accumulator.message_timeout_seconds,
+                expired,
+            )
+
     async def process_message_now(self, message: dict, producer: Producer | None = None) -> tuple[str | None, str | None]:
         """Route message to control action or to a worker via the pool. Does not consider task delays."""
         if 'control' in message:
@@ -246,7 +223,6 @@ class DispatcherMain(DispatcherMainProtocol):
                 # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
                     ensure_fatal(task, exit_event=producer.events.recycle_event)
-        self._ensure_chunk_cleanup_task()
 
     async def cancel_tasks(self) -> None:
         for task in asyncio.all_tasks():
