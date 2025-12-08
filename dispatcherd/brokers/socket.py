@@ -142,11 +142,24 @@ class Broker(BrokerProtocol):
         """Send an internal message to the async generator, which will cause it to close the server"""
         await self.incoming_queue.put((-1, 'stop'))
 
+    async def apublish_message_to_socket(self, message: str = "") -> None:
+        logger.info(f'Publishing async socket message len={len(message)} with new connection')
+        writer = None
+        try:
+            _, writer = await asyncio.open_unix_connection(self.socket_path)
+            for chunk in split_message(message, max_bytes=self.max_message_bytes):
+                writer.write((chunk + '\n').encode())
+            await writer.drain()
+        finally:
+            if writer:
+                writer.close()
+                await writer.wait_closed()
+
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
-        chunks = split_message(message, max_bytes=self.max_message_bytes)
         if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
+                chunks = split_message(message, max_bytes=self.max_message_bytes)
                 if client.listen_loop_active:
                     logger.info(f'Queued message len={len(message)} ({len(chunks)} chunk(s)) for client_id={origin}')
                     for chunk in chunks:
@@ -160,17 +173,7 @@ class Broker(BrokerProtocol):
                 logger.error(f'Client_id={origin} is not currently connected')
         else:
             # Acting as a client in this case, mostly for tests
-            logger.info(f'Publishing async socket message len={len(message)} with new connection')
-            writer = None
-            try:
-                _, writer = await asyncio.open_unix_connection(self.socket_path)
-                for chunk in chunks:
-                    writer.write((chunk + '\n').encode())
-                await writer.drain()
-            finally:
-                if writer:
-                    writer.close()
-                    await writer.wait_closed()
+            await self.apublish_message_to_socket(message)
 
     def process_notify(
         self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
