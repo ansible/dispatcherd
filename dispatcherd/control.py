@@ -13,6 +13,9 @@ from .utils import ChunkAccumulator
 logger = logging.getLogger('awx.main.dispatch.control')
 
 
+JSON_ERROR_STR = 'JSON parse error'
+
+
 def _ingest_reply_payload(
     accumulator: ChunkAccumulator,
     results: list[dict],
@@ -28,14 +31,14 @@ def _ingest_reply_payload(
         try:
             candidate = json.loads(payload)
         except json.JSONDecodeError as exc:
-            logger.warning(f"Invalid JSON for reply {idx}: {payload[:100]}... (Error: {exc})")
-            results.append({'error': 'JSON parse error', 'original': payload})
+            logger.warning(f"Invalid JSON for reply {idx}: {payload[:100]}, using as-is")
+            results.append({'error': JSON_ERROR_STR, 'original': payload})
             return True
         if isinstance(candidate, dict):
             decoded = candidate
         else:
             logger.warning(f"Control reply {idx} decoded as non-dict: {candidate}")
-            results.append({'error': 'JSON parse error', 'original': payload})
+            results.append({'error': JSON_ERROR_STR, 'original': payload})
             return True
 
     is_chunk, assembled, message_id = accumulator.ingest_dict(decoded)
@@ -53,7 +56,7 @@ def _ingest_reply_payload(
 
 class BrokerCallbacks:
     def __init__(self, queuename: Optional[str], broker: Broker, send_message: str, expected_replies: int = 1) -> None:
-        self.received_replies: list[dict] = []
+        self.received_replies: list[dict|str] = []
         self.queuename = queuename
         self.broker = broker
         self.send_message = send_message
@@ -84,22 +87,6 @@ class Control:
     def generate_reply_queue_name(cls) -> str:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
-    @staticmethod
-    def parse_replies(received_replies: Sequence[Union[str, dict]]) -> list[dict]:
-        ret = []
-        for i, payload in enumerate(received_replies):
-            if isinstance(payload, dict):
-                ret.append(payload)
-                continue
-            try:
-                item_as_dict = json.loads(payload)
-                ret.append(item_as_dict)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Invalid JSON for reply for reply {i}: {payload[:100]}... (Error: {e})")
-                ret.append({'error': 'JSON parse error', 'original': payload})
-
-        return ret
-
     def create_message(self, command: str, reply_to: Optional[str] = None, send_data: Optional[dict] = None) -> str:
         to_send: dict[str, Union[dict, str]] = {'control': command}
         if reply_to:
@@ -126,7 +113,7 @@ class Control:
         finally:
             await broker.aclose()
 
-        return self.parse_replies(control_callbacks.received_replies)
+        return control_callbacks.received_replies
 
     async def acontrol(self, command: str, data: Optional[dict] = None) -> None:
         broker = get_broker(self.broker_name, self.broker_config, channels=[])
