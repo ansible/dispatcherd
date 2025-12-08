@@ -230,9 +230,7 @@ class ChunkAccumulator:
             logger.exception(f'Failed to decode chunked message message_id={message_id}')
             return (True, None, message_id)
         finally:
-            self.pending_messages.pop(message_id, None)
-            self.expected_totals.pop(message_id, None)
-            self.assembly_started_at.pop(message_id, None)
+            self._clear_message_state(message_id)
 
         return (True, message_dict, message_id)
 
@@ -244,9 +242,7 @@ class ChunkAccumulator:
         for message_id, started_at in list(self.assembly_started_at.items()):
             if (current_time - started_at) >= self.message_timeout_seconds:
                 expired.append(message_id)
-                self.pending_messages.pop(message_id, None)
-                self.expected_totals.pop(message_id, None)
-                self.assembly_started_at.pop(message_id, None)
+                self._clear_message_state(message_id)
         return expired
 
     async def aexpire_partial_messages(self) -> list[str]:
@@ -259,3 +255,9 @@ class ChunkAccumulator:
         buffer = self.pending_messages.get(message_id, {})
         expected_total = self.expected_totals.get(message_id)
         return (len(buffer), expected_total)
+
+    def _clear_message_state(self, message_id: str) -> None:
+        """Remove all tracking data for the specified message."""
+        self.pending_messages.pop(message_id, None)
+        self.expected_totals.pop(message_id, None)
+        self.assembly_started_at.pop(message_id, None)
