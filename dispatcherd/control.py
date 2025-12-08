@@ -56,7 +56,7 @@ def _ingest_reply_payload(
 
 class BrokerCallbacks:
     def __init__(self, queuename: Optional[str], broker: Broker, send_message: str, expected_replies: int = 1) -> None:
-        self.received_replies: list[dict | str] = []
+        self.received_replies: list[dict] = []
         self.queuename = queuename
         self.broker = broker
         self.send_message = send_message
