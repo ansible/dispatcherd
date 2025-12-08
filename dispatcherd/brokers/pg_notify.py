@@ -205,30 +205,33 @@ class Broker(BrokerProtocol):
     ) -> AsyncGenerator[tuple[str, str], None]:  # public
         connection = await self.aget_connection()
         async with connection.cursor() as cur:
-            for channel in self.channels:
-                await cur.execute(self.get_listen_query(channel))
-                logger.info(f"Set up pg_notify listening on channel '{channel}'")
+            try:
+                for channel in self.channels:
+                    await cur.execute(self.get_listen_query(channel))
+                    logger.info(f"Set up pg_notify listening on channel '{channel}'")
 
-            if connected_callback:
-                await connected_callback()
+                if connected_callback:
+                    await connected_callback()
 
-            while True:
-                logger.debug('Starting listening for pg_notify notifications')
-                self.notify_loop_active = True
-                async for notify in connection.notifies(timeout=self.max_connection_idle_seconds):
-                    yield notify.channel, notify.payload
-                    if self.notify_queue:
-                        break
-                else:
-                    logger.info(
-                        f'No message received since {self.max_connection_idle_seconds} seconds, starting self check to channel={self.self_check_channel}'
-                    )
-                    await self.initiate_self_check()
+                while True:
+                    logger.debug('Starting listening for pg_notify notifications')
+                    self.notify_loop_active = True
+                    async for notify in connection.notifies(timeout=self.max_connection_idle_seconds):
+                        yield notify.channel, notify.payload
+                        if self.notify_queue:
+                            break
+                    else:
+                        logger.info(
+                            f'No message received since {self.max_connection_idle_seconds} seconds, starting self check to channel={self.self_check_channel}'
+                        )
+                        await self.initiate_self_check()
 
-                self.notify_loop_active = False
-                for reply_to, reply_message in self.notify_queue:
-                    await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
-                self.notify_queue = []
+                    self.notify_loop_active = False
+                    for reply_to, reply_message in self.notify_queue:
+                        await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
+                    self.notify_queue = []
+            finally:
+                await cur.execute(self.get_unlisten_query())
 
     async def apublish_message_from_cursor(self, cursor: psycopg.AsyncCursor, channel: str | None = None, message: str = '') -> None:
         """The inner logic of async message publishing where we already have a cursor"""
@@ -294,18 +297,20 @@ class Broker(BrokerProtocol):
         connection = self.get_connection()
 
         with connection.cursor() as cur:
-            for channel in self.channels:
-                cur.execute(self.get_listen_query(channel))
-                logger.info(f"Set up pg_notify listening on channel '{channel}'")
+            try:
+                for channel in self.channels:
+                    cur.execute(self.get_listen_query(channel))
+                    logger.info(f"Set up pg_notify listening on channel '{channel}'")
 
-            if connected_callback:
-                connected_callback()
+                if connected_callback:
+                    connected_callback()
 
-            logger.debug('Starting listening for pg_notify notifications')
-            for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
-                yield (notify.channel, notify.payload)
-
-            cur.execute(self.get_unlisten_query())
+                logger.debug('Starting listening for pg_notify notifications')
+                for notify in connection.notifies(timeout=timeout, stop_after=max_messages):
+                    yield (notify.channel, notify.payload)
+            finally:
+                # unlisten done in finally so that when the caller returns, connection does not risk getting unrelated messages
+                cur.execute(self.get_unlisten_query())
 
     def publish_message(self, channel: str | None = None, message: str = '') -> str:
         """Synchronous method to submit a message to a pg_notify channel, returns the queue it was sent to"""

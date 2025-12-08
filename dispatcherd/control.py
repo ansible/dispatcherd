@@ -143,8 +143,7 @@ class Control:
 
         replies: list[dict] = []
         try:
-            max_messages = expected_replies * 100
-            for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=max_messages, timeout=timeout):
+            for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=None, timeout=timeout):
                 if _ingest_reply_payload(reply_accumulator, replies, payload, idx=len(replies)):
                     if len(replies) >= expected_replies:
                         break
