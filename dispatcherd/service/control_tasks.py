@@ -4,10 +4,12 @@ import logging
 
 from ..protocols import DispatcherMain
 
-__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status', 'chunks']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status', 'chunks', 'set_log_level']
 
 
 logger = logging.getLogger(__name__)
+DISPATCHER_LOGGER_NAME = 'dispatcherd'
+dispatcherd_logger = logging.getLogger(DISPATCHER_LOGGER_NAME)
 
 
 def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
@@ -60,6 +62,14 @@ async def running(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
     Data may be used to filter the tasks of interest.
     Keys and values in data correspond to expected key-values in the message,
     but are limited to task, kwargs, args, and uuid.
+
+    Control Args:
+        task:
+            type: str
+            help: Limit the results to a task name (exact match).
+        uuid:
+            type: str
+            help: Limit the results to a specific task uuid.
     """
     async with dispatcher.pool.workers.management_lock:
         return await _find_tasks(dispatcher=dispatcher, data=data)
@@ -69,6 +79,14 @@ async def cancel(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
     """Cancel all tasks that match the filter given by data
 
     The protocol for the data filtering is the same as the running command.
+
+    Control Args:
+        task:
+            type: str
+            help: Cancel only tasks matching this task name.
+        uuid:
+            type: str
+            help: Cancel only tasks with this uuid.
     """
     async with dispatcher.pool.workers.management_lock:
         return await _find_tasks(dispatcher=dispatcher, cancel=True, data=data)
@@ -81,7 +99,13 @@ def _stack_from_task(task: asyncio.Task, limit: int = 6) -> str:
 
 
 async def aio_tasks(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
-    """Information on the asyncio tasks running in the dispatcher main process"""
+    """Information on the asyncio tasks running in the dispatcher main process
+
+    Control Args:
+        limit:
+            type: int
+            help: Optional stack depth when printing asyncio task traces.
+    """
     ret = {}
     extra = {}
     if 'limit' in data:
@@ -153,8 +177,52 @@ async def status(dispatcher: DispatcherMain, data: dict) -> dict:
     """Information from all other non-destructive commands nested in a sub-dictionary"""
     ret = {}
     for command in __all__:
-        if command in ('cancel', 'alive', 'status', 'run'):
+        if command in ('cancel', 'alive', 'status', 'run', 'set_log_level'):
             continue
         control_method = globals()[command]
         ret[command] = await control_method(dispatcher=dispatcher, data={})
     return ret
+
+
+def _coerce_log_level(level_name: str | None) -> tuple[int, str] | None:
+    """Normalize level string into (level value, normalized name)."""
+    if not level_name:
+        return None
+    normalized = level_name.strip().upper()
+    if not normalized:
+        return None
+    resolved_level = logging.getLevelName(normalized)
+    if not isinstance(resolved_level, int):
+        return None
+    return resolved_level, normalized
+
+
+async def set_log_level(dispatcher: DispatcherMain, data: dict) -> dict[str, str]:
+    """Set the active log level for the `dispatcherd` logger in the main process.
+
+    Control Args:
+        level:
+            type: str
+            required: true
+            choices: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+            help: Desired log level for the dispatcherd logger.
+    """
+    requested_level = data.get('level')
+    if not isinstance(requested_level, str):
+        return {'error': 'Log level must be provided via the "level" string key.'}
+
+    parse_result = _coerce_log_level(requested_level)
+    if not parse_result:
+        return {'error': f"Unknown log level '{requested_level}'."}
+
+    level_value, normalized_name = parse_result
+    previous_level = logging.getLevelName(dispatcherd_logger.level)
+    dispatcherd_logger.setLevel(level_value)
+    new_level = logging.getLevelName(dispatcherd_logger.level)
+    logger.info("Changed %s logger level from %s to %s", DISPATCHER_LOGGER_NAME, previous_level, new_level)
+
+    return {
+        'logger': DISPATCHER_LOGGER_NAME,
+        'level': new_level,
+        'previous_level': previous_level,
+    }
