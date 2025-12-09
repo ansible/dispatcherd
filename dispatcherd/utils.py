@@ -69,3 +69,37 @@ def is_valid_uuid(uuid_str: str) -> bool:
 
     uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     return bool(re.match(uuid_pattern, uuid_str.lower()))
+
+
+def validate_task_name(task_name: str) -> bool:
+    """
+    Validate that a task name follows the expected format.
+
+    Args:
+        task_name: Task name to validate
+
+    Returns:
+        True if task name is valid, False otherwise
+    """
+    if not task_name:
+        return False
+    if task_name.startswith('lambda'):
+        return True
+    return MODULE_METHOD_DELIMITER in task_name
+
+
+def parse_module_and_target(task_name: str) -> tuple:
+    """Parse a task name into module and target components."""
+    if MODULE_METHOD_DELIMITER not in task_name:
+        return (None, None)
+    parts = task_name.rsplit(MODULE_METHOD_DELIMITER, 1)
+    if len(parts) != 2:
+        return (None, None)
+    return (parts[0], parts[1])
+
+
+def is_lambda_task(task_name: str) -> bool:
+    """Check if a task name represents a lambda function."""
+    if not task_name:
+        return False
+    return task_name.startswith('lambda')
