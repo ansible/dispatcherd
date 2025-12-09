@@ -122,8 +122,6 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
 
-        await self._expire_pending_chunks()
-
         is_chunk, assembled_message, message_id = await self.chunk_accumulator.aingest_dict(decoded)
         if is_chunk:
             if assembled_message is None:
@@ -150,7 +148,8 @@ class DispatcherMain(DispatcherMainProtocol):
 
         if immediate_message := await self.delayer.process_task(message):
             result = await self.process_message_now(immediate_message, producer=producer)
-            await self._expire_pending_chunks()
+            # Piggyback on cleanup, expire partial messages that are too old
+            await self.chunk_accumulator.aexpire_partial_messages()
             return result
 
         # We should be at this line if task was delayed, and in that case there is no reply message
@@ -184,19 +183,6 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             logger.info(f"Control action {action} returned {type(return_data)}, done")
             return (None, None)
-
-    async def _expire_pending_chunks(self) -> None:
-        """Drop expired chunk fragments during normal message processing."""
-        if self.chunk_accumulator.message_timeout_seconds <= 0:
-            return
-        expired = await self.chunk_accumulator.aexpire_partial_messages()
-        if expired:
-            logger.info(
-                'Dropping %d incomplete chunked message(s) older than %.1fs: %s',
-                len(expired),
-                self.chunk_accumulator.message_timeout_seconds,
-                expired,
-            )
 
     async def process_message_now(self, message: dict, producer: Producer | None = None) -> tuple[str | None, str | None]:
         """Route message to control action or to a worker via the pool. Does not consider task delays."""

@@ -18,6 +18,7 @@ Test plan
 """
 
 import json
+import logging
 
 import pytest
 
@@ -211,7 +212,7 @@ def test_chunk_accumulator_clears_state_after_completion():
     assert acc.assembly_started_at == {}
 
 
-def test_chunk_accumulator_expires_old_messages():
+def test_chunk_accumulator_expires_old_messages(caplog):
     payload = {'data': 'expire_me' * 60}
     chunk_dicts = _make_chunk_dicts(json.dumps(payload), max_bytes=300)
     assert len(chunk_dicts) > 1
@@ -222,8 +223,9 @@ def test_chunk_accumulator_expires_old_messages():
     msg_id = first_chunk['message_id']
     started_at = acc.assembly_started_at[msg_id]
 
-    expired_ids = acc.expire_partial_messages(current_time=started_at + acc.message_timeout_seconds + 1.0)
-    assert msg_id in expired_ids
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+        acc.expire_partial_messages(current_time=started_at + acc.message_timeout_seconds + 1.0)
+    assert any(msg_id in record.getMessage() for record in caplog.records)
     assert msg_id not in acc.pending_messages
     assert msg_id not in acc.expected_totals
     assert msg_id not in acc.assembly_started_at

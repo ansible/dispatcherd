@@ -156,14 +156,8 @@ class ChunkAccumulator:
     * ``message_id`` allows callers to reference partial state for logging.
     """
 
-    def __init__(self, *, message_timeout_seconds: float = 30 * 60, cleanup_interval_seconds: float | None = None) -> None:
-        if message_timeout_seconds <= 0:
-            raise ValueError('message_timeout_seconds must be positive')
-        if cleanup_interval_seconds is None:
-            cleanup_interval_seconds = min(60.0, max(5.0, message_timeout_seconds / 10))
-
+    def __init__(self, *, message_timeout_seconds: float = 30 * 60) -> None:
         self.message_timeout_seconds = message_timeout_seconds
-        self.cleanup_interval_seconds = max(0.01, cleanup_interval_seconds)
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.expected_totals: Dict[str, int] = {}
         self.assembly_started_at: Dict[str, float] = {}
@@ -234,21 +228,31 @@ class ChunkAccumulator:
 
         return (True, message_dict, message_id)
 
-    def expire_partial_messages(self, *, current_time: float | None = None) -> list[str]:
-        """Drop in-flight messages that have exceeded ``self.message_timeout_seconds``."""
+    def expire_partial_messages(self, *, current_time: float | None = None) -> None:
+        """Drop in-flight messages that have exceeded ``self.message_timeout_seconds`` and log details."""
+        if self.message_timeout_seconds <= 0.0:
+            return
         if current_time is None:
             current_time = time.monotonic()
-        expired: list[str] = []
         for message_id, started_at in self.assembly_started_at.copy().items():
-            if (current_time - started_at) >= self.message_timeout_seconds:
-                expired.append(message_id)
+            age = current_time - started_at
+            if age >= self.message_timeout_seconds:
+                buffer = self.pending_messages.get(message_id, {})
+                received_chunk_indices = sorted(buffer.keys())
+                expected_total = self.expected_totals.get(message_id)
+                logger.error(
+                    (
+                        f'Chunked message expired message_id={message_id} '
+                        f'age={age:.3f}s timeout={self.message_timeout_seconds:.3f}s '
+                        f'received_chunks={received_chunk_indices} expected_total={expected_total} '
+                    )
+                )
                 self._clear_message_state(message_id)
-        return expired
 
-    async def aexpire_partial_messages(self) -> list[str]:
+    async def aexpire_partial_messages(self) -> None:
         """Async wrapper for :meth:`expire_partial_messages`."""
         async with self._lock:
-            return self.expire_partial_messages()
+            self.expire_partial_messages()
 
     def get_progress(self, message_id: str) -> tuple[int, Optional[int]]:
         """Return (received_chunks, expected_total) for logging/debugging."""

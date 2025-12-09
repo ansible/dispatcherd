@@ -37,13 +37,24 @@ Before a message is published, dispatcherd brokers call
 `dispatcherd.utils.chunking.split_message`, which produces one or more JSON envelopes.
 Each chunk wraps a slice of the original JSON payload so that it can be reassembled on the other end.
 
+Below is a complete set of chunks for a single payload that had to be split into two pieces.
+Note that both envelopes share the same `message_id`, their `index` values are contiguous,
+and `total` is `2` on each chunk so consumers know when reassembly is finished.
+
 ```json
 {
   "__dispatcherd_chunk__": "v1",
   "message_id": "4e66bf05b4b14222be14817a5eb918b4",
   "index": 0,
-  "total": 3,
-  "payload": "{\"uuid\":\"9760671a-6261-45aa-881a-f66929ff9725\",\"args\":[4]}"
+  "total": 2,
+  "payload": "{\"uuid\":\"9760671a-6261-45aa-881a-f66929ff9725\",\"args\":[4,3"
+}
+{
+  "__dispatcherd_chunk__": "v1",
+  "message_id": "4e66bf05b4b14222be14817a5eb918b4",
+  "index": 1,
+  "total": 2,
+  "payload": ",2,1],\"kwargs\":{},\"task\":\"awx.main.tasks.jobs.RunJob\"}"
 }
 ```
 
