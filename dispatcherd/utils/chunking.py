@@ -268,8 +268,8 @@ class ChunkAccumulator:
         self.expected_totals.pop(message_id, None)
         self.assembly_started_at.pop(message_id, None)
 
-    def _store_chunk(self, *, message_id: str, seq: int, total: int, payload_str: str) -> dict:
-        """Save chunk data to internal buffers."""
+    def _store_chunk(self, *, message_id: str, seq: int, total: int, payload_str: str) -> dict[int, str]:
+        """Save chunk data to internal buffers and return the working buffer."""
         buffer = self.pending_messages.setdefault(message_id, {})
         if message_id not in self.assembly_started_at:
             self.assembly_started_at[message_id] = time.monotonic()
@@ -280,3 +280,13 @@ class ChunkAccumulator:
             logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
         self.expected_totals[message_id] = total
         return buffer
+
+    def get_status_data(self) -> dict[str, int]:
+        """Return high-level counters for monitoring."""
+        return {
+            'total_chunks_received': self.total_chunks_received,
+            'successful_assemblies': self.successful_assemblies,
+            'errored_assemblies': self.errored_assemblies,
+            'timed_out_assemblies': self.timed_out_assemblies,
+            'active_messages': len(self.pending_messages),
+        }

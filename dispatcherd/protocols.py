@@ -3,6 +3,8 @@ import multiprocessing
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
 
+from .utils import ChunkAccumulator
+
 
 class BrokerSelfCheckStatus(Enum):
     """This enum represents the result of a broker self-check"""
@@ -284,6 +286,7 @@ class DispatcherMain(Protocol):
     shared: SharedAsyncObjects
     producers: Iterable[Producer]
     delayer: Delayer
+    chunk_accumulator: ChunkAccumulator
 
     received_count: int
     control_count: int

@@ -137,6 +137,7 @@ async def main(dispatcher: DispatcherMain, data: dict) -> dict:
     """Information about scalar quantities on the main or pool objects"""
     ret = dispatcher.get_status_data()
     ret["pool"] = dispatcher.pool.get_status_data()
+    ret["chunks"] = dispatcher.chunk_accumulator.get_status_data()
     return ret
 
 
