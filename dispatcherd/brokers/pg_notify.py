@@ -9,7 +9,8 @@ import psycopg
 
 from ..protocols import Broker as BrokerProtocol
 from ..protocols import BrokerSelfCheckStatus
-from ..utils import resolve_callable, split_message
+from ..chunking import split_message
+from ..utils import resolve_callable
 
 logger = logging.getLogger(__name__)
 

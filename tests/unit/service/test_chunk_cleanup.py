@@ -6,7 +6,7 @@ import pytest
 
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 from dispatcherd.service.main import DispatcherMain
-from dispatcherd.utils import split_message
+from dispatcherd.chunking import split_message
 
 
 class DummyPool:

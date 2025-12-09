@@ -1,4 +1,4 @@
-"""Unit tests for dispatcherd.utils.chunking.
+"""Unit tests for dispatcherd.chunking.
 
 Test plan
 ---------
@@ -22,8 +22,7 @@ import logging
 
 import pytest
 
-from dispatcherd.utils import ChunkAccumulator, split_message
-from dispatcherd.utils.chunking import CHUNK_MARKER, _wrapper_overhead_bytes
+from dispatcherd.chunking import CHUNK_MARKER, ChunkAccumulator, _wrapper_overhead_bytes, split_message
 
 
 def test_split_message_handles_unicode_boundaries():
@@ -203,7 +202,7 @@ def test_chunk_accumulator_rejects_version_mismatch(caplog):
     chunk[CHUNK_MARKER] = 'dispatcherd.v0'
 
     acc = ChunkAccumulator()
-    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.chunking'):
         is_chunk, completed = acc.ingest_dict(chunk)
     assert is_chunk
     assert completed is None
@@ -238,7 +237,7 @@ def test_chunk_accumulator_expires_old_messages(caplog):
     msg_id = first_chunk['message_id']
     started_at = acc.assembly_started_at[msg_id]
 
-    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.chunking'):
         acc.expire_partial_messages(current_time=started_at + acc.message_timeout_seconds + 1.0)
     assert any(msg_id in record.getMessage() for record in caplog.records)
     assert msg_id not in acc.pending_messages
@@ -255,7 +254,7 @@ def test_chunk_accumulator_logs_partial_progress(caplog):
 
     acc = ChunkAccumulator()
     msg_id = chunk_dicts[0]['message_id']
-    with caplog.at_level(logging.DEBUG, logger='dispatcherd.utils.chunking'):
+    with caplog.at_level(logging.DEBUG, logger='dispatcherd.chunking'):
         is_chunk, completed = acc.ingest_dict(chunk_dicts[0])
     assert is_chunk
     assert completed is None
@@ -274,7 +273,7 @@ def test_chunk_accumulator_handles_non_dict_payload(caplog):
     assert len(chunk_dicts) > 1
 
     acc = ChunkAccumulator()
-    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.chunking'):
         final_result = None
         for chunk in chunk_dicts:
             final_result = acc.ingest_dict(chunk)
@@ -295,7 +294,7 @@ def test_chunk_accumulator_handles_invalid_json(caplog):
     chunk['index'] = 0
 
     acc = ChunkAccumulator()
-    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.chunking'):
         result = acc.ingest_dict(chunk)
     assert result == (True, None)
     assert 'Failed to decode chunked message' in caplog.text

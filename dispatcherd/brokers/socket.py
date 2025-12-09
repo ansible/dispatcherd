@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional,
 
 from ..protocols import Broker as BrokerProtocol
 from ..service.asyncio_tasks import named_wait
-from ..utils import split_message
+from ..chunking import split_message
 
 logger = logging.getLogger(__name__)
 

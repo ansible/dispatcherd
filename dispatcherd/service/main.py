@@ -14,7 +14,7 @@ from ..protocols import DispatcherMetricsServer as DispatcherMetricsServerProtoc
 from ..protocols import Producer
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
-from ..utils import ChunkAccumulator
+from ..chunking import ChunkAccumulator
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal, wait_for_any
 

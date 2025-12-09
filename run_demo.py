@@ -7,7 +7,8 @@ import time
 
 from dispatcherd.config import setup
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
-from dispatcherd.utils import MODULE_METHOD_DELIMITER, split_message
+from dispatcherd.chunking import split_message
+from dispatcherd.utils import MODULE_METHOD_DELIMITER
 from dispatcherd.processors.delayer import Delayer
 from dispatcherd.processors.blocker import Blocker
 from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout

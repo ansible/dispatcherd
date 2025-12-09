@@ -34,7 +34,7 @@ like debug information.
 
 Large submissions may exceed a broker's payload limit (pg_notify limits payloads to roughly 8KB).
 Before a message is published, dispatcherd brokers call
-`dispatcherd.utils.chunking.split_message`, which produces one or more JSON envelopes.
+`dispatcherd.chunking.split_message`, which produces one or more JSON envelopes.
 Each chunk wraps a slice of the original JSON payload so that it can be reassembled on the other end.
 
 Below is a complete set of chunks for a single payload that had to be split into two pieces.
@@ -70,11 +70,11 @@ The chunk envelope establishes the contract for multipart messages:
   reassemble the string data (not decoded dicts) before deserializing the complete message.
 
 Consumers **must** detect the marker and reassemble the original payload before trying to
-interpret it as a task. The helper in `dispatcherd/utils/chunking.py` provides both sides
+interpret it as a task. The helper in `dispatcherd/chunking.py` provides both sides
 of this protocol:
 
 ```python
-from dispatcherd.utils import ChunkAccumulator
+from dispatcherd.chunking import ChunkAccumulator
 
 accumulator = ChunkAccumulator()
 is_chunk, completed_payload, message_id = accumulator.ingest_dict(received_dict)

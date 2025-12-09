@@ -3,7 +3,7 @@ import multiprocessing
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
 
-from .utils import ChunkAccumulator
+from .chunking import ChunkAccumulator
 
 
 class BrokerSelfCheckStatus(Enum):
