@@ -114,6 +114,104 @@ async def test_scale_down_condition(pool_factory):
 
 
 @pytest.mark.asyncio
+async def test_scale_up_worker_should_not_be_immediately_eligible_for_scaledown(test_settings):
+    """Scaling up due to demand should block a scale-down until the new worker actually does work."""
+    shared = SharedAsyncObjects()
+    process_manager = ProcessManager(settings=test_settings)
+    pool = WorkerPool(process_manager=process_manager, shared=shared, min_workers=1, max_workers=5, scaledown_wait=60.0)
+    DispatcherMain(producers=(), pool=pool, shared=shared)  # ensure dispatcher objects can be built without mocks
+
+    # Seed pool with ready workers that have been idle long enough to allow scale-down
+    existing_workers = 3
+    for _ in range(existing_workers):
+        worker_id = await pool.up()
+        worker = pool.workers.get_by_id(worker_id)
+        worker.status = 'ready'
+        worker.current_task = None
+
+    idle_timestamp = time.monotonic() - 120.0
+    for i in range(existing_workers + 1):
+        pool.last_used_by_ct[i] = idle_timestamp  # stale timestamp for a previous high-water mark
+
+    # Queue pressure requires more workers, so scaling up should add one.
+    pool.queuer.queued_messages = [{'task': 'waiting.task'} for _ in range(existing_workers + 1)]
+    scaled_ct = await pool.scale_workers()
+    assert scaled_ct == 1
+    assert len([worker for worker in pool.workers if worker.counts_for_capacity]) == existing_workers + 1
+
+    # Because there is still queued work, the new heuristic should block scale-down entirely.
+    scaled_ct = await pool.scale_workers()
+    assert scaled_ct == 0
+
+    # Add even more demand
+    pool.queuer.queued_messages += [{'task': 'waiting.task'}]
+    assert pool.active_task_ct() == 5
+    assert len(pool.workers) == 4
+
+    # Should still give same result
+    scaled_ct = await pool.scale_workers()
+    assert scaled_ct == 1
+    assert len(pool.workers) == 5  # at max
+
+    # At limit so no more scaling
+    pool.queuer.queued_messages += [{'task': 'waiting.task'}]
+    assert pool.active_task_ct() == 6
+    assert len(pool.workers) == 5
+    scaled_ct = await pool.scale_workers()
+    assert scaled_ct == 0
+
+
+@pytest.mark.asyncio
+async def test_dispatch_task_holds_management_lock_and_blocks_scaledown(pool_factory):
+    """Dispatched work should start while holding the worker lock and block scale-down heuristics."""
+    pool = pool_factory(min_workers=1, max_workers=1)
+    worker_id = await pool.up()
+    worker = pool.workers.get_by_id(worker_id)
+    worker.status = 'ready'
+    worker.current_task = None
+
+    # Pretend the worker idled long enough that, without new work, scale-down is allowed.
+    pool.last_used_by_ct[1] = time.monotonic() - 120.0
+
+    lock_states: list[bool] = []
+
+    async def start_task_under_lock(message):
+        lock_states.append(pool.workers.management_lock.locked())
+        worker.current_task = message
+
+    worker.start_task = mock.AsyncMock(side_effect=start_task_under_lock)
+
+    message = {'uuid': 'task-123', 'task': 'demo'}
+    await pool.dispatch_task(message)
+
+    # Starting the task should have happened while the lock was held and should block scale-down timers.
+    assert lock_states == [True]
+    assert pool.last_used_by_ct[1] is None
+    assert pool.should_scale_down() is False
+
+
+@pytest.mark.asyncio
+async def test_manage_workers_skips_scaledown_when_recently_scaled_up(pool_factory):
+    """When scaling up we should avoid the scale-down pass until the new capacity is used."""
+    pool = pool_factory()
+    pool.scaledown_interval = 0.0
+
+    async def fake_scale_workers():
+        pool.shared.exit_event.set()
+        return 1  # indicate that we scaled up
+
+    pool.scale_workers = mock.AsyncMock(side_effect=fake_scale_workers)
+    pool.manage_new_workers = mock.AsyncMock()
+    pool.manage_old_workers = mock.AsyncMock()
+
+    await pool.manage_workers()
+
+    pool.scale_workers.assert_awaited_once()
+    pool.manage_new_workers.assert_awaited_once()
+    pool.manage_old_workers.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_error_while_scaling_up(pool_factory):
     """It is always possible that we fail to start workers due to OS errors. This should not error the whole program."""
     pool = pool_factory(min_workers=1, max_workers=1)
