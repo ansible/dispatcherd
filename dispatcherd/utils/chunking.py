@@ -158,6 +158,10 @@ class ChunkAccumulator:
         self.pending_messages: Dict[str, Dict[int, str]] = {}
         self.expected_totals: Dict[str, int] = {}
         self.assembly_started_at: Dict[str, float] = {}
+        self.total_chunks_received = 0
+        self.successful_assemblies = 0
+        self.errored_assemblies = 0
+        self.timed_out_assemblies = 0
         self._lock = asyncio.Lock()
 
     async def aingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict]]:
@@ -187,8 +191,11 @@ class ChunkAccumulator:
         if not chunk:
             return (False, payload_dict)
 
+        self.total_chunks_received += 1
+
         if chunk.get(CHUNK_MARKER) != CHUNK_VERSION:
             logger.error('Unsupported chunk version: %s', chunk.get(CHUNK_MARKER))
+            self.errored_assemblies += 1
             return (True, None)
 
         # Unpack chunk message into local vars
@@ -199,38 +206,33 @@ class ChunkAccumulator:
 
         if not isinstance(message_id, str) or not isinstance(seq, int) or not isinstance(total, int) or not isinstance(payload_str, str):
             logger.warning('Received chunk with invalid metadata: %s', chunk)
+            self.errored_assemblies += 1
             return (True, None)
 
-        # Save data to buffer, the current chunk and the expected total
-        buffer = self.pending_messages.setdefault(message_id, {})
-        if message_id not in self.assembly_started_at:
-            self.assembly_started_at[message_id] = time.monotonic()
-        buffer[seq] = payload_str
-
-        existing_total = self.expected_totals.get(message_id)
-        if existing_total is not None and existing_total != total:
-            logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
-        self.expected_totals[message_id] = total
-        expected_total = self.expected_totals[message_id]
+        buffer = self._store_chunk(message_id=message_id, seq=seq, total=total, payload_str=payload_str)
 
         # Message is still partially assembled after adding this one, normal, not done yet
-        if any(index not in buffer for index in range(expected_total)):
+        if any(index not in buffer for index in range(total)):
             received_chunks = len(buffer)
-            logger.debug('Received chunk %d/%d for message_id=%s, waiting for remainder', received_chunks, expected_total, message_id)
+            logger.debug('Received chunk %d/%d for message_id=%s, waiting for remainder', received_chunks, total, message_id)
             return (True, None)
 
         message_str = ''.join(buffer[index] for index in range(total))
         try:
             message_dict = json.loads(message_str)
-            if not isinstance(message_dict, dict):
-                logger.error('Reassembled chunked message is not a dict message_id=%s type=%s', message_id, type(message_dict).__name__)
-                return (True, None)
         except Exception:
             logger.exception(f'Failed to decode chunked message message_id={message_id}')
+            self.errored_assemblies += 1
             return (True, None)
+        else:
+            if not isinstance(message_dict, dict):
+                logger.error('Reassembled chunked message is not a dict message_id=%s type=%s', message_id, type(message_dict).__name__)
+                self.errored_assemblies += 1
+                return (True, None)
         finally:
             self._clear_message_state(message_id)
 
+        self.successful_assemblies += 1
         return (True, message_dict)
 
     def expire_partial_messages(self, *, current_time: float | None = None) -> None:
@@ -252,6 +254,7 @@ class ChunkAccumulator:
                         f'received_chunks={received_chunk_indices} expected_total={expected_total} '
                     )
                 )
+                self.timed_out_assemblies += 1
                 self._clear_message_state(message_id)
 
     async def aexpire_partial_messages(self) -> None:
@@ -264,3 +267,16 @@ class ChunkAccumulator:
         self.pending_messages.pop(message_id, None)
         self.expected_totals.pop(message_id, None)
         self.assembly_started_at.pop(message_id, None)
+
+    def _store_chunk(self, *, message_id: str, seq: int, total: int, payload_str: str) -> dict:
+        """Save chunk data to internal buffers."""
+        buffer = self.pending_messages.setdefault(message_id, {})
+        if message_id not in self.assembly_started_at:
+            self.assembly_started_at[message_id] = time.monotonic()
+        buffer[seq] = payload_str
+
+        existing_total = self.expected_totals.get(message_id)
+        if existing_total is not None and existing_total != total:
+            logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
+        self.expected_totals[message_id] = total
+        return buffer

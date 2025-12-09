@@ -139,6 +139,10 @@ def test_chunk_accumulator_passthrough_for_non_chunk_payloads():
     payload = {'data': 'plain'}
 
     assert acc.ingest_dict(payload) == (False, payload)
+    assert acc.total_chunks_received == 0
+    assert acc.successful_assemblies == 0
+    assert acc.errored_assemblies == 0
+    assert acc.timed_out_assemblies == 0
 
 
 def test_chunk_accumulator_assembles_in_order():
@@ -154,6 +158,10 @@ def test_chunk_accumulator_assembles_in_order():
             assert completed is None
         else:
             assert completed == payload
+    assert acc.total_chunks_received == len(chunk_dicts)
+    assert acc.successful_assemblies == 1
+    assert acc.errored_assemblies == 0
+    assert acc.timed_out_assemblies == 0
 
 
 def test_chunk_accumulator_handles_out_of_order_chunks():
@@ -172,6 +180,9 @@ def test_chunk_accumulator_handles_out_of_order_chunks():
             assert completed is None
 
     assert completed == payload
+    assert acc.total_chunks_received == len(chunk_dicts)
+    assert acc.successful_assemblies == 1
+    assert acc.errored_assemblies == 0
 
 
 def test_chunk_accumulator_rejects_missing_metadata():
@@ -181,6 +192,9 @@ def test_chunk_accumulator_rejects_missing_metadata():
 
     acc = ChunkAccumulator()
     assert acc.ingest_dict(chunk) == (True, None)
+    assert acc.total_chunks_received == 1
+    assert acc.errored_assemblies == 1
+    assert acc.successful_assemblies == 0
 
 
 def test_chunk_accumulator_rejects_version_mismatch(caplog):
@@ -194,6 +208,8 @@ def test_chunk_accumulator_rejects_version_mismatch(caplog):
     assert is_chunk
     assert completed is None
     assert 'Unsupported chunk version' in caplog.text
+    assert acc.total_chunks_received == 1
+    assert acc.errored_assemblies == 1
 
 
 def test_chunk_accumulator_clears_state_after_completion():
@@ -207,6 +223,8 @@ def test_chunk_accumulator_clears_state_after_completion():
     assert acc.pending_messages == {}
     assert acc.expected_totals == {}
     assert acc.assembly_started_at == {}
+    assert acc.successful_assemblies == 1
+    assert acc.total_chunks_received == len(chunk_dicts)
 
 
 def test_chunk_accumulator_expires_old_messages(caplog):
@@ -226,6 +244,8 @@ def test_chunk_accumulator_expires_old_messages(caplog):
     assert msg_id not in acc.pending_messages
     assert msg_id not in acc.expected_totals
     assert msg_id not in acc.assembly_started_at
+    assert acc.total_chunks_received == 1
+    assert acc.timed_out_assemblies == 1
 
 
 def test_chunk_accumulator_logs_partial_progress(caplog):
@@ -240,6 +260,10 @@ def test_chunk_accumulator_logs_partial_progress(caplog):
     assert is_chunk
     assert completed is None
     assert any(f'message_id={msg_id}' in record.getMessage() for record in caplog.records)
+    assert acc.total_chunks_received == 1
+    assert acc.successful_assemblies == 0
+    assert acc.errored_assemblies == 0
+    assert acc.timed_out_assemblies == 0
 
 
 def test_chunk_accumulator_handles_non_dict_payload(caplog):
@@ -256,6 +280,9 @@ def test_chunk_accumulator_handles_non_dict_payload(caplog):
             final_result = acc.ingest_dict(chunk)
     assert final_result == (True, None)
     assert 'not a dict' in caplog.text or 'Reassembled chunked message is not a dict' in caplog.text
+    assert acc.total_chunks_received == len(chunk_dicts)
+    assert acc.errored_assemblies == 1
+    assert acc.successful_assemblies == 0
 
 
 def test_chunk_accumulator_handles_invalid_json(caplog):
@@ -272,3 +299,5 @@ def test_chunk_accumulator_handles_invalid_json(caplog):
         result = acc.ingest_dict(chunk)
     assert result == (True, None)
     assert 'Failed to decode chunked message' in caplog.text
+    assert acc.total_chunks_received == 1
+    assert acc.errored_assemblies == 1
