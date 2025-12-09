@@ -7,9 +7,9 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator
 
 import psycopg
 
+from ..chunking import split_message
 from ..protocols import Broker as BrokerProtocol
 from ..protocols import BrokerSelfCheckStatus
-from ..chunking import split_message
 from ..utils import resolve_callable
 
 logger = logging.getLogger(__name__)

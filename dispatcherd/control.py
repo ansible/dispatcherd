@@ -5,10 +5,10 @@ import time
 import uuid
 from typing import Optional, Union
 
+from .chunking import ChunkAccumulator
 from .factories import get_broker
 from .protocols import Broker
 from .service.asyncio_tasks import ensure_fatal
-from .chunking import ChunkAccumulator
 
 logger = logging.getLogger('awx.main.dispatch.control')
 

@@ -6,6 +6,7 @@ from os import getpid
 from typing import Any, Iterable
 from uuid import uuid4
 
+from ..chunking import ChunkAccumulator
 from ..processors.delayer import Delayer
 from ..producers import BrokeredProducer
 from ..protocols import Delayer as DelayerProtocol
@@ -14,7 +15,6 @@ from ..protocols import DispatcherMetricsServer as DispatcherMetricsServerProtoc
 from ..protocols import Producer
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
-from ..chunking import ChunkAccumulator
 from . import control_tasks
 from .asyncio_tasks import ensure_fatal, wait_for_any
 
