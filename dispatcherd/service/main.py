@@ -125,6 +125,8 @@ class DispatcherMain(DispatcherMainProtocol):
         is_chunk, assembled_message = await self.chunk_accumulator.aingest_dict(decoded)
         if is_chunk:
             if assembled_message is None:
+                # Check for staleness, because failing to fully assemble now may be a give-up point
+                await self.chunk_accumulator.aexpire_partial_messages()
                 return (None, None)
             message = assembled_message
         else:
