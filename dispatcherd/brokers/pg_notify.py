@@ -231,7 +231,10 @@ class Broker(BrokerProtocol):
                         await self.apublish_message_from_cursor(cur, channel=reply_to, message=reply_message)
                     self.notify_queue = []
             finally:
-                await cur.execute(self.get_unlisten_query())
+                try:
+                    await cur.execute(self.get_unlisten_query())
+                except Exception as exc:  # soft failure is fine, we're already exiting the loop
+                    logger.warning('Failed to UNLISTEN during async cleanup: %s', exc)
 
     async def apublish_message_from_cursor(self, cursor: psycopg.AsyncCursor, channel: str | None = None, message: str = '') -> None:
         """The inner logic of async message publishing where we already have a cursor"""
@@ -310,7 +313,10 @@ class Broker(BrokerProtocol):
                     yield (notify.channel, notify.payload)
             finally:
                 # unlisten done in finally so that when the caller returns, connection does not risk getting unrelated messages
-                cur.execute(self.get_unlisten_query())
+                try:
+                    cur.execute(self.get_unlisten_query())
+                except Exception as exc:
+                    logger.warning('Failed to UNLISTEN during sync cleanup: %s', exc)
 
     def publish_message(self, channel: str | None = None, message: str = '') -> str:
         """Synchronous method to submit a message to a pg_notify channel, returns the queue it was sent to"""
