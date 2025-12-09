@@ -383,23 +383,30 @@ class WorkerPool(WorkerPoolProtocol):
 
         # Loop for worker accounting, for stopping workers or removing old workers from memory
         # Get a consistent snapshot of workers, also force stop of non-responding workers
+        workers_to_stop: list[PoolWorker] = []
         async with self.workers.management_lock:
             current_workers = list(self.workers)
 
             # Send stop message to workers if necessary, or update worker status if totally done
-            # build list of workers to remove from memory
-            remove_ids = []
             for worker in current_workers:
 
                 if worker.status == 'exited':
-                    await worker.stop()  # happy path
+                    workers_to_stop.append(worker)  # happy path
                 elif worker.status == 'stopping' and worker.stopping_at and (time.monotonic() - worker.stopping_at) > self.worker_stop_wait:
                     logger.warning(f'Worker id={worker.worker_id} failed to respond to stop signal')
-                    await worker.stop()  # agressively bring down process
-                elif worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
+                    workers_to_stop.append(worker)  # agressively bring down process
+
+        # Await worker stops outside the lock to avoid blocking the results task.
+        for worker in workers_to_stop:
+            await worker.stop()
+
+        # Remove fully-done workers from memory
+        async with self.workers.management_lock:
+            remove_ids = []
+            for worker in self.workers:
+                if worker.status in ['retired', 'error'] and worker.retired_at and (time.monotonic() - worker.retired_at) > self.worker_removal_wait:
                     remove_ids.append(worker.worker_id)
 
-            # Remove fully-done workers from memory (still under the exclusive lock)
             for worker_id in remove_ids:
                 if worker_id in self.workers:
                     retired_at = self.workers.get_by_id(worker_id).retired_at
