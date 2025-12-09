@@ -262,6 +262,11 @@ class ChunkAccumulator:
         async with self._lock:
             self.expire_partial_messages()
 
+    async def aget_partial_messages(self) -> dict[str, dict]:
+        """Async snapshot of partial assemblies."""
+        async with self._lock:
+            return self._describe_partials()
+
     def _clear_message_state(self, message_id: str) -> None:
         """Remove all tracking data for the specified message."""
         self.pending_messages.pop(message_id, None)
@@ -290,3 +295,19 @@ class ChunkAccumulator:
             'timed_out_assemblies': self.timed_out_assemblies,
             'active_messages': len(self.pending_messages),
         }
+
+    def _describe_partials(self) -> dict[str, dict]:
+        """Return metadata for each in-progress message."""
+        snapshot: dict[str, dict] = {}
+        current_time = time.monotonic()
+        for message_id, buffer in self.pending_messages.items():
+            started_at = self.assembly_started_at.get(message_id)
+            age = current_time - started_at if started_at is not None else None
+            expected_total = self.expected_totals.get(message_id)
+            chunk_info = [{'chunk_id': index, 'length': len(payload)} for index, payload in sorted(buffer.items())]
+            snapshot[message_id] = {
+                'seconds_since_start': age,
+                'expected_total': expected_total,
+                'chunks': chunk_info,
+            }
+        return snapshot

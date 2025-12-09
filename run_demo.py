@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+import time
 
 from dispatcherd.config import setup
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
@@ -35,6 +36,7 @@ except ValueError:
 
 
 def main():
+    ctl = get_control_from_settings()
     print('writing some basic test messages')
     for channel, message in TEST_MSGS:
         broker.publish_message(channel=channel, message=message)
@@ -51,10 +53,12 @@ def main():
     chunk = split_message(large_task, max_bytes=200)[0]
     broker.publish_message(message=chunk)
     print('  wrote first chunk only; the dispatcher should eventually abandon it')
+    print('   querying partial chunk assemblies via control command')
+    partials_snapshot = ctl.control_with_reply('partials', expected_replies=expected_count)
+    print(json.dumps(partials_snapshot, indent=2))
 
     print('')
     print(' -------- Actions involving control-and-reply ---------')
-    ctl = get_control_from_settings()
 
     print('')
     print('performing a task cancel')

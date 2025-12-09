@@ -4,7 +4,7 @@ import logging
 
 from ..protocols import DispatcherMain
 
-__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status', 'partials']
 
 
 logger = logging.getLogger(__name__)
@@ -139,6 +139,11 @@ async def main(dispatcher: DispatcherMain, data: dict) -> dict:
     ret["pool"] = dispatcher.pool.get_status_data()
     ret["chunks"] = dispatcher.chunk_accumulator.get_status_data()
     return ret
+
+
+async def partials(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    """Return partial chunk assemblies keyed by message id."""
+    return await dispatcher.chunk_accumulator.aget_partial_messages()
 
 
 async def status(dispatcher: DispatcherMain, data: dict) -> dict:
