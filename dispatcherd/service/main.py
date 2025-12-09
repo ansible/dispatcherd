@@ -122,14 +122,9 @@ class DispatcherMain(DispatcherMainProtocol):
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
 
-        is_chunk, assembled_message, message_id = await self.chunk_accumulator.aingest_dict(decoded)
+        is_chunk, assembled_message = await self.chunk_accumulator.aingest_dict(decoded)
         if is_chunk:
             if assembled_message is None:
-                if message_id:
-                    received, expected = self.chunk_accumulator.get_progress(message_id)
-                    logger.debug('Received chunk %d/%d for message_id=%s, waiting for remainder', received, expected, message_id)
-                else:
-                    logger.error('Received chunk with invalid metadata, waiting for remainder')
                 return (None, None)
             message = assembled_message
         else:

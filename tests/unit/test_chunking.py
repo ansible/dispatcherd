@@ -138,7 +138,7 @@ def test_chunk_accumulator_passthrough_for_non_chunk_payloads():
     acc = ChunkAccumulator()
     payload = {'data': 'plain'}
 
-    assert acc.ingest_dict(payload) == (False, payload, None)
+    assert acc.ingest_dict(payload) == (False, payload)
 
 
 def test_chunk_accumulator_assembles_in_order():
@@ -147,17 +147,13 @@ def test_chunk_accumulator_assembles_in_order():
     assert len(chunk_dicts) > 1
 
     acc = ChunkAccumulator()
-    message_id = None
     for idx, chunk in enumerate(chunk_dicts):
-        is_chunk, completed, msg_id = acc.ingest_dict(chunk)
+        is_chunk, completed = acc.ingest_dict(chunk)
         assert is_chunk
         if idx < len(chunk_dicts) - 1:
             assert completed is None
         else:
             assert completed == payload
-        if message_id is None:
-            message_id = msg_id
-        assert msg_id == message_id
 
 
 def test_chunk_accumulator_handles_out_of_order_chunks():
@@ -169,15 +165,13 @@ def test_chunk_accumulator_handles_out_of_order_chunks():
     ingest_order = [1, len(chunk_dicts) - 1] + list(range(2, len(chunk_dicts) - 1)) + [0]
 
     completed = None
-    msg_id = None
     for index in ingest_order:
-        is_chunk, completed, msg_id = acc.ingest_dict(chunk_dicts[index])
+        is_chunk, completed = acc.ingest_dict(chunk_dicts[index])
         assert is_chunk
         if index != ingest_order[-1]:
             assert completed is None
 
     assert completed == payload
-    assert msg_id
 
 
 def test_chunk_accumulator_rejects_missing_metadata():
@@ -186,17 +180,20 @@ def test_chunk_accumulator_rejects_missing_metadata():
     chunk.pop('index', None)
 
     acc = ChunkAccumulator()
-    assert acc.ingest_dict(chunk) == (True, None, None)
+    assert acc.ingest_dict(chunk) == (True, None)
 
 
-def test_chunk_accumulator_raises_on_version_mismatch():
+def test_chunk_accumulator_rejects_version_mismatch(caplog):
     payload = {'data': 'x' * 50}
     chunk = _make_chunk_dicts(json.dumps(payload), max_bytes=80)[0]
     chunk[CHUNK_MARKER] = 'dispatcherd.v0'
 
     acc = ChunkAccumulator()
-    with pytest.raises(ValueError):
-        acc.ingest_dict(chunk)
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+        is_chunk, completed = acc.ingest_dict(chunk)
+    assert is_chunk
+    assert completed is None
+    assert 'Unsupported chunk version' in caplog.text
 
 
 def test_chunk_accumulator_clears_state_after_completion():
@@ -229,3 +226,49 @@ def test_chunk_accumulator_expires_old_messages(caplog):
     assert msg_id not in acc.pending_messages
     assert msg_id not in acc.expected_totals
     assert msg_id not in acc.assembly_started_at
+
+
+def test_chunk_accumulator_logs_partial_progress(caplog):
+    payload = {'data': 'progress' * 60}
+    chunk_dicts = _make_chunk_dicts(json.dumps(payload), max_bytes=250)
+    assert len(chunk_dicts) > 1
+
+    acc = ChunkAccumulator()
+    msg_id = chunk_dicts[0]['message_id']
+    with caplog.at_level(logging.DEBUG, logger='dispatcherd.utils.chunking'):
+        is_chunk, completed = acc.ingest_dict(chunk_dicts[0])
+    assert is_chunk
+    assert completed is None
+    assert any(f'message_id={msg_id}' in record.getMessage() for record in caplog.records)
+
+
+def test_chunk_accumulator_handles_non_dict_payload(caplog):
+    payload_list = ['invalid'] * 200
+    raw = json.dumps(payload_list)
+    raw_bytes = len(raw.encode('utf-8'))
+    chunk_dicts = _make_chunk_dicts(raw, max_bytes=raw_bytes // 2)
+    assert len(chunk_dicts) > 1
+
+    acc = ChunkAccumulator()
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+        final_result = None
+        for chunk in chunk_dicts:
+            final_result = acc.ingest_dict(chunk)
+    assert final_result == (True, None)
+    assert 'not a dict' in caplog.text or 'Reassembled chunked message is not a dict' in caplog.text
+
+
+def test_chunk_accumulator_handles_invalid_json(caplog):
+    payload = {'data': 'x' * 2000}
+    raw = json.dumps(payload)
+    raw_bytes = len(raw.encode('utf-8'))
+    chunk = _make_chunk_dicts(raw, max_bytes=raw_bytes // 2)[0]
+    chunk['payload'] = '{"bad":'  # invalid JSON fragment for assembly
+    chunk['total'] = 1
+    chunk['index'] = 0
+
+    acc = ChunkAccumulator()
+    with caplog.at_level(logging.ERROR, logger='dispatcherd.utils.chunking'):
+        result = acc.ingest_dict(chunk)
+    assert result == (True, None)
+    assert 'Failed to decode chunked message' in caplog.text

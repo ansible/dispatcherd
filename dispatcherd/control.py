@@ -41,17 +41,11 @@ def _ingest_reply_payload(
             results.append({'error': JSON_ERROR_STR, 'original': payload})
             return True
 
-    is_chunk, assembled, message_id = accumulator.ingest_dict(decoded)
+    is_chunk, assembled = accumulator.ingest_dict(decoded)
     if is_chunk:
         if assembled is not None:
             results.append(assembled)
             return True
-        if message_id:
-            received, expected = accumulator.get_progress(message_id)
-            logger.debug(f'Processed chunk {received}/{expected} for message_id={message_id}')
-        else:
-            idx = decoded.get('index', -1)
-            logger.error(f'Processed partial index={idx} with missing message_id metadata')
         return False
 
     results.append(decoded)

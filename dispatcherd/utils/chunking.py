@@ -6,9 +6,9 @@ Typical usage is a two-step process:
    JSON string it intends to send. Each returned chunk is itself a valid JSON
    document that includes metadata describing the parent message.
 2. A consumer (e.g., :class:`dispatcherd.service.main.DispatcherMain`) creates a
-   single :class:`ChunkAccumulator` instance and feeds every decoded JSON dict to
-   :meth:`ChunkAccumulator.ingest_dict`. Once all chunks for a message arrive,
-   the accumulator returns the fully reconstructed message dict.
+    single :class:`ChunkAccumulator` instance and feeds every decoded JSON dict to
+    :meth:`ChunkAccumulator.ingest_dict`. Once all chunks for a message arrive,
+    the accumulator returns the fully reconstructed message dict.
 """
 
 import asyncio
@@ -136,8 +136,6 @@ def parse_chunk_dict(candidate: dict) -> Optional[dict]:
         return None
     if CHUNK_MARKER not in candidate:
         return None
-    if candidate.get(CHUNK_MARKER) != CHUNK_VERSION:
-        raise ValueError(f'Unsupported chunk version: {candidate.get(CHUNK_MARKER)}')
     return candidate
 
 
@@ -147,13 +145,12 @@ class ChunkAccumulator:
     Create one accumulator per dispatcher (or per consumer) and feed every
     decoded JSON dict to :meth:`ingest_dict`.  The method returns a tuple:
 
-    ``(is_chunk, completed_message, message_id)``
+    ``(is_chunk, completed_message)``
 
     * ``is_chunk`` indicates whether the payload was part of the chunking
       protocol.
     * ``completed_message`` is the reconstructed dict when the final chunk has
       been seen; otherwise it is ``None``.
-    * ``message_id`` allows callers to reference partial state for logging.
     """
 
     def __init__(self, *, message_timeout_seconds: float = 30 * 60) -> None:
@@ -163,32 +160,36 @@ class ChunkAccumulator:
         self.assembly_started_at: Dict[str, float] = {}
         self._lock = asyncio.Lock()
 
-    async def aingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
+    async def aingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict]]:
         """Async wrapper that serializes :meth:`ingest_dict` mutations."""
         async with self._lock:
             return self.ingest_dict(payload_dict)
 
-    def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict], Optional[str]]:
+    def ingest_dict(self, payload_dict: dict) -> tuple[bool, Optional[dict]]:
         """Process a decoded payload dict and assemble chunked messages.
 
-        Returns (message is assembled True or False, final message as dict, message id)
+        Returns (message is chunked True or False, final message as dict)
 
         Scenarios
         ---------
-        1. Payload is not chunked: returns ``(False, payload_dict, None)`` so callers
+        1. Payload is not chunked: returns ``(False, payload_dict)`` so callers
            can process it immediately.
-        2. Chunk received but more pieces pending: returns ``(True, None, message_id)``
-           allowing the caller to track which message is mid-flight.
-        3. Final chunk completes the message: returns ``(True, completed_dict, message_id)``
+        2. Chunk received but more pieces pending: returns ``(True, None)`` and logs
+           chunk progress internally.
+        3. Final chunk completes the message: returns ``(True, completed_dict)``
            with the assembled payload ready for processing.
-        4. Chunk metadata missing/invalid: returns ``(True, None, None)`` to signal the
-           caller that the chunk could not be associated with a message.
-        5. Reassembly fails JSON validation: returns ``(True, None, message_id)`` so the
-           caller can log/handle the failure for that specific message.
+        4. Chunk metadata or version invalid: returns ``(True, None)`` after logging why
+           the chunk could not be associated with a message.
+        5. Reassembly fails JSON validation or is not a dict: returns ``(True, None)``
+           after logging the failure with message metadata.
         """
         chunk = parse_chunk_dict(payload_dict)
         if not chunk:
-            return (False, payload_dict, None)
+            return (False, payload_dict)
+
+        if chunk.get(CHUNK_MARKER) != CHUNK_VERSION:
+            logger.error('Unsupported chunk version: %s', chunk.get(CHUNK_MARKER))
+            return (True, None)
 
         # Unpack chunk message into local vars
         message_id = chunk.get('message_id')
@@ -198,7 +199,7 @@ class ChunkAccumulator:
 
         if not isinstance(message_id, str) or not isinstance(seq, int) or not isinstance(total, int) or not isinstance(payload_str, str):
             logger.warning('Received chunk with invalid metadata: %s', chunk)
-            return (True, None, None)
+            return (True, None)
 
         # Save data to buffer, the current chunk and the expected total
         buffer = self.pending_messages.setdefault(message_id, {})
@@ -210,23 +211,27 @@ class ChunkAccumulator:
         if existing_total is not None and existing_total != total:
             logger.warning('Chunk total mismatch for message_id=%s existing=%s new=%s', message_id, existing_total, total)
         self.expected_totals[message_id] = total
+        expected_total = self.expected_totals[message_id]
 
         # Message is still partially assembled after adding this one, normal, not done yet
-        if any(index not in buffer for index in range(total)):
-            return (True, None, message_id)
+        if any(index not in buffer for index in range(expected_total)):
+            received_chunks = len(buffer)
+            logger.debug('Received chunk %d/%d for message_id=%s, waiting for remainder', received_chunks, expected_total, message_id)
+            return (True, None)
 
         message_str = ''.join(buffer[index] for index in range(total))
         try:
             message_dict = json.loads(message_str)
             if not isinstance(message_dict, dict):
-                raise ValueError('assembled payload is not a dict')
+                logger.error('Reassembled chunked message is not a dict message_id=%s type=%s', message_id, type(message_dict).__name__)
+                return (True, None)
         except Exception:
             logger.exception(f'Failed to decode chunked message message_id={message_id}')
-            return (True, None, message_id)
+            return (True, None)
         finally:
             self._clear_message_state(message_id)
 
-        return (True, message_dict, message_id)
+        return (True, message_dict)
 
     def expire_partial_messages(self, *, current_time: float | None = None) -> None:
         """Drop in-flight messages that have exceeded ``self.message_timeout_seconds`` and log details."""
@@ -253,12 +258,6 @@ class ChunkAccumulator:
         """Async wrapper for :meth:`expire_partial_messages`."""
         async with self._lock:
             self.expire_partial_messages()
-
-    def get_progress(self, message_id: str) -> tuple[int, Optional[int]]:
-        """Return (received_chunks, expected_total) for logging/debugging."""
-        buffer = self.pending_messages.get(message_id, {})
-        expected_total = self.expected_totals.get(message_id)
-        return (len(buffer), expected_total)
 
     def _clear_message_state(self, message_id: str) -> None:
         """Remove all tracking data for the specified message."""
