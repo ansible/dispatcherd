@@ -239,7 +239,7 @@ class ChunkAccumulator:
         if current_time is None:
             current_time = time.monotonic()
         expired: list[str] = []
-        for message_id, started_at in self.assembly_started_at.items():
+        for message_id, started_at in self.assembly_started_at.copy().items():
             if (current_time - started_at) >= self.message_timeout_seconds:
                 expired.append(message_id)
                 self._clear_message_state(message_id)
