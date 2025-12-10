@@ -54,9 +54,9 @@ def main():
     chunk = split_message(large_task, max_bytes=200)[0]
     broker.publish_message(message=chunk)
     print('  wrote first chunk only; the dispatcher should eventually abandon it')
-    print('   querying partial chunk assemblies via control command')
-    partials_snapshot = ctl.control_with_reply('partials', expected_replies=expected_count)
-    print(json.dumps(partials_snapshot, indent=2))
+    print('   querying chunk diagnostics via control command')
+    chunk_snapshot = ctl.control_with_reply('chunks', expected_replies=expected_count)
+    print(json.dumps(chunk_snapshot, indent=2))
 
     print('')
     print(' -------- Actions involving control-and-reply ---------')
