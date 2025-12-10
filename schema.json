@@ -34,7 +34,8 @@
       "worker_removal_wait": "<class 'float'>"
     },
     "main_kwargs": {
-      "node_id": "str | None"
+      "node_id": "str | None",
+      "chunk_message_timeout_seconds": "<class 'float'>"
     },
     "metrics_kwargs": {
       "port": "<class 'int'>",

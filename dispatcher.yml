@@ -8,6 +8,7 @@ service:
     scaledown_wait: 15  # seconds
   main_kwargs:
     node_id: demo-server-a
+    chunk_message_timeout_seconds: 5
   metrics_kwargs:
     log_level: debug
 worker:

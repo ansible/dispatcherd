@@ -30,6 +30,65 @@ message will also contain a `"reply_to"` key for the channel to send the reply t
 The message sent to the reply channel will have some other purpose-specific information,
 like debug information.
 
+#### Chunked Messages
+
+Large submissions may exceed a broker's payload limit (pg_notify limits payloads to roughly 8KB).
+Before a message is published, dispatcherd brokers call
+`dispatcherd.chunking.split_message`, which produces one or more JSON envelopes.
+Each chunk wraps a slice of the original JSON payload so that it can be reassembled on the other end.
+
+Below is a complete set of chunks for a single payload that had to be split into two pieces.
+Note that both envelopes share the same `message_id`, their `index` values are contiguous,
+and `total` is `2` on each chunk so consumers know when reassembly is finished.
+
+```json
+{
+  "__dispatcherd_chunk__": "v1",
+  "message_id": "4e66bf05b4b14222be14817a5eb918b4",
+  "index": 0,
+  "total": 2,
+  "payload": "{\"uuid\":\"9760671a-6261-45aa-881a-f66929ff9725\",\"args\":[4,3"
+}
+{
+  "__dispatcherd_chunk__": "v1",
+  "message_id": "4e66bf05b4b14222be14817a5eb918b4",
+  "index": 1,
+  "total": 2,
+  "payload": ",2,1],\"kwargs\":{},\"task\":\"awx.main.tasks.jobs.RunJob\"}"
+}
+```
+
+If a message is not over the limit, it is sent as-is without the chunk wrapper.
+
+The chunk envelope establishes the contract for multipart messages:
+
+- `__dispatcherd_chunk__` identifies the chunk protocol version (`v1`) and is required.
+- `message_id` is a per-message identifier used to correlate all pieces.
+- `index` starts at ``0`` and increases by ``1`` for every chunk.
+- `total` is the total number of chunks (repeated on every piece).
+- `payload` contains an escaped slice of the original JSON string, so consumers
+  reassemble the string data (not decoded dicts) before deserializing the complete message.
+
+Consumers **must** detect the marker and reassemble the original payload before trying to
+interpret it as a task. The helper in `dispatcherd/chunking.py` provides both sides
+of this protocol:
+
+```python
+from dispatcherd.chunking import ChunkAccumulator
+
+accumulator = ChunkAccumulator()
+is_chunk, completed_payload, message_id = accumulator.ingest_dict(received_dict)
+if is_chunk and completed_payload:
+    # completed_payload is the dict described in "Broker Message Format"
+    handle_task(completed_payload)
+```
+
+`ChunkAccumulator` tracks in-flight `message_id`s, waits until every index from ``0`` through
+``total - 1`` has arrived, and discards stale fragments after
+`message_timeout_seconds` (configured via `chunk_message_timeout_seconds` on the service).
+Control replies use the same chunk envelope when they are large, so all inbound broker
+traffic can be fed through a single accumulator.
+
 ### Internal Worker Pool Format
 
 The main process and workers communicate through conventional IPC queues.

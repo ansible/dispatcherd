@@ -1,14 +1,16 @@
 import asyncio
-import json
 import logging
 import os
 import socket
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
+from ..chunking import split_message
 from ..protocols import Broker as BrokerProtocol
 from ..service.asyncio_tasks import named_wait
 
 logger = logging.getLogger(__name__)
+
+SOCKET_MAX_MESSAGE_BYTES = 1024
 
 
 class Client:
@@ -39,21 +41,6 @@ class Client:
         self.replies_to_send = []
 
 
-def extract_json(message: str) -> Iterator[str]:
-    """With message that may be an incomplete JSON string, yield JSON-complete strings and leftover"""
-    decoder = json.JSONDecoder()
-    pos = 0
-    length = len(message)
-    while pos < length:
-        try:
-            _, index = decoder.raw_decode(message, pos)
-            json_msg = message[pos:index]
-            yield json_msg
-            pos = index
-        except json.JSONDecodeError:
-            break
-
-
 class Broker(BrokerProtocol):
     """A Unix socket client for dispatcher as simple as possible
 
@@ -70,6 +57,7 @@ class Broker(BrokerProtocol):
         self.clients: dict[int, Client] = {}
         self.sock: Optional[socket.socket] = None  # for synchronous clients
         self.incoming_queue: asyncio.Queue = asyncio.Queue()
+        self.max_message_bytes = SOCKET_MAX_MESSAGE_BYTES
 
     def __str__(self) -> str:
         return f'socket-broker-{self.socket_path}'
@@ -89,7 +77,7 @@ class Broker(BrokerProtocol):
                 line = await client.reader.readline()
                 if not line:
                     break  # disconnect
-                message = line.decode().strip()
+                message = line.decode().rstrip('\n')
                 await self.incoming_queue.put((client.client_id, message))
                 # Wait for caller to potentially fill a reply queue
                 # this should realistically never take more than a trivial amount of time
@@ -154,34 +142,41 @@ class Broker(BrokerProtocol):
         """Send an internal message to the async generator, which will cause it to close the server"""
         await self.incoming_queue.put((-1, 'stop'))
 
+    async def apublish_message_to_socket(self, message: str = "") -> None:
+        logger.info(f'Publishing async socket message len={len(message)} with new connection')
+        writer = None
+        try:
+            _, writer = await asyncio.open_unix_connection(self.socket_path)
+            for chunk in split_message(message, max_bytes=self.max_message_bytes):
+                writer.write((chunk + '\n').encode())
+            await writer.drain()
+        finally:
+            if writer:
+                writer.close()
+                await writer.wait_closed()
+
     async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
         if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
+                chunks = split_message(message, max_bytes=self.max_message_bytes)
                 if client.listen_loop_active:
-                    logger.info(f'Queued message len={len(message)} for client_id={origin}')
-                    client.queue_reply(message)
+                    logger.info(f'Queued message len={len(message)} ({len(chunks)} chunk(s)) for client_id={origin}')
+                    for chunk in chunks:
+                        client.queue_reply(chunk)
                 else:
                     logger.warning(f'Not currently listening to client_id={origin}, attempting reply len={len(message)}, but might be dropped')
-                    client.write(message)
+                    for chunk in chunks:
+                        client.write(chunk)
                     await client.writer.drain()
             else:
                 logger.error(f'Client_id={origin} is not currently connected')
         else:
             # Acting as a client in this case, mostly for tests
-            logger.info(f'Publishing async socket message len={len(message)} with new connection')
-            writer = None
-            try:
-                _, writer = await asyncio.open_unix_connection(self.socket_path)
-                writer.write((message + '\n').encode())
-                await writer.drain()
-            finally:
-                if writer:
-                    writer.close()
-                    await writer.wait_closed()
+            await self.apublish_message_to_socket(message)
 
     def process_notify(
-        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
+        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
     ) -> Iterator[tuple[Union[int, str], str]]:
         try:
             with socket.socket(socket.AF_UNIX) as sock:
@@ -195,25 +190,25 @@ class Broker(BrokerProtocol):
                 received_ct = 0
                 buffer = ''
                 while True:
-                    response = sock.recv(1024).decode().strip()
-
-                    current_message = buffer + response
-                    yielded_chars = 0
-                    for complete_msg in extract_json(current_message):
+                    data = sock.recv(SOCKET_MAX_MESSAGE_BYTES)
+                    if not data:
+                        logger.debug('Socket connection closed while waiting for replies')
+                        break
+                    buffer += data.decode()
+                    while '\n' in buffer:
+                        message, buffer = buffer.split('\n', 1)
+                        if not message:
+                            continue
                         received_ct += 1
-                        yield (0, complete_msg)
-                        if received_ct >= max_messages:
+                        yield (0, message)
+                        if max_messages is not None and received_ct >= max_messages:
                             return
-                        yielded_chars += len(complete_msg)
-                    else:
-                        buffer = current_message[yielded_chars:]
-                        logger.info(f'Received incomplete message len={len(buffer)}, adding to buffer')
-
         finally:
             self.sock = None
 
     def _publish_from_sock(self, sock: socket.socket, message: str) -> None:
-        sock.sendall((message + "\n").encode())
+        for chunk in split_message(message, max_bytes=self.max_message_bytes):
+            sock.sendall((chunk + "\n").encode())
 
     def publish_message(self, channel: Optional[str] = None, message: Optional[str] = None) -> None:
         assert isinstance(message, str)

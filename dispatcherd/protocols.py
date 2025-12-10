@@ -3,6 +3,8 @@ import multiprocessing
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
 
+from .chunking import ChunkAccumulator
+
 
 class BrokerSelfCheckStatus(Enum):
     """This enum represents the result of a broker self-check"""
@@ -38,7 +40,7 @@ class Broker(Protocol):
         ...
 
     def process_notify(
-        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int = 1
+        self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
     ) -> Iterator[tuple[Union[int, str], str]]:
         """Synchronous method to generate messages from broker, used for synchronous control-and-reply"""
         ...
@@ -284,6 +286,7 @@ class DispatcherMain(Protocol):
     shared: SharedAsyncObjects
     producers: Iterable[Producer]
     delayer: Delayer
+    chunk_accumulator: ChunkAccumulator
 
     received_count: int
     control_count: int

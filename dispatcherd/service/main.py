@@ -6,6 +6,7 @@ from os import getpid
 from typing import Any, Iterable
 from uuid import uuid4
 
+from ..chunking import ChunkAccumulator
 from ..processors.delayer import Delayer
 from ..producers import BrokeredProducer
 from ..protocols import Delayer as DelayerProtocol
@@ -28,6 +29,7 @@ class DispatcherMain(DispatcherMainProtocol):
         shared: SharedAsyncObjectsProtocol,
         node_id: str | None = None,
         metrics: DispatcherMetricsServerProtocol | None = None,
+        chunk_message_timeout_seconds: float = 30 * 60,
     ):
         self.received_count = 0
         self.control_count = 0
@@ -47,6 +49,9 @@ class DispatcherMain(DispatcherMainProtocol):
         self.metrics = metrics
 
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
+        self.chunk_accumulator = ChunkAccumulator(
+            message_timeout_seconds=chunk_message_timeout_seconds,
+        )
 
     def receive_signal(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.warning(f"Received exit signal args={args} kwargs={kwargs}")
@@ -102,17 +107,30 @@ class DispatcherMain(DispatcherMainProtocol):
         Delay tasks when applicable
         Send to next layer of internal processing
         """
-        # TODO: more structured validation of the incoming payload from publishers
-        if isinstance(payload, str):
+        if isinstance(payload, dict):
+            decoded = payload
+        elif isinstance(payload, str):
             try:
-                message = json.loads(payload)
+                decoded = json.loads(payload)
             except Exception:
-                message = {'task': payload}
-        elif isinstance(payload, dict):
-            message = payload
+                logger.warning('Received payload that is not valid JSON string; assuming bare task body')
+                decoded = {'task': payload}
+            if not isinstance(decoded, dict):
+                logger.error('Decoded payload was not dict after json parsing')
+                return (None, None)
         else:
             logger.error(f'Received unprocessable type {type(payload)}')
             return (None, None)
+
+        is_chunk, assembled_message = await self.chunk_accumulator.aingest_dict(decoded)
+        if is_chunk:
+            if assembled_message is None:
+                # Check for staleness, because failing to fully assemble now may be a give-up point
+                await self.chunk_accumulator.aexpire_partial_messages()
+                return (None, None)
+            message = assembled_message
+        else:
+            message = decoded
 
         if 'self_check' in message:
             if isinstance(producer, BrokeredProducer):
@@ -126,7 +144,10 @@ class DispatcherMain(DispatcherMainProtocol):
         self.received_count += 1
 
         if immediate_message := await self.delayer.process_task(message):
-            return await self.process_message_now(immediate_message, producer=producer)
+            result = await self.process_message_now(immediate_message, producer=producer)
+            # Piggyback on cleanup, expire partial messages that are too old
+            await self.chunk_accumulator.aexpire_partial_messages()
+            return result
 
         # We should be at this line if task was delayed, and in that case there is no reply message
         return (None, None)

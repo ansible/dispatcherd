@@ -4,7 +4,7 @@ import logging
 
 from ..protocols import DispatcherMain
 
-__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status']
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'main', 'status', 'chunks']
 
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,15 @@ async def main(dispatcher: DispatcherMain, data: dict) -> dict:
     ret = dispatcher.get_status_data()
     ret["pool"] = dispatcher.pool.get_status_data()
     return ret
+
+
+async def chunks(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
+    """Return chunk accumulator diagnostics and buffered message metadata."""
+    partials = await dispatcher.chunk_accumulator.aget_partial_messages()
+    return {
+        'status': dispatcher.chunk_accumulator.get_status_data(),
+        'partials': partials,
+    }
 
 
 async def status(dispatcher: DispatcherMain, data: dict) -> dict:

@@ -26,7 +26,7 @@ class DummyBroker(Broker):
     async def aclose(self):
         self.aclose_called = True
 
-    def process_notify(self, connected_callback=None, timeout: float = 5.0, max_messages: int = 1):
+    def process_notify(self, connected_callback=None, timeout: float = 5.0, max_messages: int | None = 1):
         if connected_callback:
             connected_callback()
         # Yield one valid reply message.
