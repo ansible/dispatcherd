@@ -30,8 +30,20 @@ def test_set_log_level_rejects_unknown_level(dispatcherd_logger):
     assert dispatcherd_logger.level == logging.WARNING
 
 
-def test_set_log_level_requires_string(dispatcherd_logger):
+def test_set_log_level_bad_type(dispatcherd_logger):
     dispatcherd_logger.setLevel(logging.ERROR)
-    result = asyncio.run(control_tasks.set_log_level(dispatcher=None, data={'level': 20}))
-    assert result == {'error': 'Log level must be provided via the "level" string key.'}
+    # container type
+    result = asyncio.run(control_tasks.set_log_level(dispatcher=None, data={'level': [True]}))
+    assert result == {'error': 'Log level must be provided as a string or int via the "level" key.'}
     assert dispatcherd_logger.level == logging.ERROR
+    # bad boolean
+    result = asyncio.run(control_tasks.set_log_level(dispatcher=None, data={'level': True}))
+    assert result == {'error': 'Log level must be provided as a string or int via the "level" key.'}
+    assert dispatcherd_logger.level == logging.ERROR
+
+
+def test_set_log_level_integer(dispatcherd_logger):
+    dispatcherd_logger.setLevel(logging.ERROR)
+    result = asyncio.run(control_tasks.set_log_level(dispatcher=None, data={'level': 30}))
+    assert dispatcherd_logger.level == logging.WARNING
+    assert result == {'logger': 'dispatcherd', 'level': 'WARNING', 'previous_level': 'ERROR'}

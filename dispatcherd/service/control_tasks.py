@@ -212,11 +212,13 @@ async def set_log_level(dispatcher: DispatcherMain, data: dict) -> dict[str, str
             help: Desired log level for the dispatcherd logger.
     """
     requested_level = data.get('level')
-    if isinstance(requested_level, int):
+    level_value: int | None
+    if type(requested_level) is int:
+        # booleans are technically integers and we do not want to accept those
         level_value = requested_level
     elif isinstance(requested_level, str):
         level_value = _coerce_log_level(requested_level)
-        if not level_value:
+        if level_value is None:
             return {'error': f"Unknown log level '{requested_level}'."}
     else:
         return {'error': 'Log level must be provided as a string or int via the "level" key.'}
