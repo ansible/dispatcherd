@@ -161,7 +161,7 @@ class CustomHttpServer:
                 logger.warning(f"Client {addr} disconnected before completing headers")
                 self.client_disconnect_count += 1
                 return
-            if header_line == b'\r\n':
+            if header_line in (b'\r\n', b'\n'):
                 break
 
         if method == 'GET' and path == '/metrics':
