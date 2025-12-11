@@ -184,17 +184,21 @@ async def status(dispatcher: DispatcherMain, data: dict) -> dict:
     return ret
 
 
-def _coerce_log_level(level_name: str | None) -> tuple[int, str] | None:
+def _coerce_log_level(level_name: str | None) -> int | None:
     """Normalize level string into (level value, normalized name)."""
     if not level_name:
         return None
     normalized = level_name.strip().upper()
     if not normalized:
         return None
-    resolved_level = logging.getLevelName(normalized)
-    if not isinstance(resolved_level, int):
+
+    # newer python API - get mapping
+    level_map = logging.getLevelNamesMapping()
+    resolved_level = level_map.get(normalized)
+    if resolved_level is None:
         return None
-    return resolved_level, normalized
+
+    return resolved_level
 
 
 async def set_log_level(dispatcher: DispatcherMain, data: dict) -> dict[str, str]:
@@ -208,14 +212,15 @@ async def set_log_level(dispatcher: DispatcherMain, data: dict) -> dict[str, str
             help: Desired log level for the dispatcherd logger.
     """
     requested_level = data.get('level')
-    if not isinstance(requested_level, str):
-        return {'error': 'Log level must be provided via the "level" string key.'}
+    if isinstance(requested_level, int):
+        level_value = requested_level
+    elif isinstance(requested_level, str):
+        level_value = _coerce_log_level(requested_level)
+        if not level_value:
+            return {'error': f"Unknown log level '{requested_level}'."}
+    else:
+        return {'error': 'Log level must be provided as a string or int via the "level" key.'}
 
-    parse_result = _coerce_log_level(requested_level)
-    if not parse_result:
-        return {'error': f"Unknown log level '{requested_level}'."}
-
-    level_value, normalized_name = parse_result
     previous_level = logging.getLevelName(dispatcherd_logger.level)
     dispatcherd_logger.setLevel(level_value)
     new_level = logging.getLevelName(dispatcherd_logger.level)
