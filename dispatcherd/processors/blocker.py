@@ -32,8 +32,9 @@ class Blocker(BlockerProtocol):
                 return True
         return False
 
-    def already_running(self, message: dict) -> bool:
-        return self._duplicate_in_list(message, self.queuer.active_tasks())
+    async def already_running(self, message: dict) -> bool:
+        active_tasks = await self.queuer.active_tasks()
+        return self._duplicate_in_list(message, active_tasks)
 
     def already_queued(self, message: dict) -> bool:
         return self._duplicate_in_list(message, self.blocked_messages)
@@ -51,13 +52,13 @@ class Blocker(BlockerProtocol):
         on_duplicate = self.Params.from_message(message).on_duplicate
 
         if on_duplicate == DuplicateBehavior.serial.value:
-            if self.already_running(message):
+            if await self.already_running(message):
                 logger.info(f'Queuing task (uuid={uuid}) because it is already running, queued_ct={len(self.blocked_messages)}')
                 self.blocked_messages.append(message)
                 return None
 
         elif on_duplicate == DuplicateBehavior.discard.value:
-            if self.already_running(message) or self.already_queued(message):
+            if (await self.already_running(message)) or self.already_queued(message):
                 logger.info(f'Discarding task because it is already running: \n{message}')
                 self.discard_count += 1
                 return None
@@ -67,7 +68,7 @@ class Blocker(BlockerProtocol):
                 logger.info(f'Discarding task because it is already running and queued: \n{message}')
                 self.discard_count += 1
                 return None
-            elif self.already_running(message):
+            elif await self.already_running(message):
                 logger.info(f'Queuing task (uuid={uuid}) because it is already running, queued_ct={len(self.blocked_messages)}')
                 self.blocked_messages.append(message)
                 return None
@@ -77,11 +78,11 @@ class Blocker(BlockerProtocol):
 
         return message
 
-    def pop_unblocked_messages(self) -> list[dict]:
+    async def pop_unblocked_messages(self) -> list[dict]:
         now_unblocked: list[dict] = []
         for message in self.blocked_messages.copy():
             # All forms of blocking require task to not be running or queued or in the newly-released list in order to release
-            if not (self.already_running(message) or self._duplicate_in_list(message, now_unblocked)):
+            if not (await self.already_running(message) or self._duplicate_in_list(message, now_unblocked)):
                 now_unblocked.append(message)
                 self.blocked_messages.remove(message)
         return now_unblocked

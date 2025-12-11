@@ -106,7 +106,8 @@ async def test_scale_down_condition(pool_factory):
     pool.last_used_by_ct = {i: time.monotonic() - 120.0 for i in range(30)}  # all work finished 120 seconds ago
 
     # Outcome of this situation is expected to be a scale-down event
-    assert pool.should_scale_down() is True
+    worker_ct = len([worker for worker in pool.workers if worker.counts_for_capacity])
+    assert pool.should_scale_down(worker_ct) is True
     await pool.scale_workers()
     # Same number of workers but one worker has been sent a stop signal
     assert len(pool.workers) == 3
@@ -145,7 +146,7 @@ async def test_scale_up_worker_should_not_be_immediately_eligible_for_scaledown(
 
     # Add even more demand
     pool.queuer.queued_messages += [{'task': 'waiting.task'}]
-    assert pool.active_task_ct() == 5
+    assert await pool.active_task_ct() == 5
     assert len(pool.workers) == 4
 
     # Should still give same result
@@ -155,20 +156,21 @@ async def test_scale_up_worker_should_not_be_immediately_eligible_for_scaledown(
 
     # At limit so no more scaling
     pool.queuer.queued_messages += [{'task': 'waiting.task'}]
-    assert pool.active_task_ct() == 6
+    assert await pool.active_task_ct() == 6
     assert len(pool.workers) == 5
     scaled_ct = await pool.scale_workers()
     assert scaled_ct == 0
 
 
 @pytest.mark.asyncio
-async def test_dispatch_task_holds_management_lock_and_blocks_scaledown(pool_factory):
+async def test_dispatch_task_uses_worker_lock_and_blocks_scaledown(pool_factory):
     """Dispatched work should start while holding the worker lock and block scale-down heuristics."""
     pool = pool_factory(min_workers=1, max_workers=1)
     worker_id = await pool.up()
     worker = pool.workers.get_by_id(worker_id)
     worker.status = 'ready'
     worker.current_task = None
+    pool.workers.enqueue_ready_worker(worker)
 
     # Pretend the worker idled long enough that, without new work, scale-down is allowed.
     pool.last_used_by_ct[1] = time.monotonic() - 120.0
@@ -176,7 +178,7 @@ async def test_dispatch_task_holds_management_lock_and_blocks_scaledown(pool_fac
     lock_states: list[bool] = []
 
     async def start_task_under_lock(message):
-        lock_states.append(pool.workers.management_lock.locked())
+        lock_states.append(worker.lock.locked())
         worker.current_task = message
 
     worker.start_task = mock.AsyncMock(side_effect=start_task_under_lock)
@@ -187,7 +189,8 @@ async def test_dispatch_task_holds_management_lock_and_blocks_scaledown(pool_fac
     # Starting the task should have happened while the lock was held and should block scale-down timers.
     assert lock_states == [True]
     assert pool.last_used_by_ct[1] is None
-    assert pool.should_scale_down() is False
+    worker_ct = len([worker for worker in pool.workers if worker.counts_for_capacity])
+    assert pool.should_scale_down(worker_ct) is False
 
 
 @pytest.mark.asyncio

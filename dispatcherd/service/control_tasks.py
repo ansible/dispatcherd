@@ -26,9 +26,11 @@ def task_filter_match(pool_task: dict, msg_data: dict) -> bool:
 async def _find_tasks(dispatcher: DispatcherMain, data: dict, cancel: bool = False) -> dict[str, dict]:
     "Utility method used for both running and cancel control methods"
     ret = {}
-    for worker in dispatcher.pool.workers:
-        if worker.current_task:
-            if task_filter_match(worker.current_task, data):
+    worker_snapshot = await dispatcher.pool.workers.snapshot()
+
+    for worker in worker_snapshot:
+        async with worker.lock:
+            if worker.current_task and task_filter_match(worker.current_task, data):
                 if cancel:
                     logger.warning(f'Canceling task in worker {worker.worker_id}, task: {worker.current_task}')
                     worker.cancel()
@@ -71,8 +73,7 @@ async def running(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
             type: str
             help: Limit the results to a specific task uuid.
     """
-    async with dispatcher.pool.workers.management_lock:
-        return await _find_tasks(dispatcher=dispatcher, data=data)
+    return await _find_tasks(dispatcher=dispatcher, data=data)
 
 
 async def cancel(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
@@ -88,8 +89,7 @@ async def cancel(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
             type: str
             help: Cancel only tasks with this uuid.
     """
-    async with dispatcher.pool.workers.management_lock:
-        return await _find_tasks(dispatcher=dispatcher, cancel=True, data=data)
+    return await _find_tasks(dispatcher=dispatcher, cancel=True, data=data)
 
 
 def _stack_from_task(task: asyncio.Task, limit: int = 6) -> str:

@@ -18,11 +18,12 @@ async def wait_to_receive(dispatcher, ct, timeout=5.0, interval=0.05):
     """Poll for the dispatcher to have received a certain ct of messages"""
     start = time.time()
     while time.time() - start < timeout:
-        if dispatcher.pool.received_count >= ct:
+        if await dispatcher.pool.received_count() >= ct:
             break
         await asyncio.sleep(interval)
     else:
-        raise RuntimeError(f'Failed to receive expected {ct} messages {dispatcher.pool.received_count}')
+        current = await dispatcher.pool.received_count()
+        raise RuntimeError(f'Failed to receive expected {ct} messages {current}')
 
 
 @pytest.mark.asyncio

@@ -28,7 +28,6 @@ async def aorder_dispatcher(order_config) -> AsyncIterator[DispatcherMain]:
 @pytest.mark.asyncio
 async def test_workers_reorder_and_dispatch_longest_idle(aorder_dispatcher):
     pool = aorder_dispatcher.pool
-    assert list(pool.workers.workers.keys()) == [0, 1]
 
     pool.events.work_cleared.clear()
     await aorder_dispatcher.process_message({
@@ -43,7 +42,6 @@ async def test_workers_reorder_and_dispatch_longest_idle(aorder_dispatcher):
     })
     await asyncio.wait_for(pool.events.work_cleared.wait(), timeout=1)
 
-    assert list(pool.workers.workers.keys()) == [1, 0]
 
     pool.events.work_cleared.clear()
     await aorder_dispatcher.process_message({
@@ -66,39 +64,33 @@ async def test_workers_reorder_and_dispatch_longest_idle(aorder_dispatcher):
     assert pool.workers.get_by_id(0).current_task["uuid"] == "t4"
     await asyncio.wait_for(pool.events.work_cleared.wait(), timeout=1)
 
-    assert list(pool.workers.workers.keys()) == [1, 0]
 
 
 @pytest.mark.asyncio
-async def test_process_finished_with_removed_worker():
-    """Test that process_finished handles KeyError gracefully when worker has been removed
-
-    This simulates the race condition where a worker finishes a task, but has been
-    removed from self.workers before process_finished is called.
-    """
-    from unittest.mock import MagicMock, patch
+async def test_ready_queue_ignores_removed_worker():
+    """Ready queue entries pointing to removed workers should be ignored gracefully."""
+    from unittest.mock import MagicMock
     from dispatcherd.service.pool import WorkerData, PoolWorker
 
-    # Create a minimal WorkerData instance
     worker_data = WorkerData()
 
-    # Create a mock worker
     mock_process = MagicMock()
+    mock_process.message_queue = MagicMock()
+    mock_process.start = MagicMock()
+    mock_process.join = MagicMock()
+    mock_process.is_alive.return_value = False
+    mock_process.exitcode.return_value = 0
+    mock_process.kill = MagicMock()
+    mock_process.pid = 123
+
     worker = PoolWorker(worker_id=0, process=mock_process)
-    worker.current_task = {"uuid": "test-uuid", "task": "test.task"}
-    worker.finished_count = 0
+    async with worker.lock:
+        worker.status = 'ready'
+        worker.current_task = None
 
-    # Add worker then remove it (simulating the race condition)
-    worker_data.add_worker(worker)
-    worker_data.remove_by_id(0)
-    assert 0 not in worker_data
+    await worker_data.add_worker(worker)
+    worker_data.enqueue_ready_worker(worker)
+    await worker_data.remove_by_id(worker.worker_id)
 
-    # Mock the logger to verify the warning is logged
-    with patch('dispatcherd.service.pool.logger') as mock_logger:
-        # Call move_to_end on the removed worker - should not raise KeyError
-        worker_data.move_to_end(0)
-
-        # Verify the warning was logged
-        mock_logger.warning.assert_called_once()
-        warning_call = mock_logger.warning.call_args[0][0]
-        assert "Attempted to move worker_id=0 to end, but worker was already removed" in warning_call
+    reserved = await worker_data.reserve_ready_worker({'task': 'demo', 'uuid': 'ignored'})
+    assert reserved is None

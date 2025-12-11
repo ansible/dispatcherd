@@ -24,7 +24,7 @@ async def test_block_multiple_tasks(test_settings):
 
     await pool.dispatch_task(task_data.copy())
     assert list(pool.queuer) == [task_data]
-    assert list(pool.queuer.active_tasks()) == [task_data]
+    assert await pool.queuer.active_tasks() == [task_data]
 
     for i in range(2):
         await pool.dispatch_task(task_data.copy())
