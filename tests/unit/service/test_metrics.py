@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from prometheus_client import CollectorRegistry
-from dispatcherd.service.metrics import CustomHttpServer, DispatcherMetricsServer
+from dispatcherd.service.metrics import CustomHttpServer, DispatcherMetricsServer, RequestTimeoutError
 
 # Mark all tests in this file as asyncio
 pytestmark = pytest.mark.asyncio
@@ -149,6 +149,47 @@ async def test_handle_request_not_found(server, mock_stream_reader, mock_stream_
     status = server.get_status_data()
     assert status['not_found_responses'] == 1
     assert status['connections_total'] == 1
+
+
+async def test_handle_request_path_not_found(server, mock_stream_reader, mock_stream_writer):
+    """GET requests to paths other than /metrics should return 404."""
+    mock_stream_reader.readline.side_effect = [b"GET /not-metrics HTTP/1.1\r\n", b"Host: localhost\r\n", b"\r\n"]
+
+    await server.handle_request(mock_stream_reader, mock_stream_writer)
+
+    written_data = b"".join(call.args[0] for call in mock_stream_writer.write.call_args_list)
+    assert b"HTTP/1.1 404 Not Found" in written_data
+
+    status = server.get_status_data()
+    assert status['not_found_responses'] == 1
+
+
+async def test_handle_request_request_line_timeout(server, mock_stream_writer):
+    """Request line read timeouts should return 408."""
+    server._readline_with_timeout = AsyncMock(side_effect=RequestTimeoutError("request line"))
+
+    await server.handle_request(AsyncMock(), mock_stream_writer)
+
+    written_data = b"".join(call.args[0] for call in mock_stream_writer.write.call_args_list)
+    assert b"HTTP/1.1 408 Request Timeout" in written_data
+
+    status = server.get_status_data()
+    assert status['request_timeouts'] == 1
+
+
+async def test_handle_request_header_timeout(server, mock_stream_writer):
+    """Header read timeouts should also return 408."""
+    server._readline_with_timeout = AsyncMock(
+        side_effect=[b"GET /metrics HTTP/1.1\r\n", RequestTimeoutError("header line")]
+    )
+
+    await server.handle_request(AsyncMock(), mock_stream_writer)
+
+    written_data = b"".join(call.args[0] for call in mock_stream_writer.write.call_args_list)
+    assert b"HTTP/1.1 408 Request Timeout" in written_data
+
+    status = server.get_status_data()
+    assert status['request_timeouts'] == 1
 
 
 async def test_handle_request_empty_request_line(server, mock_stream_reader, mock_stream_writer):

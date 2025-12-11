@@ -15,6 +15,10 @@ from ..protocols import DispatcherMain
 logger = logging.getLogger(__name__)
 
 
+class RequestTimeoutError(Exception):
+    """Raised when a client does not send data within the configured timeout."""
+
+
 def metrics_data(dispatcher: DispatcherMain) -> Generator[Metric, Any, Any]:
     """
     Called each time metrics are gathered
@@ -49,8 +53,9 @@ class CustomCollector(Collector):
 class CustomHttpServer:
     """Called from DispatcherMetricsServer, but with the registry initialized"""
 
-    def __init__(self, registry: CollectorRegistry):
+    def __init__(self, registry: CollectorRegistry, read_timeout: float = 5.0):
         self.registry = registry
+        self.read_timeout = read_timeout
         self.server: Optional[asyncio.Server] = None
         self.total_connections = 0
         self.metrics_requests_served = 0
@@ -58,6 +63,7 @@ class CustomHttpServer:
         self.internal_error_count = 0
         self.not_found_count = 0
         self.client_disconnect_count = 0
+        self.request_timeout_count = 0
         self.is_running = False
 
     async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -100,7 +106,12 @@ class CustomHttpServer:
         addr: Any,
     ) -> None:
         "Internal version of handle_request that does not handle server errors or closing writer"
-        request_line = await reader.readline()
+        try:
+            request_line = await self._readline_with_timeout(reader, addr, "request line")
+        except RequestTimeoutError:
+            await self._handle_request_timeout(writer, addr)
+            return
+
         if not request_line:
             logger.info(f"Received blank line from {addr}, closing")
             self.client_disconnect_count += 1
@@ -124,7 +135,7 @@ class CustomHttpServer:
 
         # Parse the request line (simplified parsing)
         try:
-            method, _, _ = request_line_str.split()
+            method, path, _ = request_line_str.split(maxsplit=2)
         except ValueError:
             logger.warning(f"Could not parse metrics request line: {request_line_str}")
             # Respond with 400 Bad Request for malformed request line
@@ -140,7 +151,12 @@ class CustomHttpServer:
 
         # Read headers (and ignore them for now)
         while True:
-            header_line = await reader.readline()
+            try:
+                header_line = await self._readline_with_timeout(reader, addr, "header line")
+            except RequestTimeoutError:
+                await self._handle_request_timeout(writer, addr)
+                return
+
             if header_line == b'':
                 logger.warning(f"Client {addr} disconnected before completing headers")
                 self.client_disconnect_count += 1
@@ -148,7 +164,7 @@ class CustomHttpServer:
             if header_line == b'\r\n':
                 break
 
-        if method == 'GET':
+        if method == 'GET' and path == '/metrics':
             try:
                 metrics_payload = generate_latest(self.registry)
                 body = metrics_payload.decode('utf-8')
@@ -170,6 +186,30 @@ class CustomHttpServer:
             self.not_found_count += 1
 
         await self._send_response(writer, status_line, content_type, body, addr)
+
+    async def _readline_with_timeout(
+        self,
+        reader: asyncio.StreamReader,
+        addr: Any,
+        context: str,
+    ) -> bytes:
+        try:
+            return await asyncio.wait_for(reader.readline(), timeout=self.read_timeout)
+        except asyncio.TimeoutError as exc:
+            logger.warning(f"Timeout while reading {context} from {addr}")
+            raise RequestTimeoutError(context) from exc
+
+    async def _handle_request_timeout(self, writer: asyncio.StreamWriter, addr: Any) -> None:
+        self.request_timeout_count += 1
+        if writer.is_closing():
+            return
+        await self._send_response(
+            writer=writer,
+            status_line="HTTP/1.1 408 Request Timeout",
+            content_type="text/plain; charset=utf-8",
+            body="Request Timeout",
+            addr=addr,
+        )
 
     async def _send_response(
         self,
@@ -193,6 +233,7 @@ class CustomHttpServer:
             'internal_errors': self.internal_error_count,
             'not_found_responses': self.not_found_count,
             'client_disconnects': self.client_disconnect_count,
+            'request_timeouts': self.request_timeout_count,
             'is_running': self.is_running,
         }
 
