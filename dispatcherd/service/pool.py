@@ -5,7 +5,7 @@ import os
 import signal
 import time
 from collections import OrderedDict, deque
-from typing import Any, Iterator, Literal
+from typing import Any, Iterable, Iterator, Literal, cast
 
 from ..processors.blocker import Blocker
 from ..processors.queuer import Queuer
@@ -193,11 +193,11 @@ class PoolEvents(PoolEventsProtocol):
 
 class WorkerData(WorkerDataProtocol):
     def __init__(self) -> None:
-        self.workers: OrderedDict[int, PoolWorker] = OrderedDict()
+        self.workers: OrderedDict[int, PoolWorkerProtocol] = OrderedDict()
         self.management_lock = asyncio.Lock()
         self.ready_queue: deque[int] = deque()
 
-    def __iter__(self) -> Iterator[PoolWorker]:
+    def __iter__(self) -> Iterator[PoolWorkerProtocol]:
         return iter(self.workers.values())
 
     def __contains__(self, worker_id: int) -> bool:
@@ -206,11 +206,11 @@ class WorkerData(WorkerDataProtocol):
     def __len__(self) -> int:
         return len(self.workers)
 
-    async def add_worker(self, worker: PoolWorker) -> None:
+    async def add_worker(self, worker: PoolWorkerProtocol) -> None:
         async with self.management_lock:
             self.workers[worker.worker_id] = worker
 
-    def get_by_id(self, worker_id: int) -> PoolWorker:
+    def get_by_id(self, worker_id: int) -> PoolWorkerProtocol:
         return self.workers[worker_id]
 
     async def remove_by_id(self, worker_id: int) -> None:
@@ -221,7 +221,7 @@ class WorkerData(WorkerDataProtocol):
             except ValueError:
                 pass
 
-    async def snapshot(self) -> list[PoolWorker]:
+    async def snapshot(self) -> list[PoolWorkerProtocol]:
         async with self.management_lock:
             return list(self.workers.values())
 
@@ -254,7 +254,7 @@ class WorkerData(WorkerDataProtocol):
                     return False
         return True
 
-    def enqueue_ready_worker(self, worker: PoolWorker) -> None:
+    def enqueue_ready_worker(self, worker: PoolWorkerProtocol) -> None:
         worker_id = worker.worker_id
         try:
             self.ready_queue.remove(worker_id)
@@ -262,7 +262,7 @@ class WorkerData(WorkerDataProtocol):
             pass
         self.ready_queue.append(worker_id)
 
-    async def reserve_ready_worker(self, message: dict) -> PoolWorker | None:
+    async def reserve_ready_worker(self, message: dict) -> PoolWorkerProtocol | None:
         while True:
             if not self.ready_queue:
                 return None
@@ -320,7 +320,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.shutdown_timeout = 3
 
         # the timeout runner keeps its own task
-        self.timeout_runner = NextWakeupRunner(self.workers, self.cancel_worker, shared=shared, name='worker_timeout_manager')
+        self.timeout_runner = NextWakeupRunner(cast(Iterable[HasWakeup], self.workers), self.cancel_worker, shared=shared, name='worker_timeout_manager')
 
         # Track the last time we used X number of workers, like
         # {
@@ -383,7 +383,7 @@ class WorkerPool(WorkerPoolProtocol):
         Later on, we will reconcile data to get the full decomissioning outcome.
         """
         workers = await self.workers.snapshot()
-        available_workers: list[PoolWorker] = []
+        available_workers: list[PoolWorkerProtocol] = []
 
         for worker in workers:
             async with worker.lock:
@@ -467,11 +467,12 @@ class WorkerPool(WorkerPoolProtocol):
             process_alive = worker.process.is_alive()
             async with worker.lock:
                 expected_alive = worker.expected_alive
-                has_task = worker.current_task is not None
+                current_task = worker.current_task
+                has_task = current_task is not None
                 if expected_alive and not process_alive:
                     logger.error(f'Worker {worker.worker_id} pid={worker.process.pid} has died unexpectedly, status was {worker.status}')
                     if has_task:
-                        uuid = worker.current_task.get('uuid', '<unknown>')
+                        uuid = current_task.get('uuid', '<unknown>') if current_task else '<unknown>'
                         logger.error(f'Task (uuid={uuid}) was running on worker {worker.worker_id} but the worker died unexpectedly')
                         self.canceled_count += 1
                         worker.is_active_cancel = False  # Prevent further processing.
@@ -480,7 +481,7 @@ class WorkerPool(WorkerPoolProtocol):
                     worker.retired_at = time.monotonic()
 
         # Loop for worker accounting, for stopping workers or removing old workers from memory
-        workers_to_stop: list[PoolWorker] = []
+        workers_to_stop: list[PoolWorkerProtocol] = []
         for worker in current_workers:
             async with worker.lock:
                 should_stop = False
@@ -535,7 +536,7 @@ class WorkerPool(WorkerPoolProtocol):
 
         logger.debug('Pool worker management task exiting')
 
-    async def cancel_worker(self, worker: PoolWorker) -> None:
+    async def cancel_worker(self, worker: PoolWorkerProtocol) -> None:
         """Writes a log and sends cancel signal to worker"""
         async with worker.lock:
             if (not worker.current_task) or (not worker.started_at):
@@ -545,9 +546,7 @@ class WorkerPool(WorkerPoolProtocol):
             started_at = worker.started_at
             worker.cancel()
 
-        logger.info(
-            f'Worker {worker.worker_id} runtime {time.monotonic() - started_at:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling'
-        )
+        logger.info(f'Worker {worker.worker_id} runtime {time.monotonic() - started_at:.5f}(s) for task uuid={uuid} exceeded timeout {timeout}(s), canceling')
 
     async def up(self) -> int:
         new_worker_id = self.next_worker_id
@@ -673,7 +672,7 @@ class WorkerPool(WorkerPoolProtocol):
         if processed_queue:
             self.events.queue_cleared.set()
 
-    async def process_finished(self, worker: PoolWorker, message: dict) -> None:
+    async def process_finished(self, worker: PoolWorkerProtocol, message: dict) -> None:
         uuid = message.get('uuid', '<unknown>')
         result = message.get("result")
         async with worker.lock:
@@ -765,9 +764,7 @@ class WorkerPool(WorkerPoolProtocol):
                         logger.debug(f"Worker {worker_id} exited and that is all of them, exiting results read task.")
                         return
                     else:
-                        logger.debug(
-                            f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining statuses: {counts}"
-                        )
+                        logger.debug(f"Worker {worker_id} exited and that is a good thing because we are trying to shut down. Remaining statuses: {counts}")
                 else:
                     self.events.management_event.set()
                     logger.debug(f"Worker {worker_id} sent exit signal.")

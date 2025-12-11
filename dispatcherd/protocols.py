@@ -112,8 +112,20 @@ class PoolWorker(Protocol):
 
     current_task: Optional[dict]
     worker_id: int
+    lock: asyncio.Lock
+    status: str
+    stopping_at: Optional[float]
+    retired_at: Optional[float]
+    started_at: Optional[float]
+    is_active_cancel: bool
+    finished_count: int
+    process: Any
+    exit_msg_event: asyncio.Event
 
     async def start_task(self, message: dict) -> None: ...
+    async def start(self) -> None: ...
+    async def signal_stop(self, *, only_if_idle: bool = ...) -> bool: ...
+    async def stop(self) -> None: ...
 
     @property
     def is_ready(self) -> bool: ...
@@ -124,11 +136,16 @@ class PoolWorker(Protocol):
     @property
     def expected_alive(self) -> bool: ...
 
+    @property
+    def inactive(self) -> bool: ...
+
     def get_status_data(self) -> dict[str, Any]:
         """Used for worker status control-and-reply command"""
         ...
 
     def cancel(self) -> None: ...
+
+    def mark_finished_task(self) -> None: ...
 
 
 class ProcessorParams(Protocol):
