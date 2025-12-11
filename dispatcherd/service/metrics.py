@@ -220,7 +220,7 @@ class CustomHttpServer:
         addr: Any,
     ) -> None:
         body_bytes = body.encode('utf-8')
-        response_headers = f"{status_line}\r\n" f"Content-Type: {content_type}\r\n" f"Content-Length: {len(body_bytes)}\r\n" "Connection: close\r\n" "\r\n"
+        response_headers = f"{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {len(body_bytes)}\r\nConnection: close\r\n\r\n"
         writer.write(response_headers.encode('utf-8') + body_bytes)
         await writer.drain()
         logger.info(f"Sent metrics {status_line} response to {addr}")
