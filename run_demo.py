@@ -38,6 +38,10 @@ except ValueError:
 
 def main():
     ctl = get_control_from_settings()
+    print('setting service log level to INFO to start demo')
+    info_response = ctl.control_with_reply('set_log_level', data={'level': 'INFO'}, expected_replies=expected_count)
+    print(json.dumps(info_response, indent=2))
+
     print('writing some basic test messages')
     for channel, message in TEST_MSGS:
         broker.publish_message(channel=channel, message=message)
@@ -49,6 +53,7 @@ def main():
         broker.publish_message(message=f'lambda: {i}')
 
     print('')
+    print(' -------- Demonstrating incomplete chunking ---------')
     print('sending an intentionally incomplete chunked message to watch cleanup logs')
     large_task = json.dumps({'task': 'lambda: "chunk me"', 'uuid': 'demo-chunk', 'data': 'y' * 5000})
     chunk = split_message(large_task, max_bytes=200)[0]
@@ -57,6 +62,19 @@ def main():
     print('   querying chunk diagnostics via control command')
     chunk_snapshot = ctl.control_with_reply('chunks', expected_replies=expected_count)
     print(json.dumps(chunk_snapshot, indent=2))
+
+    print(' -------- Demonstrating dynamic service log levels ---------')
+    print('Setting service log level to DEBUG for the next burst of tasks (see dispatcherd logs)')
+    debug_response = ctl.control_with_reply('set_log_level', data={'level': 'debug'}, expected_replies=expected_count)
+    print(json.dumps(debug_response, indent=2))
+    try:
+        print('publishing 5 quick messages while DEBUG logging is enabled')
+        for i in range(5):
+            broker.publish_message(message=f'lambda: {i} + 5000')
+    finally:
+        print('restoring service log level back to INFO')
+        info_response = ctl.control_with_reply('set_log_level', data={'level': 'INFO'}, expected_replies=expected_count)
+        print(json.dumps(info_response, indent=2))
 
     print('')
     print(' -------- Actions involving control-and-reply ---------')
