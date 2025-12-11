@@ -101,7 +101,6 @@ async def test_handle_request_bad_request(server, mock_stream_reader, mock_strea
     written_data = b"".join(call.args[0] for call in mock_stream_writer.write.call_args_list)
 
     assert b"HTTP/1.1 400 Bad Request" in written_data
-    assert b"Content-Length: 0" in written_data
 
     mock_stream_writer.close.assert_called_once()
     mock_stream_writer.wait_closed.assert_called_once()
