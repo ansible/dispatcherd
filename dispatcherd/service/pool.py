@@ -32,7 +32,6 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.stopping_at: float | None = None
         self.retired_at: float | None = None
         self.is_active_cancel: bool = False
-
         # Tracking information for worker
         self.finished_count = 0
         self.status: Literal['initialized', 'spawned', 'starting', 'ready', 'stopping', 'exited', 'error', 'retired'] = 'initialized'
@@ -81,11 +80,11 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join(timeout)  # argument is timeout
 
-    async def signal_stop(self) -> None:
+    async def signal_stop(self, *, cancel_if_busy: bool = True) -> None:
         "Tell the worker to stop and return"
         self.process.message_queue.put("stop")
         logger.debug(f'Sent stop message to worker_id={self.worker_id}')
-        if self.current_task:
+        if cancel_if_busy and self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
             logger.warning(f'Worker {self.worker_id} is currently running task (uuid={uuid}), canceling for shutdown')
             self.cancel()
@@ -213,6 +212,7 @@ class WorkerPool(WorkerPoolProtocol):
         scaledown_interval: float = 15.0,
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
+        worker_max_lifetime_seconds: float | None = 4 * 60 * 60,
     ) -> None:
         self.min_workers = min_workers
 
@@ -234,6 +234,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.next_worker_id = 0
         self.finished_count: int = 0
         self.canceled_count: int = 0
+        self.retirement_count: int = 0
         self.shutdown_timeout = 3
 
         # the timeout runner keeps its own task
@@ -252,10 +253,31 @@ class WorkerPool(WorkerPoolProtocol):
         self.scaledown_interval = scaledown_interval  # seconds for poll to see if we should retire workers
         self.worker_stop_wait = worker_stop_wait  # seconds to wait for a worker to exit on its own before SIGTERM, SIGKILL
         self.worker_removal_wait = worker_removal_wait  # after worker process exits, seconds to keep its record, for stats
+        self.worker_max_lifetime_seconds = worker_max_lifetime_seconds
 
         # queuer and blocker objects hold an internal inventory of tasks that can not yet run
         self.queuer = Queuer(self.workers)
         self.blocker = Blocker(self.queuer)
+
+    async def retire_aged_workers(self) -> None:
+        """Schedule retires for workers older than the configured lifetime"""
+        if self.worker_max_lifetime_seconds is None:
+            return
+
+        max_lifetime = self.worker_max_lifetime_seconds
+        now = time.monotonic()
+        async with self.workers.management_lock:
+            for worker in list(self.workers):
+                if worker.status != 'ready':
+                    continue
+                worker_age = now - worker.created_at
+                if worker_age < max_lifetime:
+                    continue
+                if worker.current_task:
+                    uuid = worker.current_task.get('uuid', '<unknown>')
+                    logger.info(f'Worker {worker.worker_id} reached max lifetime while running task (uuid={uuid}), sending stop request after completion')
+                await worker.signal_stop(cancel_if_busy=False)
+                self.retirement_count += 1
 
     @property
     def processed_count(self) -> int:
@@ -270,6 +292,7 @@ class WorkerPool(WorkerPoolProtocol):
             "next_worker_id": self.next_worker_id,
             "finished_count": self.finished_count,
             "canceled_count": self.canceled_count,
+            "retirement_count": self.retirement_count,
         }
 
     async def start_working(self, dispatcher: DispatcherMain) -> None:
@@ -399,7 +422,12 @@ class WorkerPool(WorkerPoolProtocol):
 
                 if worker.status == 'exited':
                     workers_to_stop.append(worker)  # happy path
-                elif worker.status == 'stopping' and worker.stopping_at and (time.monotonic() - worker.stopping_at) > self.worker_stop_wait:
+                elif (
+                    worker.status == 'stopping'
+                    and worker.stopping_at
+                    and (time.monotonic() - worker.stopping_at) > self.worker_stop_wait
+                    and (worker.is_active_cancel or worker.current_task is None)
+                ):
                     logger.warning(f'Worker id={worker.worker_id} failed to respond to stop signal')
                     workers_to_stop.append(worker)  # agressively bring down process
 
@@ -428,6 +456,7 @@ class WorkerPool(WorkerPoolProtocol):
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shared.exit_event.is_set():
 
+            await self.retire_aged_workers()
             scaled_ct = await self.scale_workers()
 
             await self.manage_new_workers()
