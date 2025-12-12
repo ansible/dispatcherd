@@ -149,11 +149,13 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
             'retirement_scheduled': self.retirement_scheduled,
         }
 
-    def mark_finished_task(self) -> None:
+    async def mark_finished_task(self, *, stop_for_retirement: bool = False) -> None:
         self.is_active_cancel = False
         self.current_task = None
         self.started_at = None
         self.finished_count += 1
+        if stop_for_retirement and self.status == 'ready':
+            await self.signal_stop()
 
     def next_wakeup(self) -> float | None:
         """Used by next-run-runner for setting wakeups for task timeouts"""
@@ -287,9 +289,9 @@ class WorkerPool(WorkerPoolProtocol):
                 else:
                     workers_to_stop.append(worker)
 
-        for worker in workers_to_stop:
-            if worker.status == 'ready':
-                await worker.signal_stop()
+            for worker in workers_to_stop:
+                if worker.status == 'ready':
+                    await worker.signal_stop()
 
     @property
     def processed_count(self) -> int:
@@ -632,25 +634,19 @@ class WorkerPool(WorkerPoolProtocol):
         self.last_used_by_ct[running_ct] = time.monotonic()  # scale down may be allowed, clock starting now
 
         # Mark the worker as no longer busy
-        should_stop_for_retirement = False
         async with self.workers.management_lock:
             if worker.is_active_cancel and result == '<cancel>':
                 self.canceled_count += 1
             else:
                 self.finished_count += 1
-            worker.mark_finished_task()
+            await worker.mark_finished_task(stop_for_retirement=worker.retirement_scheduled)
             self.workers.move_to_end(worker.worker_id)
-            if worker.retirement_scheduled:
-                should_stop_for_retirement = True
 
         if not self.queuer.queued_messages and all(worker.current_task is None for worker in self.workers):
             self.events.work_cleared.set()
 
         if 'timeout' in message:
             await self.timeout_runner.kick()
-
-        if should_stop_for_retirement and worker.status == 'ready':
-            await worker.signal_stop()
 
     @property
     def status_counts(self) -> dict[str, int]:
