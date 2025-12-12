@@ -32,6 +32,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.stopping_at: float | None = None
         self.retired_at: float | None = None
         self.is_active_cancel: bool = False
+        self.retirement_scheduled: bool = False
 
         # Tracking information for worker
         self.finished_count = 0
@@ -55,12 +56,12 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     @property
     def is_ready(self) -> bool:
         """Worker is ready to receive task requests"""
-        return bool(self.status == 'ready')
+        return bool(self.status == 'ready' and not self.retirement_scheduled)
 
     @property
     def counts_for_capacity(self) -> bool:
         """Worker is ready to accept work or may become ready very soon, relevant for scale-up decisions"""
-        return bool(self.status in ('initialized', 'spawned', 'starting', 'ready'))
+        return bool(self.status in ('initialized', 'spawned', 'starting', 'ready') and not self.retirement_scheduled)
 
     @property
     def expected_alive(self) -> bool:
@@ -145,6 +146,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
             'current_task_uuid': self.current_task.get('uuid', '<unknown>') if self.current_task else None,
             'active_cancel': self.is_active_cancel,
             'age': time.monotonic() - self.created_at,
+            'retirement_scheduled': self.retirement_scheduled,
         }
 
     def mark_finished_task(self) -> None:
@@ -213,6 +215,7 @@ class WorkerPool(WorkerPoolProtocol):
         scaledown_interval: float = 15.0,
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
+        worker_max_lifetime_seconds: float | None = 4 * 60 * 60,
     ) -> None:
         self.min_workers = min_workers
 
@@ -252,10 +255,43 @@ class WorkerPool(WorkerPoolProtocol):
         self.scaledown_interval = scaledown_interval  # seconds for poll to see if we should retire workers
         self.worker_stop_wait = worker_stop_wait  # seconds to wait for a worker to exit on its own before SIGTERM, SIGKILL
         self.worker_removal_wait = worker_removal_wait  # after worker process exits, seconds to keep its record, for stats
+        self.worker_max_lifetime_seconds = worker_max_lifetime_seconds
 
         # queuer and blocker objects hold an internal inventory of tasks that can not yet run
         self.queuer = Queuer(self.workers)
         self.blocker = Blocker(self.queuer)
+
+    async def retire_aged_workers(self) -> None:
+        """Schedule retires for workers older than the configured lifetime"""
+        if self.worker_max_lifetime_seconds is None:
+            return
+
+        max_lifetime = self.worker_max_lifetime_seconds
+        now = time.monotonic()
+        workers_to_stop: list[PoolWorker] = []
+        async with self.workers.management_lock:
+            for worker in self.workers:
+                if worker.status != 'ready':
+                    continue
+                if worker.retirement_scheduled:
+                    if worker.current_task is None:
+                        workers_to_stop.append(worker)
+                    continue
+                worker_age = now - worker.created_at
+                if worker_age < max_lifetime:
+                    continue
+                worker.retirement_scheduled = True
+                if worker.current_task:
+                    uuid = worker.current_task.get('uuid', '<unknown>')
+                    logger.info(
+                        f'Worker {worker.worker_id} reached max lifetime while running task (uuid={uuid}), waiting for completion before retirement'
+                    )
+                else:
+                    workers_to_stop.append(worker)
+
+        for worker in workers_to_stop:
+            if worker.status == 'ready':
+                await worker.signal_stop()
 
     @property
     def processed_count(self) -> int:
@@ -428,6 +464,7 @@ class WorkerPool(WorkerPoolProtocol):
         """Enforces worker policy like min and max workers, and later, auto scale-down"""
         while not self.shared.exit_event.is_set():
 
+            await self.retire_aged_workers()
             scaled_ct = await self.scale_workers()
 
             await self.manage_new_workers()
@@ -471,7 +508,7 @@ class WorkerPool(WorkerPoolProtocol):
         workers_to_stop = []
         for worker in self.workers:
             async with self.workers.management_lock:
-                if worker.counts_for_capacity:
+                if worker.counts_for_capacity or worker.retirement_scheduled:
                     await worker.signal_stop()
                     workers_to_stop.append(worker)
         stop_tasks = [worker.stop() for worker in workers_to_stop]
@@ -597,6 +634,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.last_used_by_ct[running_ct] = time.monotonic()  # scale down may be allowed, clock starting now
 
         # Mark the worker as no longer busy
+        should_stop_for_retirement = False
         async with self.workers.management_lock:
             if worker.is_active_cancel and result == '<cancel>':
                 self.canceled_count += 1
@@ -604,12 +642,17 @@ class WorkerPool(WorkerPoolProtocol):
                 self.finished_count += 1
             worker.mark_finished_task()
             self.workers.move_to_end(worker.worker_id)
+            if worker.retirement_scheduled:
+                should_stop_for_retirement = True
 
         if not self.queuer.queued_messages and all(worker.current_task is None for worker in self.workers):
             self.events.work_cleared.set()
 
         if 'timeout' in message:
             await self.timeout_runner.kick()
+
+        if should_stop_for_retirement and worker.status == 'ready':
+            await worker.signal_stop()
 
     @property
     def status_counts(self) -> dict[str, int]:

@@ -23,3 +23,8 @@ as enforced by `PoolWorker.is_ready` and `Queuer.get_free_worker()`.
 These definitions ensure that once a worker transitions away from `ready`, no new
 tasks will be dispatched to it, even if the management code releases its lock before
 `worker.stop()` finishes the teardown sequence.
+
+Separately from the status field, a worker may be “scheduled for retirement” once it
+exceeds the configured maximum lifetime. A retiring worker keeps its existing task,
+but `is_ready` becomes false so that no new work is assigned. Once the worker becomes
+idle it is issued a stop signal and transitions to the normal shutdown flow.
