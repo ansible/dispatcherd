@@ -12,6 +12,9 @@ from prometheus_client.registry import Collector
 
 from ..protocols import DispatcherMain
 
+PLAINTEXT_UTF8 = "text/plain; charset=utf-8"
+PLAINTEXT_METRICS = "text/plain; version=0.0.4; charset=utf-8"
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +89,6 @@ class CustomHttpServer:
                 await self._send_response(
                     writer=writer,
                     status_line="HTTP/1.1 500 Internal Server Error",
-                    content_type="text/plain; charset=utf-8",
                     body="Internal Server Error",
                     addr=addr,
                 )
@@ -125,7 +127,6 @@ class CustomHttpServer:
             await self._send_response(
                 writer=writer,
                 status_line="HTTP/1.1 400 Bad Request",
-                content_type="text/plain; charset=utf-8",
                 body="Bad Request",
                 addr=addr,
             )
@@ -143,7 +144,6 @@ class CustomHttpServer:
             await self._send_response(
                 writer=writer,
                 status_line="HTTP/1.1 400 Bad Request",
-                content_type="text/plain; charset=utf-8",
                 body="Bad Request",
                 addr=addr,
             )
@@ -164,28 +164,39 @@ class CustomHttpServer:
             if header_line in (b'\r\n', b'\n'):
                 break
 
-        if method == 'GET' and path == '/metrics':
-            try:
-                metrics_payload = generate_latest(self.registry)
-                body = metrics_payload.decode('utf-8')
-                status_line = "HTTP/1.1 200 OK"
-                content_type = "text/plain; version=0.0.4; charset=utf-8"
-                self.metrics_requests_served += 1
-            except Exception:
-                # Raising any exceptions would pose problems for the overall task system, so logged
-                logger.exception("Error generating metrics")
-                body = "Error generating metrics"
-                status_line = "HTTP/1.1 500 Internal Server Error"
-                content_type = "text/plain; charset=utf-8"
-                self.internal_error_count += 1
-        else:
-            # For any other path or method, respond with 404 Not Found
-            body = "Not Found"
-            status_line = "HTTP/1.1 404 Not Found"
-            content_type = "text/plain; charset=utf-8"
+        if method != 'GET' or path != '/metrics':
             self.not_found_count += 1
+            await self._send_response(
+                writer=writer,
+                status_line="HTTP/1.1 404 Not Found",
+                body="Not Found",
+                addr=addr,
+            )
+            return
 
-        await self._send_response(writer, status_line, content_type, body, addr)
+        try:
+            metrics_payload = generate_latest(self.registry)
+        except Exception:
+            # Raising any exceptions would pose problems for the overall task system, so logged
+            logger.exception("Error generating metrics")
+            self.internal_error_count += 1
+            await self._send_response(
+                writer=writer,
+                status_line="HTTP/1.1 500 Internal Server Error",
+                body="Error generating metrics",
+                addr=addr,
+            )
+            return
+
+        body = metrics_payload.decode('utf-8')
+        self.metrics_requests_served += 1
+        await self._send_response(
+            writer,
+            "HTTP/1.1 200 OK",
+            body,
+            addr,
+            content_type=PLAINTEXT_METRICS,
+        )
 
     async def _readline_with_timeout(
         self,
@@ -206,7 +217,6 @@ class CustomHttpServer:
         await self._send_response(
             writer=writer,
             status_line="HTTP/1.1 408 Request Timeout",
-            content_type="text/plain; charset=utf-8",
             body="Request Timeout",
             addr=addr,
         )
@@ -215,9 +225,9 @@ class CustomHttpServer:
         self,
         writer: asyncio.StreamWriter,
         status_line: str,
-        content_type: str,
         body: str,
         addr: Any,
+        content_type: str = PLAINTEXT_UTF8,
     ) -> None:
         body_bytes = body.encode('utf-8')
         response_headers = f"{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {len(body_bytes)}\r\nConnection: close\r\n\r\n"
