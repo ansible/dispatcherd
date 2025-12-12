@@ -283,9 +283,7 @@ class WorkerPool(WorkerPoolProtocol):
                 worker.retirement_scheduled = True
                 if worker.current_task:
                     uuid = worker.current_task.get('uuid', '<unknown>')
-                    logger.info(
-                        f'Worker {worker.worker_id} reached max lifetime while running task (uuid={uuid}), waiting for completion before retirement'
-                    )
+                    logger.info(f'Worker {worker.worker_id} reached max lifetime while running task (uuid={uuid}), waiting for completion before retirement')
                 else:
                     workers_to_stop.append(worker)
 
