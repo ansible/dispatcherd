@@ -9,8 +9,7 @@ service:
   main_kwargs:
     node_id: demo-server-a
     chunk_message_timeout_seconds: 5
-  metrics_kwargs:
-    log_level: debug
+  metrics_kwargs: {}
 worker:
   worker_kwargs:
     idle_timeout: 3

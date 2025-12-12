@@ -236,22 +236,22 @@ dispatcherd
 In another tab run:
 
 ```
-curl http://localhost:8070
+curl http://localhost:8070/metrics
 ```
 
 This should report metrics in the following general format:
 
 ```
-$ curl http://localhost:8070
+$ curl http://localhost:8070/metrics
 # HELP dispatcher_messages_received_total Number of messages received by dispatchermain
 # TYPE dispatcher_messages_received_total counter
-dispatcher_messages_received_total 263.0
+dispatcher_messages_received_total 12.0
 # HELP dispatcher_control_messages_count_total Number of control messages received.
 # TYPE dispatcher_control_messages_count_total counter
-dispatcher_control_messages_count_total 0.0
+dispatcher_control_messages_count_total 1.0
 # HELP dispatcher_worker_count_total Number of workers running.
 # TYPE dispatcher_worker_count_total counter
-dispatcher_worker_count_total 3.0
+dispatcher_worker_count_total 2.0
 ```
 
 We expect to add more metrics in the future.

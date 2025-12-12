@@ -74,12 +74,13 @@ def from_settings(settings: LazySettings = global_settings) -> DispatcherMain:
     shared = SharedAsyncObjects()
     producers = producers_from_settings(settings=settings, shared=shared)
     pool = pool_from_settings(settings=settings, shared=shared)
-    extra_kwargs = settings.service.get('main_kwargs', {})
+    main_kwargs = settings.service.get('main_kwargs') or {}
+    extra_kwargs = main_kwargs.copy()
 
-    metrics_kwargs = settings.service.get('metrics_kwargs')
-    if metrics_kwargs:
+    if settings.service.get('metrics_kwargs') is not None:
         from .service.metrics import DispatcherMetricsServer
 
+        metrics_kwargs = settings.service.get('metrics_kwargs')
         extra_kwargs['metrics'] = DispatcherMetricsServer(**metrics_kwargs)
 
     return DispatcherMain(producers=producers, pool=pool, shared=shared, **extra_kwargs)
