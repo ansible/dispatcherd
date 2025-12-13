@@ -117,6 +117,10 @@ These options are mainly concerned with worker
 management. For instance, auto-scaling options will be here,
 like worker count, etc.
 
+`worker_max_lifetime_seconds` controls how long a worker process may live before
+it will be retired. The default is 4 hours. Setting it to `null` disables
+automatic retirement, which is not recommended for long-running services.
+
 #### Producers
 
 These are "producers of tasks" in the dispatcherd service.
