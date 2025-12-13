@@ -122,10 +122,9 @@ async def test_workers_retire_when_exceeding_max_lifetime(pg_message):
                 await asyncio.sleep(0.01)
 
         await asyncio.wait_for(_wait_for_worker(1), timeout=5)
-        worker0 = pool.workers.get_by_id(0)
+        worker0_status = pool.workers.get_by_id(0).status if 0 in pool.workers else 'removed'
         worker1 = pool.workers.get_by_id(1)
 
-        assert worker0.retirement_scheduled is True
-        assert worker0.finished_count == 1
+        assert worker0_status != 'ready'
         assert worker1.finished_count == 1
         assert dispatcher.pool.finished_count == 2

@@ -32,8 +32,6 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.stopping_at: float | None = None
         self.retired_at: float | None = None
         self.is_active_cancel: bool = False
-        self.retirement_scheduled: bool = False
-
         # Tracking information for worker
         self.finished_count = 0
         self.status: Literal['initialized', 'spawned', 'starting', 'ready', 'stopping', 'exited', 'error', 'retired'] = 'initialized'
@@ -56,12 +54,12 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     @property
     def is_ready(self) -> bool:
         """Worker is ready to receive task requests"""
-        return bool(self.status == 'ready' and not self.retirement_scheduled)
+        return bool(self.status == 'ready')
 
     @property
     def counts_for_capacity(self) -> bool:
         """Worker is ready to accept work or may become ready very soon, relevant for scale-up decisions"""
-        return bool(self.status in ('initialized', 'spawned', 'starting', 'ready') and not self.retirement_scheduled)
+        return bool(self.status in ('initialized', 'spawned', 'starting', 'ready'))
 
     @property
     def expected_alive(self) -> bool:
@@ -82,11 +80,11 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         logger.debug(f'Joining worker {self.worker_id} pid={self.process.pid} subprocess')
         self.process.join(timeout)  # argument is timeout
 
-    async def signal_stop(self) -> None:
+    async def signal_stop(self, *, cancel_if_busy: bool = True) -> None:
         "Tell the worker to stop and return"
         self.process.message_queue.put("stop")
         logger.debug(f'Sent stop message to worker_id={self.worker_id}')
-        if self.current_task:
+        if cancel_if_busy and self.current_task:
             uuid = self.current_task.get('uuid', '<unknown>')
             logger.warning(f'Worker {self.worker_id} is currently running task (uuid={uuid}), canceling for shutdown')
             self.cancel()
@@ -146,16 +144,13 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
             'current_task_uuid': self.current_task.get('uuid', '<unknown>') if self.current_task else None,
             'active_cancel': self.is_active_cancel,
             'age': time.monotonic() - self.created_at,
-            'retirement_scheduled': self.retirement_scheduled,
         }
 
-    async def mark_finished_task(self, *, stop_for_retirement: bool = False) -> None:
+    def mark_finished_task(self) -> None:
         self.is_active_cancel = False
         self.current_task = None
         self.started_at = None
         self.finished_count += 1
-        if stop_for_retirement and self.status == 'ready':
-            await self.signal_stop()
 
     def next_wakeup(self) -> float | None:
         """Used by next-run-runner for setting wakeups for task timeouts"""
@@ -270,28 +265,17 @@ class WorkerPool(WorkerPoolProtocol):
 
         max_lifetime = self.worker_max_lifetime_seconds
         now = time.monotonic()
-        workers_to_stop: list[PoolWorker] = []
         async with self.workers.management_lock:
-            for worker in self.workers:
+            for worker in list(self.workers):
                 if worker.status != 'ready':
-                    continue
-                if worker.retirement_scheduled:
-                    if worker.current_task is None:
-                        workers_to_stop.append(worker)
                     continue
                 worker_age = now - worker.created_at
                 if worker_age < max_lifetime:
                     continue
-                worker.retirement_scheduled = True
                 if worker.current_task:
                     uuid = worker.current_task.get('uuid', '<unknown>')
-                    logger.info(f'Worker {worker.worker_id} reached max lifetime while running task (uuid={uuid}), waiting for completion before retirement')
-                else:
-                    workers_to_stop.append(worker)
-
-            for worker in workers_to_stop:
-                if worker.status == 'ready':
-                    await worker.signal_stop()
+                    logger.info(f'Worker {worker.worker_id} reached max lifetime while running task (uuid={uuid}), sending stop request after completion')
+                await worker.signal_stop(cancel_if_busy=False)
 
     @property
     def processed_count(self) -> int:
@@ -508,7 +492,7 @@ class WorkerPool(WorkerPoolProtocol):
         workers_to_stop = []
         for worker in self.workers:
             async with self.workers.management_lock:
-                if worker.counts_for_capacity or worker.retirement_scheduled:
+                if worker.counts_for_capacity:
                     await worker.signal_stop()
                     workers_to_stop.append(worker)
         stop_tasks = [worker.stop() for worker in workers_to_stop]
@@ -639,7 +623,7 @@ class WorkerPool(WorkerPoolProtocol):
                 self.canceled_count += 1
             else:
                 self.finished_count += 1
-            await worker.mark_finished_task(stop_for_retirement=worker.retirement_scheduled)
+            worker.mark_finished_task()
             self.workers.move_to_end(worker.worker_id)
 
         if not self.queuer.queued_messages and all(worker.current_task is None for worker in self.workers):
