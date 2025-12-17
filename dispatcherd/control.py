@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from .chunking import ChunkAccumulator
 from .factories import get_broker
@@ -94,6 +94,12 @@ class Control:
         self.broker_name = broker_name
         self.broker_config = broker_config
 
+    def _control_broker_overrides(self) -> dict[str, Any]:
+        """Return broker kwargs that disable self-checks for control actions."""
+        if self.broker_name == 'pg_notify':
+            return {'max_connection_idle_seconds': None, 'max_self_check_message_age_seconds': None}
+        return {}
+
     @classmethod
     def generate_reply_queue_name(cls) -> str:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
@@ -108,7 +114,7 @@ class Control:
 
     async def acontrol_with_reply(self, command: str, expected_replies: int = 1, timeout: int = 1, data: Optional[dict] = None) -> list[dict]:
         reply_queue = Control.generate_reply_queue_name()
-        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+        broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue], **self._control_broker_overrides())
         send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
 
         control_callbacks = BrokerCallbacks(broker=broker, queuename=self.queuename, send_message=send_message, expected_replies=expected_replies)
@@ -127,7 +133,7 @@ class Control:
         return control_callbacks.received_replies
 
     async def acontrol(self, command: str, data: Optional[dict] = None) -> None:
-        broker = get_broker(self.broker_name, self.broker_config, channels=[])
+        broker = get_broker(self.broker_name, self.broker_config, channels=[], **self._control_broker_overrides())
         send_message = self.create_message(command=command, send_data=data)
         try:
             await broker.apublish_message(message=send_message)
@@ -141,9 +147,9 @@ class Control:
 
         reply_accumulator = ChunkAccumulator()
         try:
-            broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue])
+            broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue], **self._control_broker_overrides())
         except TypeError:
-            broker = get_broker(self.broker_name, self.broker_config)
+            broker = get_broker(self.broker_name, self.broker_config, **self._control_broker_overrides())
 
         callbacks = SyncBrokerCallbacks(control=self, broker=broker, message=send_message)
 
@@ -171,7 +177,7 @@ class Control:
 
     def control(self, command: str, data: Optional[dict] = None) -> None:
         """Send a fire-and-forget control message synchronously."""
-        broker = get_broker(self.broker_name, self.broker_config)
+        broker = get_broker(self.broker_name, self.broker_config, **self._control_broker_overrides())
         send_message = self.create_message(command=command, send_data=data)
         try:
             broker.publish_message(channel=self.queuename, message=send_message)

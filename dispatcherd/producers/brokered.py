@@ -16,6 +16,7 @@ class BrokeredProducer(BaseProducer):
         self.production_task: Optional[asyncio.Task] = None
         self.broker = broker
         self.dispatcher: Optional[DispatcherMain] = None
+        self.recycle_count = 0
         super().__init__()
 
     async def recycle(self) -> None:
@@ -30,10 +31,18 @@ class BrokeredProducer(BaseProducer):
         await asyncio.sleep(1)
         assert self.dispatcher
         await self.start_producing(self.dispatcher)
+        self.record_recycle()
 
     def __str__(self) -> str:
         broker_module = self.broker.__module__.rsplit('.', 1)[-1]
         return f'{broker_module}-producer'
+
+    def get_status_data(self) -> dict:
+        data = super().get_status_data()
+        data['recycle_count'] = self.recycle_count
+        if hasattr(self.broker, 'get_self_check_stats'):
+            data['broker_self_check'] = self.broker.get_self_check_stats()
+        return data
 
     async def start_producing(self, dispatcher: DispatcherMain) -> None:
         self.production_task = asyncio.create_task(self.produce_forever(dispatcher), name=f'{self.broker.__module__}_production')
@@ -71,3 +80,6 @@ class BrokeredProducer(BaseProducer):
             self.production_task = None
 
         await self.broker.aclose()
+
+    def record_recycle(self) -> None:
+        self.recycle_count += 1
