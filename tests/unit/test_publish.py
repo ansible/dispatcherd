@@ -2,8 +2,8 @@ from unittest import mock
 
 import pytest
 
-from dispatcherd.publish import task, submit_task
 from dispatcherd.processors.blocker import Blocker
+from dispatcherd.publish import submit_task, task
 
 
 @pytest.fixture

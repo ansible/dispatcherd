@@ -1,6 +1,5 @@
 import multiprocessing
 import os
-from multiprocessing import Queue
 
 import pytest
 

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from dispatcherd.chunking import split_message
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 from dispatcherd.service.main import DispatcherMain
-from dispatcherd.chunking import split_message
 
 
 class DummyPool:

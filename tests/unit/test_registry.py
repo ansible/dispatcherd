@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from dispatcherd.registry import DispatcherMethod, DispatcherMethodRegistry, InvalidMethod, UnregisteredMethod
+from dispatcherd.registry import DispatcherMethod, InvalidMethod, UnregisteredMethod
 from tests.data.nested.nested_registry import surprised_registry
 
 

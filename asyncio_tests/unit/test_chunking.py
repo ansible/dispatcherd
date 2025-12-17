@@ -3,7 +3,6 @@ import json
 import pytest
 
 from dispatcherd.chunking import ChunkAccumulator
-
 from tests.unit import test_chunking as sync_chunking
 
 

@@ -1,16 +1,15 @@
-import asyncio
+import multiprocessing
 import time
-from unittest import mock
-
 from typing import Callable
+from unittest import mock
 
 import pytest
 
-from dispatcherd.service.pool import WorkerPool
-from dispatcherd.service.main import DispatcherMain
-from dispatcherd.service.process import ProcessManager
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
-import multiprocessing
+from dispatcherd.service.main import DispatcherMain
+from dispatcherd.service.pool import WorkerPool
+from dispatcherd.service.process import ProcessManager
+
 
 @pytest.fixture
 def pool_factory(test_settings) -> Callable[..., WorkerPool]:
@@ -20,8 +19,8 @@ def pool_factory(test_settings) -> Callable[..., WorkerPool]:
         kwargs.update(kwargs_overrides)
         pool = WorkerPool(**kwargs)
         return pool
-    return _factory
 
+    return _factory
 
 
 @pytest.mark.asyncio

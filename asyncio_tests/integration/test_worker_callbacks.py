@@ -1,6 +1,6 @@
-from typing import AsyncIterator
-import os
 import asyncio
+import os
+from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
@@ -8,14 +8,17 @@ import pytest_asyncio
 from dispatcherd.protocols import DispatcherMain
 from dispatcherd.testing.asyncio import adispatcher_service
 
-
 LOG_PATH = 'logs/app.log'
 
 
 @pytest.fixture(scope='session')
 def callback_config():
     """No brokers, just the pool with customizations for callback"""
-    return {"version": 2, "service": {"main_kwargs": {"node_id": "callback-test-server"}}, "worker": {"worker_cls": "tests.data.callbacks.TestWorker", "worker_kwargs": {"idle_timeout": 0.1}}}
+    return {
+        "version": 2,
+        "service": {"main_kwargs": {"node_id": "callback-test-server"}},
+        "worker": {"worker_cls": "tests.data.callbacks.TestWorker", "worker_kwargs": {"idle_timeout": 0.1}},
+    }
 
 
 @pytest_asyncio.fixture
@@ -30,9 +33,7 @@ async def acallback_dispatcher(callback_config) -> AsyncIterator[DispatcherMain]
 @pytest.mark.asyncio
 async def test_worker_callback_usage(acallback_dispatcher):
 
-    await acallback_dispatcher.process_message({
-        'task': 'lambda: "This worked!"'
-    })
+    await acallback_dispatcher.process_message({'task': 'lambda: "This worked!"'})
 
     await asyncio.sleep(0.15)  # to get the idle log
 

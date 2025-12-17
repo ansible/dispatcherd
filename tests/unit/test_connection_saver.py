@@ -53,4 +53,3 @@ def test_connection_saver_thread_safety():
     # Check that the connection supports close() properly.
     results[0].close()
     assert results[0].closed is True
-

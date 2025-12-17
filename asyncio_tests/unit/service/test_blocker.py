@@ -1,22 +1,17 @@
 import pytest
 
+from dispatcherd.processors.blocker import Blocker
+from dispatcherd.registry import registry
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
-from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
-from dispatcherd.registry import registry
-from dispatcherd.processors.blocker import Blocker
-
 from tests.data.methods import print_hello
 
 
 @pytest.mark.asyncio
 async def test_block_multiple_tasks(test_settings):
     dmethod = registry.get_from_callable(print_hello)
-    task_data = dmethod.get_async_body(
-        processor_options=[
-            Blocker.Params(on_duplicate='serial')
-        ]
-    )
+    task_data = dmethod.get_async_body(processor_options=[Blocker.Params(on_duplicate='serial')])
     assert task_data['on_duplicate'] == 'serial'
 
     pm = ProcessManager(settings=test_settings)

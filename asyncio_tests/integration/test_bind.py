@@ -36,6 +36,7 @@ async def test_bind_not_set(apg_dispatcher, pg_message, caplog):
 
     assert apg_dispatcher.pool.finished_count == 1
 
+
 @pytest.mark.asyncio
 async def test_control_action(apg_dispatcher, test_settings):
     assert apg_dispatcher.control_count == 0

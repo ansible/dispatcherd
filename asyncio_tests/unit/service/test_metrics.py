@@ -1,8 +1,9 @@
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from prometheus_client import CollectorRegistry
+
 from dispatcherd.service.metrics import CustomHttpServer, DispatcherMetricsServer, RequestTimeoutError
 
 # Mark all tests in this file as asyncio
@@ -179,9 +180,7 @@ async def test_handle_request_request_line_timeout(server, mock_stream_writer):
 
 async def test_handle_request_header_timeout(server, mock_stream_writer):
     """Header read timeouts should also return 408."""
-    server._readline_with_timeout = AsyncMock(
-        side_effect=[b"GET /metrics HTTP/1.1\r\n", RequestTimeoutError("header line")]
-    )
+    server._readline_with_timeout = AsyncMock(side_effect=[b"GET /metrics HTTP/1.1\r\n", RequestTimeoutError("header line")])
 
     await server.handle_request(AsyncMock(), mock_stream_writer)
 

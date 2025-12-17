@@ -3,7 +3,6 @@ from pathlib import Path
 
 from dispatcherd.worker.task import TaskWorker
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.propagate = False

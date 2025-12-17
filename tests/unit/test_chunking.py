@@ -300,4 +300,3 @@ def test_chunk_accumulator_handles_invalid_json(caplog):
     assert 'Failed to decode chunked message' in caplog.text
     assert acc.total_chunks_received == 1
     assert acc.errored_assemblies == 1
-

@@ -20,10 +20,10 @@ clean:
 	find . -mindepth 1 -type d -empty -delete
 
 linters:
-	black dispatcherd/
-	isort dispatcherd/
-	flake8 dispatcherd/
-	mypy dispatcherd
+	black dispatcherd/ tests/ asyncio_tests/
+	isort dispatcherd/ tests/ asyncio_tests/
+	flake8 dispatcherd/ tests/ asyncio_tests/
+	mypy dispatcherd tests asyncio_tests
 
 demo:
 	docker compose up -d --wait

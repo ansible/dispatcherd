@@ -31,37 +31,45 @@ async def test_workers_reorder_and_dispatch_longest_idle(aorder_dispatcher):
     assert list(pool.workers.workers.keys()) == [0, 1]
 
     pool.events.work_cleared.clear()
-    await aorder_dispatcher.process_message({
-        "task": "tests.data.methods.sleep_function",
-        "kwargs": {"seconds": 0.1},
-        "uuid": "t1",
-    })
-    await aorder_dispatcher.process_message({
-        "task": "tests.data.methods.sleep_function",
-        "kwargs": {"seconds": 0.05},
-        "uuid": "t2",
-    })
+    await aorder_dispatcher.process_message(
+        {
+            "task": "tests.data.methods.sleep_function",
+            "kwargs": {"seconds": 0.1},
+            "uuid": "t1",
+        }
+    )
+    await aorder_dispatcher.process_message(
+        {
+            "task": "tests.data.methods.sleep_function",
+            "kwargs": {"seconds": 0.05},
+            "uuid": "t2",
+        }
+    )
     await asyncio.wait_for(pool.events.work_cleared.wait(), timeout=1)
 
     assert list(pool.workers.workers.keys()) == [1, 0]
 
     pool.events.work_cleared.clear()
-    await aorder_dispatcher.process_message({
-        "task": "tests.data.methods.sleep_function",
-        "kwargs": {"seconds": 0.01},
-        "uuid": "t3",
-    })
+    await aorder_dispatcher.process_message(
+        {
+            "task": "tests.data.methods.sleep_function",
+            "kwargs": {"seconds": 0.01},
+            "uuid": "t3",
+        }
+    )
     await asyncio.sleep(0.01)
     assert pool.workers.get_by_id(1).current_task["uuid"] == "t3"
     assert pool.workers.get_by_id(0).current_task is None
     await asyncio.wait_for(pool.events.work_cleared.wait(), timeout=1)
 
     pool.events.work_cleared.clear()
-    await aorder_dispatcher.process_message({
-        "task": "tests.data.methods.sleep_function",
-        "kwargs": {"seconds": 0.01},
-        "uuid": "t4",
-    })
+    await aorder_dispatcher.process_message(
+        {
+            "task": "tests.data.methods.sleep_function",
+            "kwargs": {"seconds": 0.01},
+            "uuid": "t4",
+        }
+    )
     await asyncio.sleep(0.01)
     assert pool.workers.get_by_id(0).current_task["uuid"] == "t4"
     await asyncio.wait_for(pool.events.work_cleared.wait(), timeout=1)
@@ -77,7 +85,8 @@ async def test_process_finished_with_removed_worker():
     removed from self.workers before process_finished is called.
     """
     from unittest.mock import MagicMock, patch
-    from dispatcherd.service.pool import WorkerData, PoolWorker
+
+    from dispatcherd.service.pool import PoolWorker, WorkerData
 
     # Create a minimal WorkerData instance
     worker_data = WorkerData()

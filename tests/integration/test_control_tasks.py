@@ -1,15 +1,14 @@
-import pytest
 import json
-from typing import Generator
 import time
+from typing import Generator
 
-from dispatcherd.testing.subprocess import dispatcher_service, CommunicationItems
-from dispatcherd.factories import get_publisher_from_settings, get_control_from_settings
-from dispatcherd.config import DispatcherSettings
-from dispatcherd.protocols import Broker
+import pytest
 
 from conftest import CONNECTION_STRING
-
+from dispatcherd.config import DispatcherSettings
+from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
+from dispatcherd.protocols import Broker
+from dispatcherd.testing.subprocess import CommunicationItems, dispatcher_service
 
 BASIC_CONFIG = {
     "version": 2,
@@ -18,9 +17,9 @@ BASIC_CONFIG = {
             "channels": ['test_channel', 'test_channel2', 'test_channel3'],
             "config": {'conninfo': CONNECTION_STRING},
             "sync_connection_factory": "dispatcherd.brokers.pg_notify.connection_saver",
-            "default_publish_channel": "test_channel"
+            "default_publish_channel": "test_channel",
         }
-    }
+    },
 }
 
 

@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from dispatcherd.control import BrokerCallbacks, Control
+from dispatcherd.control import BrokerCallbacks
 from dispatcherd.protocols import Broker
 
 
