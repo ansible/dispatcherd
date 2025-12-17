@@ -1,5 +1,6 @@
 DOCKER_COMPOSE ?= docker compose
 TEST_DIRS ?= tests/
+ASYNC_TEST_DIRS ?= asyncio_tests/
 
 
 # Mostly copied from DAB
@@ -33,4 +34,4 @@ stop-demo:
 ## Runs pytest synchronous and async tests in different processes
 test:
 	pytest $(TEST_DIRS)
-	pytest $(TEST_DIRS) -m "asyncio"
+	pytest $(ASYNC_TEST_DIRS)

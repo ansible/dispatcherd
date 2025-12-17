@@ -4,7 +4,7 @@ import pytest
 
 import psycopg
 
-from tests.conftest import CONNECTION_STRING
+from conftest import CONNECTION_STRING
 
 from dispatcherd.producers.brokered import BrokeredProducer
 from dispatcherd.brokers.pg_notify import connection_save

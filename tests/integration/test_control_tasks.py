@@ -8,7 +8,7 @@ from dispatcherd.factories import get_publisher_from_settings, get_control_from_
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.protocols import Broker
 
-from tests.conftest import CONNECTION_STRING
+from conftest import CONNECTION_STRING
 
 
 BASIC_CONFIG = {
