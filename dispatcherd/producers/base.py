@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from ..protocols import Producer as ProducerProtocol
 
@@ -15,6 +16,10 @@ class BaseProducer(ProducerProtocol):
     def __init__(self) -> None:
         self.events = ProducerEvents()
         self.produced_count = 0
+        self.started_at = time.monotonic()
 
     def get_status_data(self) -> dict:
-        return {'produced_count': self.produced_count}
+        return {
+            'produced_count': self.produced_count,
+            'uptime_seconds': time.monotonic() - self.started_at,
+        }

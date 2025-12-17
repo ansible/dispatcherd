@@ -73,11 +73,13 @@ class Broker(BrokerProtocol):
         if not (config or sync_connection_factory or sync_connection):
             raise RuntimeError('Must specify either config or sync_connection_factory')
 
-        if max_connection_idle_seconds:
+        if max_connection_idle_seconds is not None:
             if max_self_check_message_age_seconds is None:
                 raise RuntimeError('max_self_check_message_age_seconds must be specified if health checks are enabled')
             if max_self_check_message_age_seconds > max_connection_idle_seconds:
                 raise RuntimeError('max_self_check_message_age_seconds must be smaller than max_connection_idle_seconds')
+        else:
+            max_self_check_message_age_seconds = None
 
         # Used to identify the broker in self check messages
         self.broker_id = f"broker_{str(uuid.uuid4()).replace('-', '_')}"
@@ -100,17 +102,20 @@ class Broker(BrokerProtocol):
             self._config = {}
 
         self.user_channels = channels
-        # Generate a special channel for broker self checks
-        self.self_check_channel = self.generate_self_check_channel_name()
-
         server_channels = list(channels)
-        if self.self_check_channel not in server_channels:
-            server_channels.append(self.self_check_channel)
+        self.self_check_channel: str | None
+        if self.max_connection_idle_seconds is not None:
+            # Generate a special channel for broker self checks
+            self.self_check_channel = self.generate_self_check_channel_name()
+            if self.self_check_channel not in server_channels:
+                server_channels.append(self.self_check_channel)
+        else:
+            self.self_check_channel = None
         self.channels = server_channels
 
         self.default_publish_channel = default_publish_channel
         self.self_check_status = BrokerSelfCheckStatus.IDLE
-        self.last_self_check_message_time = time.monotonic()
+        self.last_self_check_message_time = time.monotonic() if self.max_connection_idle_seconds is not None else None
 
         # If we are in the notification loop (receiving messages),
         # then we have to break out before sending messages
@@ -118,6 +123,10 @@ class Broker(BrokerProtocol):
         self.notify_loop_active: bool = False
         self.notify_queue: list = []
         self.max_message_bytes = PG_NOTIFY_MAX_PAYLOAD_BYTES
+        # Track self-check outcomes for status reporting
+        self.self_check_success_count = 0
+        self.self_check_success_total_duration = 0.0
+        self.self_check_success_max_duration = 0.0
 
     @classmethod
     def generate_self_check_channel_name(cls) -> str:
@@ -172,11 +181,16 @@ class Broker(BrokerProtocol):
         return psycopg.sql.SQL("UNLISTEN *;")
 
     async def initiate_self_check(self) -> None:
+        if self.max_connection_idle_seconds is None:
+            logger.debug('Self check initiation skipped because self checks are disabled')
+            return
         if self.self_check_status == BrokerSelfCheckStatus.IN_PROGRESS:
             # another self-check message is in flight
+            assert self.last_self_check_message_time is not None
             delta = time.monotonic() - self.last_self_check_message_time
             raise RuntimeError(f'self check message for broker {self.broker_id} did not arrive in {delta} seconds')
 
+        assert self.self_check_channel is not None
         await self.apublish_message(channel=self.self_check_channel, message=json.dumps({'self_check': True, 'task': f'lambda: "{self.broker_id}"'}))
         self.self_check_status = BrokerSelfCheckStatus.IN_PROGRESS
         self.last_self_check_message_time = time.monotonic()
@@ -185,6 +199,9 @@ class Broker(BrokerProtocol):
         """Verify a received self check message: check if it was sent from the same node and
         is not outdated
         """
+        if self.max_connection_idle_seconds is None:
+            logger.debug('Self check verification skipped because self checks are disabled')
+            return
         if self.broker_id not in message['task']:
             # sent from a different node, ignore it
             logger.debug(f'Ignoring self-check message due to broker_id not matching, {message["task"]}!={self.broker_id}')
@@ -199,7 +216,8 @@ class Broker(BrokerProtocol):
 
         assert self.max_self_check_message_age_seconds is not None
         if delta_seconds < self.max_self_check_message_age_seconds:
-            logger.info(f'self check succeeded, message received after {round(delta_seconds, 2)} seconds, broker-id {self.broker_id}')
+            self._record_self_check_success(delta_seconds)
+            logger.debug(f'self check succeeded, message received after {round(delta_seconds, 2)} seconds, broker-id {self.broker_id}')
         else:
             raise RuntimeError(f'self check failed, message received after {round(delta_seconds, 2)} seconds, broker-id {self.broker_id}')
 
@@ -224,10 +242,11 @@ class Broker(BrokerProtocol):
                         if self.notify_queue:
                             break
                     else:
-                        logger.info(
-                            f'No message received since {self.max_connection_idle_seconds} seconds, starting self check to channel={self.self_check_channel}'
-                        )
-                        await self.initiate_self_check()
+                        if self.max_connection_idle_seconds is not None:
+                            logger.debug(
+                                f'No message received for {self.max_connection_idle_seconds} seconds, starting self check to channel={self.self_check_channel}'
+                            )
+                            await self.initiate_self_check()
 
                     self.notify_loop_active = False
                     for reply_to, reply_message in self.notify_queue:
@@ -270,7 +289,7 @@ class Broker(BrokerProtocol):
 
         # Reset any server-related vars from __init__
         self.self_check_status = BrokerSelfCheckStatus.IDLE
-        self.last_self_check_message_time = time.monotonic()
+        self.last_self_check_message_time = time.monotonic() if self.max_connection_idle_seconds is not None else None
         self.notify_loop_active = False
         self.notify_queue = []
 
@@ -343,6 +362,28 @@ class Broker(BrokerProtocol):
             self._sync_connection.close()
             self._sync_connection = None
             self.owns_sync_connection = False
+
+    def _record_self_check_success(self, delta_seconds: float) -> None:
+        self.self_check_success_count += 1
+        self.self_check_success_total_duration += delta_seconds
+        if delta_seconds > self.self_check_success_max_duration:
+            self.self_check_success_max_duration = delta_seconds
+
+    def get_self_check_stats(self) -> dict[str, Any]:
+        """Return aggregated metrics for broker self-checks."""
+        enabled = self.max_connection_idle_seconds is not None and self.max_self_check_message_age_seconds is not None
+        success_count = self.self_check_success_count if enabled else 0
+        average_time = None
+        max_time = None
+        if enabled and success_count:
+            average_time = self.self_check_success_total_duration / success_count
+            max_time = self.self_check_success_max_duration
+        return {
+            'enabled': enabled,
+            'success_count': success_count,
+            'average_time_seconds': average_time,
+            'max_time_seconds': max_time,
+        }
 
 
 class ConnectionSaver:
