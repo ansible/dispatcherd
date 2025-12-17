@@ -74,7 +74,7 @@ async def test_metrics_invalid_utf8_returns_400(ametrics_dispatcher):
     reader, writer = await asyncio.open_connection("localhost", TEST_METRICS_PORT)
     response_bytes = b""
     try:
-        bad_request = b"GE\xffT /metrics HTTP/1.1\r\n" b"Host: localhost\r\n" b"Connection: close\r\n" b"\r\n"
+        bad_request = b"GE\xffT /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
         writer.write(bad_request)
         await writer.drain()
 
