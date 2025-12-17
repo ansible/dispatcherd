@@ -183,6 +183,7 @@ Most tests (except for tests/unit/) require postgres to be running.
 pip install -r requirements_dev.txt
 make postgres
 pytest tests/
+pytest asyncio_tests/
 ```
 
 ### Background
