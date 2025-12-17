@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Optional, Union
+from typing import Optional
 
 from .chunking import ChunkAccumulator
 from .factories import get_broker
@@ -19,7 +19,7 @@ JSON_ERROR_STR = 'JSON parse error'
 def _ingest_reply_payload(
     accumulator: ChunkAccumulator,
     results: list[dict],
-    payload: Union[str, dict],
+    payload: str | dict,
     *,
     idx: int | None = None,
 ) -> bool:
@@ -86,7 +86,7 @@ class Control:
         return f"reply_to_{str(uuid.uuid4()).replace('-', '_')}"
 
     def create_message(self, command: str, reply_to: Optional[str] = None, send_data: Optional[dict] = None) -> str:
-        to_send: dict[str, Union[dict, str]] = {'control': command}
+        to_send: dict[str, dict | str] = {'control': command}
         if reply_to:
             to_send['reply_to'] = reply_to
         if send_data:

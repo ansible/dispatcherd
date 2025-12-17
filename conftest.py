@@ -1,7 +1,7 @@
 import contextlib
 import logging
 
-from typing import Callable, AsyncIterator, Union
+from typing import Callable, AsyncIterator
 
 import pytest
 import pytest_asyncio
@@ -111,7 +111,7 @@ def registry() -> DispatcherMethodRegistry:
 @pytest.fixture
 def get_worker_data():
     "General utility for processing control-with-reply response"
-    def _rf(response_list: list[dict[str,Union[str,dict]]]) -> dict:
+    def _rf(response_list: list[dict[str,str|dict]]) -> dict:
         "Given some control-and-response data, assuming 1 node, 1 entry, get the task message"
         assert len(response_list) == 1
         response = response_list[0].copy()

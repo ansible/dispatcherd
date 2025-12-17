@@ -6,7 +6,6 @@ import sys
 import traceback
 from multiprocessing.context import BaseContext
 from types import ModuleType
-from typing import Union
 
 from .asyncio import adispatcher_service
 
@@ -22,7 +21,7 @@ class CommunicationItems:
     This will be passed in the call to the subprocess.
     """
 
-    def __init__(self, main_events: tuple[str], pool_events: tuple[str], context: Union[BaseContext, ModuleType]) -> None:
+    def __init__(self, main_events: tuple[str], pool_events: tuple[str], context: BaseContext | ModuleType) -> None:
         self.q_in: multiprocessing.Queue = context.Queue()
         self.q_out: multiprocessing.Queue = context.Queue()
         self.main_events = main_events

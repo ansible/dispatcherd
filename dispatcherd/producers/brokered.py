@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional
 
 from ..protocols import Broker, DispatcherMain
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
@@ -57,7 +57,7 @@ class BrokeredProducer(BaseProducer):
             if reply_to and reply_payload:
                 await self.notify(channel=reply_to, origin=channel, message=reply_payload)
 
-    async def notify(self, channel: Optional[str] = None, origin: Optional[Union[int, str]] = None, message: str = '') -> None:
+    async def notify(self, channel: Optional[str] = None, origin: Optional[int | str] = None, message: str = '') -> None:
         await self.broker.apublish_message(channel=channel, origin=origin, message=message)
 
     async def shutdown(self) -> None:

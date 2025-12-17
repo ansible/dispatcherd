@@ -1,6 +1,6 @@
 import importlib
 from enum import Enum
-from typing import Callable, Optional, Protocol, Type, Union, runtime_checkable
+from typing import Callable, Optional, Protocol, Type, runtime_checkable
 
 
 @runtime_checkable
@@ -11,7 +11,7 @@ class RunnableClass(Protocol):
 MODULE_METHOD_DELIMITER = '.'
 
 
-DispatcherCallable = Union[Callable, Type[RunnableClass]]
+DispatcherCallable = Callable | Type[RunnableClass]
 
 
 def resolve_callable(task: str) -> Optional[Callable]:

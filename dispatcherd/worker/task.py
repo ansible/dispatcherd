@@ -5,7 +5,7 @@ import signal
 import sys
 import time
 import traceback
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from ..protocols import TaskWorker as TaskWorkerProtocol
 from ..registry import DispatcherMethodRegistry
@@ -223,10 +223,10 @@ class TaskWorker(TaskWorkerProtocol):
             "time_finish": time.time(),
         }
 
-    def get_ready_message(self) -> dict[str, Union[str, int]]:
+    def get_ready_message(self) -> dict[str, str | int]:
         """Message for traffic control, saying am entering the main work loop"""
         return {"worker": self.worker_id, "event": "ready"}
 
-    def get_shutdown_message(self) -> dict[str, Union[str, int]]:
+    def get_shutdown_message(self) -> dict[str, str | int]:
         """Message for traffic control, do not deliver any more mail to this address"""
         return {"worker": self.worker_id, "event": "shutdown"}

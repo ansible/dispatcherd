@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import socket
-from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional
 
 from ..chunking import split_message
 from ..protocols import Broker as BrokerProtocol
@@ -98,7 +98,7 @@ class Broker(BrokerProtocol):
 
     async def aprocess_notify(
         self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
-    ) -> AsyncGenerator[tuple[Union[int, str], str], None]:
+    ) -> AsyncGenerator[tuple[int | str, str], None]:
         if os.path.exists(self.socket_path):
             logger.debug(f'Deleted pre-existing {self.socket_path}')
             os.remove(self.socket_path)
@@ -155,7 +155,7 @@ class Broker(BrokerProtocol):
                 writer.close()
                 await writer.wait_closed()
 
-    async def apublish_message(self, channel: Optional[str] = '', origin: Union[int, str, None] = None, message: str = "") -> None:
+    async def apublish_message(self, channel: Optional[str] = '', origin: int | str | None = None, message: str = "") -> None:
         if isinstance(origin, int) and origin >= 0:
             client = self.clients.get(int(origin))
             if client:
@@ -177,7 +177,7 @@ class Broker(BrokerProtocol):
 
     def process_notify(
         self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
-    ) -> Iterator[tuple[Union[int, str], str]]:
+    ) -> Iterator[tuple[int | str, str]]:
         try:
             with socket.socket(socket.AF_UNIX) as sock:
                 self.sock = sock
