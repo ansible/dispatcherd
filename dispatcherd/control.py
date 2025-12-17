@@ -75,6 +75,19 @@ class BrokerCallbacks:
                     return
 
 
+class SyncBrokerCallbacks:
+    def __init__(self, control: 'Control', broker: Broker, message: str) -> None:
+        self._control = control
+        self._broker = broker
+        self._message = message
+        self.created_at: float = time.perf_counter()
+        self.send_start: Optional[float] = None
+
+    def connected_callback(self) -> None:
+        self.send_start = time.perf_counter()
+        self._broker.publish_message(channel=self._control.queuename, message=self._message)
+
+
 class Control:
     def __init__(self, broker_name: str, broker_config: dict, queue: Optional[str] = None) -> None:
         self.queuename = queue
@@ -122,7 +135,7 @@ class Control:
             await broker.aclose()
 
     def control_with_reply(self, command: str, expected_replies: int = 1, timeout: float = 1.0, data: Optional[dict] = None) -> list[dict]:
-        start = time.time()
+        start = time.perf_counter()
         reply_queue = Control.generate_reply_queue_name()
         send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
 
@@ -132,16 +145,26 @@ class Control:
         except TypeError:
             broker = get_broker(self.broker_name, self.broker_config)
 
-        def connected_callback() -> None:
-            broker.publish_message(channel=self.queuename, message=send_message)
+        callbacks = SyncBrokerCallbacks(control=self, broker=broker, message=send_message)
 
         replies: list[dict] = []
         try:
-            for channel, payload in broker.process_notify(connected_callback=connected_callback, max_messages=None, timeout=timeout):
+            for channel, payload in broker.process_notify(connected_callback=callbacks.connected_callback, max_messages=None, timeout=timeout):
                 if _ingest_reply_payload(reply_accumulator, replies, payload, idx=len(replies)):
                     if len(replies) >= expected_replies:
                         break
-            logger.info(f'control-and-reply message returned in {time.time() - start} seconds')
+            end = time.perf_counter()
+            if callbacks.send_start is not None:
+                round_trip_text = f'{end - callbacks.send_start:.3f}s'
+            else:
+                elapsed = end - callbacks.created_at
+                round_trip_text = f'n/a (connected callback unused, elapsed {elapsed:.3f}s)'
+            logger.info(
+                'control-and-reply %s returned in %.3f seconds (round-trip %s)',
+                command,
+                end - start,
+                round_trip_text,
+            )
             return replies
         finally:
             broker.close()
