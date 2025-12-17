@@ -143,6 +143,7 @@ class Broker(BrokerProtocol):
     async def aget_connection(self) -> psycopg.AsyncConnection:
         # Check if the cached async connection is either None or closed.
         if not self._async_connection or getattr(self._async_connection, "closed", 0) != 0:
+            start = time.perf_counter()
             if self._async_connection_factory:
                 factory = resolve_callable(self._async_connection_factory)
                 if not factory:
@@ -154,6 +155,7 @@ class Broker(BrokerProtocol):
             else:
                 raise RuntimeError('Could not construct async connection for lack of config or factory')
             self._async_connection = connection
+            logger.info('pg_notify async connection established in %.3f seconds', time.perf_counter() - start)
         assert self._async_connection is not None
         return self._async_connection
 
@@ -277,6 +279,7 @@ class Broker(BrokerProtocol):
     def get_connection(self) -> psycopg.Connection:
         # Check if the cached connection is either None or closed.
         if not self._sync_connection or getattr(self._sync_connection, "closed", 0) != 0:
+            start = time.perf_counter()
             if self._sync_connection_factory:
                 factory = resolve_callable(self._sync_connection_factory)
                 if not factory:
@@ -288,6 +291,7 @@ class Broker(BrokerProtocol):
             else:
                 raise RuntimeError('Could not construct connection for lack of config or factory')
             self._sync_connection = connection
+            logger.info('pg_notify sync connection established in %.3f seconds', time.perf_counter() - start)
         assert self._sync_connection is not None
         return self._sync_connection
 
