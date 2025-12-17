@@ -1,8 +1,8 @@
 import asyncio
 import logging
-import httpx
 from typing import AsyncIterator
 
+import httpx
 import pytest
 import pytest_asyncio
 
@@ -57,7 +57,6 @@ async def test_get_metrics(ametrics_dispatcher):
     # Check for another metric to be more thorough, e.g., worker_count
     assert "dispatcher_worker_count" in resp.text
 
-
     # Normally handled by fixture, we made a main loop task, so take care of our own task
     await ametrics_dispatcher.shutdown()
     await main_task
@@ -75,12 +74,7 @@ async def test_metrics_invalid_utf8_returns_400(ametrics_dispatcher):
     reader, writer = await asyncio.open_connection("localhost", TEST_METRICS_PORT)
     response_bytes = b""
     try:
-        bad_request = (
-            b"GE\xffT /metrics HTTP/1.1\r\n"
-            b"Host: localhost\r\n"
-            b"Connection: close\r\n"
-            b"\r\n"
-        )
+        bad_request = b"GE\xffT /metrics HTTP/1.1\r\n" b"Host: localhost\r\n" b"Connection: close\r\n" b"\r\n"
         writer.write(bad_request)
         await writer.drain()
 

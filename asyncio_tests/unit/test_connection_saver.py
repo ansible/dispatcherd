@@ -3,7 +3,6 @@ import asyncio
 import pytest
 
 from dispatcherd.brokers.pg_notify import async_connection_saver, connection_save
-
 from tests.unit import test_connection_saver as sync_connection_saver
 
 

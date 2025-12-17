@@ -1,7 +1,7 @@
 import asyncio
 import socket
-import time
 import threading
+import time
 
 import pytest
 
@@ -24,6 +24,7 @@ async def test_basic_receive(socket_path):
         server_is_ready.set()
 
     received = []
+
     async def save_local():
         async for client_id, msg in server_broker.aprocess_notify(connected_callback=on_connect):
             received.append((client_id, msg))

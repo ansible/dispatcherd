@@ -1,6 +1,6 @@
 from unittest import mock
 
-from dispatcherd.config import DispatcherSettings, temporary_settings
+from dispatcherd.config import temporary_settings
 from dispatcherd.factories import process_manager_from_settings
 
 

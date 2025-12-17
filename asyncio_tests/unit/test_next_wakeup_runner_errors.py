@@ -2,8 +2,8 @@ import time
 
 import pytest
 
-from dispatcherd.service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
+from dispatcherd.service.next_wakeup_runner import HasWakeup, NextWakeupRunner
 
 
 # Dummy object that implements HasWakeup.

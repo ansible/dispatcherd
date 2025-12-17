@@ -1,13 +1,13 @@
 import asyncio
 import time
-from unittest import mock
 from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
+from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 from dispatcherd.service.pool import WorkerPool
 from dispatcherd.service.process import ProcessManager
-from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 
 
 @pytest.mark.asyncio

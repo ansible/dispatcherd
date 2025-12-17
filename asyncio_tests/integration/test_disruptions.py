@@ -1,14 +1,11 @@
 import asyncio
 
+import psycopg
 import pytest
 
-import psycopg
-
 from conftest import CONNECTION_STRING
-
-from dispatcherd.producers.brokered import BrokeredProducer
 from dispatcherd.brokers.pg_notify import connection_save
-
+from dispatcherd.producers.brokered import BrokeredProducer
 
 # Change the application_name so that when we run this test we will not kill the connection for the test itself
 THIS_TEST_STR = CONNECTION_STRING.replace('application_name=apg_test_server', 'application_name=do_not_delete_me')
@@ -43,7 +40,7 @@ async def test_sever_pg_connection(apg_dispatcher, pg_message):
             connections = await cur.fetchall()
 
             pids = []
-            print(f'Found following connections, will kill connections for those pids')
+            print('Found following connections, will kill connections for those pids')
             for row in connections:
                 pids.append(row[0])
                 print('pid, user, app_name, backend_start, state')

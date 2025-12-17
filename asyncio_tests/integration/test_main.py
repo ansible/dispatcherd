@@ -5,10 +5,9 @@ import time
 import pytest
 
 from dispatcherd.config import temporary_settings
-from dispatcherd.service.control_tasks import _stack_from_task
-from dispatcherd.publish import submit_task
 from dispatcherd.processors.blocker import Blocker
-
+from dispatcherd.publish import submit_task
+from dispatcherd.service.control_tasks import _stack_from_task
 from tests.data import methods as test_methods
 
 SLEEP_METHOD = 'lambda: __import__("time").sleep(0.1)'
