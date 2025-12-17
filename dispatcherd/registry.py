@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Iterable, Optional, Set, Tuple, Union
+from typing import Callable, Iterable, Optional, Set, Tuple
 from uuid import uuid4
 
 from .config import LazySettings
@@ -31,7 +31,7 @@ class DispatcherMethod:
     def __init__(
         self,
         fn: DispatcherCallable,
-        queue: Union[Callable, str, None] = None,
+        queue: Callable | str | None = None,
         bind: bool = False,
         processor_options: Iterable[ProcessorParams] = (),
         **submission_defaults,
@@ -120,7 +120,7 @@ class DispatcherMethod:
         self,
         args: Optional[tuple] = None,
         kwargs: Optional[dict] = None,
-        queue: Union[str, Callable[..., str], None] = None,
+        queue: str | Callable[..., str] | None = None,
         uuid: Optional[str] = None,
         settings: LazySettings = global_settings,
         bind: bool = False,

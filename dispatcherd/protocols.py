@@ -1,7 +1,7 @@
 import asyncio
 import multiprocessing
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol, Union
+from typing import Any, AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Optional, Protocol
 
 from .chunking import ChunkAccumulator
 
@@ -23,7 +23,7 @@ class Broker(Protocol):
 
     async def aprocess_notify(
         self, connected_callback: Optional[Optional[Callable[[], Coroutine[Any, Any, None]]]] = None
-    ) -> AsyncGenerator[tuple[Union[int, str], str], None]:
+    ) -> AsyncGenerator[tuple[int | str, str], None]:
         """The generator of messages from the broker for the dispatcherd service
 
         The producer iterates this to produce tasks.
@@ -31,7 +31,7 @@ class Broker(Protocol):
         """
         yield ('', '')  # yield affects CPython type https://github.com/python/mypy/pull/18422
 
-    async def apublish_message(self, channel: Optional[str] = None, origin: Union[int, str, None] = None, message: str = '') -> None:
+    async def apublish_message(self, channel: Optional[str] = None, origin: int | str | None = None, message: str = '') -> None:
         """Asynchronously send a message to the broker, used by dispatcherd service for reply messages"""
         ...
 
@@ -41,7 +41,7 @@ class Broker(Protocol):
 
     def process_notify(
         self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
-    ) -> Iterator[tuple[Union[int, str], str]]:
+    ) -> Iterator[tuple[int | str, str]]:
         """Synchronous method to generate messages from broker, used for synchronous control-and-reply"""
         ...
 
@@ -309,7 +309,7 @@ class DispatcherMain(Protocol):
         ...
 
     async def process_message(
-        self, payload: Union[dict, str], producer: Optional[Producer] = None, channel: Optional[str] = None
+        self, payload: dict | str, producer: Optional[Producer] = None, channel: Optional[str] = None
     ) -> tuple[Optional[str], Optional[str]]:
         """This is called by producers when a new request to run a task comes in"""
         ...
@@ -347,6 +347,6 @@ class TaskWorker(Protocol):
 
     def perform_work(self, message: dict) -> dict: ...
 
-    def get_ready_message(self) -> dict[str, Union[str, int]]: ...
+    def get_ready_message(self) -> dict[str, str | int]: ...
 
-    def get_shutdown_message(self) -> dict[str, Union[str, int]]: ...
+    def get_shutdown_message(self) -> dict[str, str | int]: ...
