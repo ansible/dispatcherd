@@ -61,6 +61,8 @@ include = '''
   | ^/tests/.*\.pyi?$
   | ^/asyncio_tests/.*\.pyi?$
   | ^/tools/.*\.pyi?$
+  | ^/conftest\.pyi?$
+  | ^/run_demo\.pyi?$
 )
 '''
 extend-exclude = '''

@@ -12,7 +12,6 @@ exclude =
     docs,
     logs,
     research,
-    tools,
     dispatcher.egg-info,
     dispatcherd.egg-info,
     benchmark_data.json
@@ -23,6 +22,8 @@ filename =
     tests/**/*.py,
     asyncio_tests/*.py,
     asyncio_tests/**/*.py,
+    tools/*.py,
+    tools/**/*.py,
     conftest.py,
     run_demo.py
 max-complexity = 10
