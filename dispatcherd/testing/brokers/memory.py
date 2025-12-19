@@ -75,4 +75,3 @@ class Broker(BrokerProtocol):
     def verify_self_check(self, message: dict[str, Any]) -> None:
         """No-op implementation for compatibility."""
         return None
-
