@@ -193,16 +193,4 @@ to the parent the process can be `.join()`ed.
 
 ##### Distressed message
 
-If a worker exits unexpectedly (for example after receiving SIGTERM before it can notify
-the parent) it sends a final best-effort distress signal during interpreter shutdown.
-
-```json
-{
-    "worker": 3,
-    "event": "distressed",
-    "pid": 1234
-}
-```
-
-The pool marks the worker as `error` and does not wait for a graceful exit once this
-message is observed.
+Removed; not emitted in current implementation.

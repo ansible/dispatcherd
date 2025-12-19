@@ -98,6 +98,7 @@ async def test_sigint_with_task_handler_updates_counts(aworker_dispatcher: Dispa
 
 @pytest.mark.asyncio
 async def test_sigterm_interrupts_running_task(aworker_dispatcher: DispatcherMain):
+    pool = aworker_dispatcher.pool
     worker = _first_worker(aworker_dispatcher)
     pid = worker.process.pid
     assert pid
@@ -106,7 +107,8 @@ async def test_sigterm_interrupts_running_task(aworker_dispatcher: DispatcherMai
     await asyncio.sleep(0.02)
     start = time.monotonic()
     os.kill(pid, signal.SIGTERM)
-    await asyncio.wait_for(worker.exit_msg_event.wait(), timeout=5)
+    await asyncio.wait_for(pool.stop_workers(), timeout=5)
     duration = time.monotonic() - start
     assert duration < 1.0
-    assert worker.status == 'exited'
+    assert worker.status == 'error'
+    assert worker.exit_msg_event.is_set()

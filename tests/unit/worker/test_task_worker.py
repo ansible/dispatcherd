@@ -27,20 +27,3 @@ class DummyQueue:
 
     def put(self, item, block=True):  # type: ignore[no-untyped-def]
         self.messages.append((item, block))
-
-
-def test_atexit_distress_message(registry):
-    queue = DummyQueue()
-    worker = TaskWorker(1, registry=registry, message_queue=queue, finished_queue=queue)
-    worker._shutdown_notified = False
-    worker._atexit_notify()
-    assert queue.messages[-1][0]["event"] == "distressed"
-    worker.mark_shutdown_notified()
-
-
-def test_atexit_noop_after_shutdown(registry):
-    queue = DummyQueue()
-    worker = TaskWorker(1, registry=registry, message_queue=queue, finished_queue=queue)
-    worker.mark_shutdown_notified()
-    worker._atexit_notify()
-    assert not queue.messages

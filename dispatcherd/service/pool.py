@@ -713,10 +713,3 @@ class WorkerPool(WorkerPoolProtocol):
             elif event == 'done':
                 await self.process_finished(worker, message)
                 await self.drain_queue()
-
-            elif event == 'distressed':
-                async with self.workers.management_lock:
-                    worker.status = 'error'
-                    worker.exit_msg_event.set()
-                logger.error(f"Worker {worker_id} sent distressed message; assuming abnormal exit.")
-                self.events.management_event.set()

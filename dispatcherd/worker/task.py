@@ -1,4 +1,3 @@
-import atexit
 import logging
 import multiprocessing
 import os
@@ -6,7 +5,6 @@ import signal
 import sys
 import time
 import traceback
-from queue import Full as QueueFull
 from typing import Any, Optional
 
 from ..protocols import TaskWorker as TaskWorkerProtocol
@@ -96,9 +94,6 @@ class TaskWorker(TaskWorkerProtocol):
         self.signal_handler = WorkerSignalHandler(worker_id)
         self.idle_timeout = idle_timeout
         self.exit_after_current_task = False
-        self._shutdown_notified = False
-        self._atexit_handle = lambda self=self: self._atexit_notify()
-        atexit.register(self._atexit_handle)
 
     def on_start(self) -> None:
         """For apps integrating callbacks"""
@@ -263,32 +258,5 @@ class TaskWorker(TaskWorkerProtocol):
         """Message for traffic control, do not deliver any more mail to this address"""
         return {"worker": self.worker_id, "event": "shutdown"}
 
-    def get_distressed_message(self) -> dict[str, str | int]:
-        """Emergency message used when exiting without notifying parent"""
-        return {"worker": self.worker_id, "event": "distressed", "pid": self.pid}
-
     def mark_shutdown_notified(self) -> None:
-        self._shutdown_notified = True
-        if self._atexit_handle is not None:
-            try:
-                atexit.unregister(self._atexit_handle)
-            except Exception:
-                pass
-            self._atexit_handle = None
-
-    def _atexit_notify(self) -> None:
-        if self._shutdown_notified:
-            logger.info(f'Worker {self.worker_id} atexit: shutdown already notified')
-            return
-        try:
-            message = self.get_distressed_message()
-            self.finished_queue.put(message, block=False)  # type: ignore[call-arg]
-            logger.info(f'Worker {self.worker_id} atexit: distressed message enqueued')
-        except QueueFull:
-            logger.error(f'Worker {self.worker_id} atexit: finished queue full, distress message dropped')
-        except (OSError, ValueError, AssertionError) as exc:
-            logger.error(f'Worker {self.worker_id} atexit: error sending distress message: {exc}')
-        except Exception:
-            logger.exception(f'Worker {self.worker_id} atexit: unexpected error sending distress message')
-        finally:
-            self._shutdown_notified = True
+        return
