@@ -3,8 +3,8 @@ import time
 from typing import Generator
 
 import pytest
-
 from conftest import CONNECTION_STRING
+
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
 from dispatcherd.protocols import Broker

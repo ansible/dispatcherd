@@ -5,12 +5,12 @@ import logging
 import sys
 import time
 
+from dispatcherd.chunking import split_message
 from dispatcherd.config import setup
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
-from dispatcherd.chunking import split_message
-from dispatcherd.utils import MODULE_METHOD_DELIMITER
-from dispatcherd.processors.delayer import Delayer
 from dispatcherd.processors.blocker import Blocker
+from dispatcherd.processors.delayer import Delayer
+from dispatcherd.utils import MODULE_METHOD_DELIMITER
 from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout
 
 # Setup the global config from the settings file shared with the service
