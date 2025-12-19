@@ -1,7 +1,7 @@
 import pytest
 
-from dispatcherd.brokers.noop import Broker as NoOpBroker
 from dispatcherd.brokers.error_only import Broker as ErrorOnlyBroker
+from dispatcherd.brokers.noop import Broker as NoOpBroker
 
 
 @pytest.fixture(params=[NoOpBroker, ErrorOnlyBroker])
