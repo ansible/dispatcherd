@@ -45,10 +45,10 @@ def work_loop_internal(worker: TaskWorker) -> None:
             logger.warning(f"Worker {worker.worker_id} exiting main loop due to stop message.")
             break
 
-        worker.signal_handler.enter_task()
+        worker.enter_task_mode()
         worker.pre_task(message)
         result = worker.perform_work(message)
-        worker.signal_handler.enter_idle_mode()
+        worker.enter_idle_mode()
         worker.post_task(result)
 
         # Indicate that the task is finished by putting a message in the finished_queue
@@ -56,7 +56,6 @@ def work_loop_internal(worker: TaskWorker) -> None:
 
     worker.on_shutdown()
     worker.finished_queue.put(worker.get_shutdown_message())
-    worker.mark_shutdown_notified()
     logger.debug(f'Worker {worker.worker_id} informed the pool manager that we have exited')
 
 

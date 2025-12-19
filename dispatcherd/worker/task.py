@@ -115,6 +115,12 @@ class TaskWorker(TaskWorkerProtocol):
         """For apps integrating callbacks"""
         pass
 
+    def enter_task_mode(self) -> None:
+        self.signal_handler.enter_task()
+
+    def enter_idle_mode(self) -> None:
+        self.signal_handler.enter_idle_mode()
+
     def should_exit(self) -> bool:
         """Called before continuing the loop, something suspicious, return True, should exit"""
         if os.getppid() != self.ppid:
@@ -257,6 +263,3 @@ class TaskWorker(TaskWorkerProtocol):
     def get_shutdown_message(self) -> dict[str, str | int]:
         """Message for traffic control, do not deliver any more mail to this address"""
         return {"worker": self.worker_id, "event": "shutdown"}
-
-    def mark_shutdown_notified(self) -> None:
-        return

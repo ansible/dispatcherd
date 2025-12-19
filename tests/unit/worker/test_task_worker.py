@@ -18,7 +18,6 @@ def test_run_method_with_bind(registry):
     queue = SimpleQueue()
     worker = TaskWorker(1, registry=registry, message_queue=queue, finished_queue=queue)
     worker.run_callable({"task": dmethod.serialize_task(), "uuid": "12345"})
-    worker.mark_shutdown_notified()
 
 
 class DummyQueue:
