@@ -2,20 +2,16 @@ import asyncio
 import logging
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional, Union
 
-from ..protocols import Broker as BrokerProtocol
-from ..protocols import BrokerSelfCheckStatus
+from ...protocols import Broker as BrokerProtocol
+from ...protocols import BrokerSelfCheckStatus
 
 logger = logging.getLogger(__name__)
 
 
 class Broker(BrokerProtocol):
-    """A broker that raises exceptions for publishing methods.
+    """A broker that raises exceptions for publishing methods."""
 
-    This broker is useful for testing error handling or when you want to simulate
-    publishing failures without changing the code that uses the broker interface.
-    """
-
-    def __init__(self, error_message: str = "Error-only broker: publishing is not allowed") -> None:
+    def __init__(self, error_message: str = 'Error-only broker: publishing is not allowed') -> None:
         self.error_message = error_message
         self.self_check_status = BrokerSelfCheckStatus.IDLE
 
@@ -25,7 +21,7 @@ class Broker(BrokerProtocol):
     async def aprocess_notify(
         self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
     ) -> AsyncGenerator[tuple[Union[int, str], str], None]:
-        """No-op implementation that yields once after the forever loop."""
+        """No-op implementation that never yields messages."""
         if connected_callback:
             await connected_callback()
         # Never yield, allowing the error-only broker to coexist with other brokers
@@ -39,7 +35,7 @@ class Broker(BrokerProtocol):
 
     async def aclose(self) -> None:
         """No-op implementation that does nothing."""
-        pass
+        return None
 
     def process_notify(
         self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: Optional[int] = 1
@@ -55,8 +51,9 @@ class Broker(BrokerProtocol):
 
     def close(self) -> None:
         """No-op implementation that does nothing."""
-        pass
+        return None
 
     def verify_self_check(self, message: dict[str, Any]) -> None:
         """No-op implementation that does nothing."""
-        pass
+        return None
+
