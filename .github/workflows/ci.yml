@@ -55,7 +55,7 @@ jobs:
           show-progress: false
 
       - run: pip install black
-      - run: black --check dispatcherd
+      - run: black --check .
 
   isort:
     name: Run isort
@@ -66,7 +66,7 @@ jobs:
           show-progress: false
 
       - run: pip install isort
-      - run: isort --check dispatcherd
+      - run: isort --check-only .
 
   mypy:
     name: Run mypy
