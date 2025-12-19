@@ -55,10 +55,46 @@ local_scheme = "no-local-version"
 line-length = 160
 fast = true
 skip-string-normalization = true
+include = '''
+(
+  ^/dispatcherd/.*\.pyi?$
+  | ^/tests/.*\.pyi?$
+  | ^/asyncio_tests/.*\.pyi?$
+  | ^/tools/.*\.pyi?$
+)
+'''
+extend-exclude = '''
+/(
+  build
+  | dist
+  | docs
+  | \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.venv
+  | logs
+  | research
+  | dispatcher\.egg-info
+  | dispatcherd\.egg-info
+  | benchmark_data\.json
+)
+'''
 
 [tool.isort]
 profile = "black"
 line_length = 160
+src_paths = ["dispatcherd", "tests", "asyncio_tests", "tools"]
+skip = [
+    ".env",
+    "benchmark_data.json",
+    "build",
+    "dist",
+    "docs",
+    "logs",
+    "research",
+    "dispatcher.egg-info",
+    "dispatcherd.egg-info",
+]
 
 [project.optional-dependencies]
 pg_notify = ["psycopg>=3.2.4"]
