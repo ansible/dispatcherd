@@ -29,7 +29,16 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
     finally:
         if dispatcher:
             try:
-                await dispatcher.shutdown()
-                await dispatcher.cancel_tasks()
+                await asyncio.wait_for(dispatcher.shutdown(), timeout=5)
+            except asyncio.TimeoutError:
+                logger.error('Dispatcher shutdown timed out; inspecting tasks before cancellation')
             except Exception:
                 logger.exception('shutdown had error')
+            pending = [task for task in asyncio.all_tasks() if not task.done()]
+            if pending:
+                for task in pending:
+                    logger.error('Pending task during teardown: %s', task)
+            try:
+                await dispatcher.cancel_tasks()
+            except Exception:
+                logger.exception('cancel_tasks had error')

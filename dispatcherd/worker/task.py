@@ -1,3 +1,4 @@
+import atexit
 import logging
 import multiprocessing
 import os
@@ -5,12 +6,13 @@ import signal
 import sys
 import time
 import traceback
+from queue import Full as QueueFull
 from typing import Any, Optional
 
 from ..protocols import TaskWorker as TaskWorkerProtocol
 from ..registry import DispatcherMethodRegistry
 from ..registry import registry as global_registry
-from .exceptions import DispatcherCancel
+from .exceptions import DispatcherCancel, DispatcherExit
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +21,7 @@ class WorkerSignalHandler:
     def __init__(self, worker_id: int) -> None:
         self.kill_now = False
         self.worker_id = worker_id
-        signal.signal(signal.SIGUSR1, self.task_cancel)
-        signal.signal(signal.SIGINT, self.exit_gracefully)
+        self.enter_idle_mode()
 
     def task_cancel(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
         raise DispatcherCancel
@@ -28,6 +29,18 @@ class WorkerSignalHandler:
     def exit_gracefully(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
         logger.info(f'Worker {self.worker_id} received worker process exit signal')
         self.kill_now = True
+
+    def enter_idle_mode(self) -> None:
+        """Install idle-mode handlers so signals request shutdown/cancel."""
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+        signal.signal(signal.SIGUSR1, self.task_cancel)
+
+    def enter_task(self) -> None:
+        """Restore default SIGINT/SIGTERM behavior so tasks can install their own handlers."""
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        signal.signal(signal.SIGUSR1, self.task_cancel)
 
 
 class DispatcherBoundMethods:
@@ -82,6 +95,10 @@ class TaskWorker(TaskWorkerProtocol):
         self.pid = os.getpid()
         self.signal_handler = WorkerSignalHandler(worker_id)
         self.idle_timeout = idle_timeout
+        self.exit_after_current_task = False
+        self._shutdown_notified = False
+        self._atexit_handle = lambda self=self: self._atexit_notify()
+        atexit.register(self._atexit_handle)
 
     def on_start(self) -> None:
         """For apps integrating callbacks"""
@@ -108,7 +125,7 @@ class TaskWorker(TaskWorkerProtocol):
         if os.getppid() != self.ppid:
             logger.error(f'Worker {self.worker_id}, my parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
             return True
-        elif self.signal_handler.kill_now:
+        elif self.signal_handler.kill_now or self.exit_after_current_task:
             return True
         return False
 
@@ -146,6 +163,9 @@ class TaskWorker(TaskWorkerProtocol):
             # Log exception because this can provide valuable info about where a task was when getting signal
             logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
             return '<cancel>'
+        except DispatcherExit:
+            logger.info(f'Worker {self.worker_id} task requested worker exit (uuid={self.get_uuid(message)})')
+            raise
 
     def perform_work(self, message: dict) -> dict[str, Any]:
         """
@@ -169,8 +189,15 @@ class TaskWorker(TaskWorkerProtocol):
         """
         time_started = time.time()
         result = None
+        exit_requested = False
+        self.exit_after_current_task = False
+
         try:
             result = self.run_callable(message)
+        except DispatcherExit as exit_exc:
+            self.exit_after_current_task = True
+            exit_requested = True
+            result = exit_exc.result
         except Exception as exc:
             result = exc
 
@@ -201,7 +228,12 @@ class TaskWorker(TaskWorkerProtocol):
         for callback in message.get('callbacks', []) or []:
             callback['uuid'] = self.get_uuid(message)
             self.perform_work(callback)
-        return self.get_finished_message(result, message, time_started)
+        finished_message = self.get_finished_message(result, message, time_started)
+
+        if exit_requested:
+            finished_message['is_stopping'] = True
+
+        return finished_message
 
     # TODO: new WorkerTaskCall class to track timings and such
     def get_finished_message(self, raw_result: Any, message: dict, time_started: float) -> dict[str, Any]:
@@ -230,3 +262,33 @@ class TaskWorker(TaskWorkerProtocol):
     def get_shutdown_message(self) -> dict[str, str | int]:
         """Message for traffic control, do not deliver any more mail to this address"""
         return {"worker": self.worker_id, "event": "shutdown"}
+
+    def get_distressed_message(self) -> dict[str, str | int]:
+        """Emergency message used when exiting without notifying parent"""
+        return {"worker": self.worker_id, "event": "distressed", "pid": self.pid}
+
+    def mark_shutdown_notified(self) -> None:
+        self._shutdown_notified = True
+        if self._atexit_handle is not None:
+            try:
+                atexit.unregister(self._atexit_handle)
+            except Exception:
+                pass
+            self._atexit_handle = None
+
+    def _atexit_notify(self) -> None:
+        if self._shutdown_notified:
+            logger.info(f'Worker {self.worker_id} atexit: shutdown already notified')
+            return
+        try:
+            message = self.get_distressed_message()
+            self.finished_queue.put(message, block=False)  # type: ignore[call-arg]
+            logger.info(f'Worker {self.worker_id} atexit: distressed message enqueued')
+        except QueueFull:
+            logger.error(f'Worker {self.worker_id} atexit: finished queue full, distress message dropped')
+        except (OSError, ValueError, AssertionError) as exc:
+            logger.error(f'Worker {self.worker_id} atexit: error sending distress message: {exc}')
+        except Exception:
+            logger.exception(f'Worker {self.worker_id} atexit: unexpected error sending distress message')
+        finally:
+            self._shutdown_notified = True

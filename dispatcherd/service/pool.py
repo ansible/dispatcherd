@@ -149,9 +149,14 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.is_active_cancel = True  # signal for result callback
 
         # If the process has never been started or is already gone, its pid may be None
-        if self.process.pid is None:
+        pid = self.process.pid
+        if pid is None or not self.process.is_alive():
+            logger.debug(f'Worker {self.worker_id} cancel skipped; process already exited')
             return  # it's effectively already canceled/not running
-        os.kill(self.process.pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
+        try:
+            os.kill(pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
+        except ProcessLookupError:
+            logger.debug(f'Worker {self.worker_id} cancel skipped; pid {pid} missing')
 
     def get_status_data(self) -> dict[str, Any]:
         return {
@@ -618,12 +623,18 @@ class WorkerPool(WorkerPoolProtocol):
         running_ct = self.get_running_count()
         self.last_used_by_ct[running_ct] = time.monotonic()  # scale down may be allowed, clock starting now
 
+        is_stopping = message.get('is_stopping', False)
+
         # Mark the worker as no longer busy
         async with self.workers.management_lock:
             if worker.is_active_cancel and result == '<cancel>':
                 self.canceled_count += 1
             else:
                 self.finished_count += 1
+            if is_stopping:
+                worker.status = 'stopping'
+                if not worker.stopping_at:
+                    worker.stopping_at = time.monotonic()
             worker.mark_finished_task()
             self.workers.move_to_end(worker.worker_id)
 
@@ -702,3 +713,10 @@ class WorkerPool(WorkerPoolProtocol):
             elif event == 'done':
                 await self.process_finished(worker, message)
                 await self.drain_queue()
+
+            elif event == 'distressed':
+                async with self.workers.management_lock:
+                    worker.status = 'error'
+                    worker.exit_msg_event.set()
+                logger.error(f"Worker {worker_id} sent distressed message; assuming abnormal exit.")
+                self.events.management_event.set()
