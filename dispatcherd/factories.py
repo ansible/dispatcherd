@@ -171,7 +171,7 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
 
     # Copy brokers and always add the debugging brokers that live under dispatcherd.testing
     all_brokers = dict(settings.brokers)
-    testing_brokers = {
+    testing_brokers: dict[str, dict[str, Any]] = {
         'dispatcherd.testing.brokers.noop': {},
         'dispatcherd.testing.brokers.error_only': {},
         'dispatcherd.testing.brokers.memory': {},
