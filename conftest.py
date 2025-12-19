@@ -1,7 +1,6 @@
 import contextlib
 import logging
-
-from typing import Callable, AsyncIterator
+from typing import AsyncIterator, Callable
 
 import pytest
 import pytest_asyncio
