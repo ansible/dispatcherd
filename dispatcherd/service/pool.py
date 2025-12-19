@@ -70,7 +70,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     @property
     def inactive(self) -> bool:
         """No further shutdown or callback messages are expected from this worker"""
-        return bool(self.status in ('exited', 'error', 'initialized'))
+        return bool(self.status in ('exited', 'error', 'initialized', 'retired'))
 
     async def start_task(self, message: dict) -> None:
         self.current_task = message  # NOTE: this marks this worker as busy
@@ -511,6 +511,11 @@ class WorkerPool(WorkerPoolProtocol):
             if worker.process.pid and worker.process.is_alive():
                 logger.warning(f'Force killing worker {worker.worker_id} pid={worker.process.pid}')
                 worker.process.kill()
+
+        try:
+            self.process_manager.finished_queue.put_nowait('stop')
+        except Exception:
+            logger.exception('Failed to send stop sentinel to finished queue during force shutdown')
 
         if self.read_results_task:
             self.read_results_task.cancel()
