@@ -1,8 +1,9 @@
 import asyncio
+
 import pytest
 
-from dispatcherd.brokers.noop import Broker as NoOpBroker
 from dispatcherd.brokers.error_only import Broker as ErrorOnlyBroker
+from dispatcherd.brokers.noop import Broker as NoOpBroker
 
 
 @pytest.fixture(params=[NoOpBroker, ErrorOnlyBroker])
@@ -30,6 +31,7 @@ async def test_broker_apublish_message(broker, broker_class):
 @pytest.mark.asyncio
 async def test_broker_aprocess_notify(broker):
     """Test that aprocess_notify never yields messages and can be cancelled."""
+
     async def try_get_next():
         async for _ in broker.aprocess_notify():
             return True  # Should never happen
