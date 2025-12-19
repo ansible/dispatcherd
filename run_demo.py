@@ -126,10 +126,7 @@ def main():
     print('running tests.data.methods.sleep_function with a delay')
     print('     10 second delay task')
     # NOTE: this task will error unless you run the dispatcherd itself with it in the PYTHONPATH, which is intended
-    sleep_function.apply_async(
-        args=[3],  # sleep 3 seconds
-        processor_options=[Delayer.Params(delay=10)]
-    )
+    sleep_function.apply_async(args=[3], processor_options=[Delayer.Params(delay=10)])  # sleep 3 seconds
 
     print('')
     print('showing delayed tasks in running list')

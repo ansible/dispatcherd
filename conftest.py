@@ -110,11 +110,13 @@ def registry() -> DispatcherMethodRegistry:
 @pytest.fixture
 def get_worker_data():
     "General utility for processing control-with-reply response"
-    def _rf(response_list: list[dict[str,str|dict]]) -> dict:
+
+    def _rf(response_list: list[dict[str, str | dict]]) -> dict:
         "Given some control-and-response data, assuming 1 node, 1 entry, get the task message"
         assert len(response_list) == 1
         response = response_list[0].copy()
         response.pop('node_id', None)
         assert len(response) == 1
         return list(response.values())[0]
+
     return _rf
