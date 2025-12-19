@@ -1,5 +1,28 @@
 [flake8]
 max-line-length = 160
 extend-ignore = C901
-exclude = .git,tools
+exclude =
+    .git,
+    .mypy_cache,
+    .pytest_cache,
+    .venv,
+    .env,
+    build,
+    dist,
+    docs,
+    logs,
+    research,
+    tools,
+    dispatcher.egg-info,
+    dispatcherd.egg-info,
+    benchmark_data.json
+filename =
+    dispatcherd/*.py,
+    dispatcherd/**/*.py,
+    tests/*.py,
+    tests/**/*.py,
+    asyncio_tests/*.py,
+    asyncio_tests/**/*.py,
+    conftest.py,
+    run_demo.py
 max-complexity = 10

@@ -79,7 +79,7 @@ jobs:
       - run: pip install mypy
       - run: pip install -e .[pg_notify,metrics]
       - run: python3 -m pip install types-PyYAML
-      - run: mypy dispatcherd
+      - run: mypy .
 
   flake8:
     name: Run flake8
@@ -90,4 +90,4 @@ jobs:
           show-progress: false
 
       - run: pip install flake8
-      - run: flake8 dispatcherd
+      - run: flake8 .
