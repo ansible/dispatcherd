@@ -62,13 +62,42 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def wait_for_producers_ready(self) -> None:
         "Returns when all the producers have hit their ready event"
-        for producer in self.producers:
-            existing_tasks = list(producer.all_tasks())
-            wait_task = asyncio.create_task(producer.events.ready_event.wait(), name=f'tmp_{producer}_wait_task')
-            existing_tasks.append(wait_task)
-            await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
-            if not wait_task.done():
-                producer.events.ready_event.set()  # exits wait_task, producer had error
+        tmp_tasks: list[asyncio.Task[Any]] = []
+        try:
+            for producer in self.producers:
+                if self.shared.exit_event.is_set():
+                    logger.debug('Exit event set before all producers became ready; stopping wait early')
+                    return
+
+                existing_tasks = list(producer.all_tasks())
+                wait_task = asyncio.create_task(producer.events.ready_event.wait(), name=f'tmp_{producer}_wait_task')
+                tmp_tasks.append(wait_task)
+                existing_tasks.append(wait_task)
+
+                exit_wait_task: asyncio.Task[Any] | None = None
+                if not self.shared.exit_event.is_set():
+                    exit_wait_task = asyncio.create_task(
+                        self.shared.exit_event.wait(), name=f'{producer}_exit_event_wait_for_ready'
+                    )
+                    tmp_tasks.append(exit_wait_task)
+                    existing_tasks.append(exit_wait_task)
+
+                done, _ = await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
+
+                if exit_wait_task and exit_wait_task in done:
+                    logger.debug('Exit event triggered while waiting for %s to become ready', producer)
+                    return
+
+                if wait_task in done:
+                    await wait_task
+                else:
+                    producer.events.ready_event.set()  # exits wait_task, producer had error
+        finally:
+            for task in tmp_tasks:
+                if not task.done():
+                    task.cancel()
+            if tmp_tasks:
+                await asyncio.gather(*tmp_tasks, return_exceptions=True)
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_running_loop()
