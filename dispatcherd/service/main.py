@@ -91,11 +91,12 @@ class DispatcherMain(DispatcherMainProtocol):
                 else:
                     producer.events.ready_event.set()  # exits wait_task, producer had error
         finally:
-            for task in tmp_tasks:
+            cleanup_tasks = tuple(tmp_tasks)
+            for task in cleanup_tasks:
                 if not task.done():
                     task.cancel()
-            if tmp_tasks:
-                await asyncio.gather(*tmp_tasks, return_exceptions=True)
+            if cleanup_tasks:
+                await asyncio.shield(asyncio.gather(*cleanup_tasks, return_exceptions=True))
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_running_loop()
