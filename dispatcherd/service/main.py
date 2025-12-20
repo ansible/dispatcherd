@@ -76,9 +76,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
                 exit_wait_task: asyncio.Task[Any] | None = None
                 if not self.shared.exit_event.is_set():
-                    exit_wait_task = asyncio.create_task(
-                        self.shared.exit_event.wait(), name=f'{producer}_exit_event_wait_for_ready'
-                    )
+                    exit_wait_task = asyncio.create_task(self.shared.exit_event.wait(), name=f'{producer}_exit_event_wait_for_ready')
                     tmp_tasks.append(exit_wait_task)
                     existing_tasks.append(exit_wait_task)
 
