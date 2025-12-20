@@ -96,7 +96,12 @@ class DispatcherMain(DispatcherMainProtocol):
                 if not task.done():
                     task.cancel()
             if cleanup_tasks:
-                await asyncio.shield(asyncio.gather(*cleanup_tasks, return_exceptions=True))
+                gather_future = asyncio.gather(*cleanup_tasks, return_exceptions=True)
+                try:
+                    await asyncio.shield(gather_future)
+                except asyncio.CancelledError:
+                    await gather_future
+                    raise
 
     async def connect_signals(self) -> None:
         loop = asyncio.get_running_loop()
