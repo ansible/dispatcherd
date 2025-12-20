@@ -70,7 +70,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
     @property
     def inactive(self) -> bool:
         """No further shutdown or callback messages are expected from this worker"""
-        return bool(self.status in ('exited', 'error', 'initialized'))
+        return bool(self.status in ('exited', 'error', 'initialized', 'retired'))
 
     async def start_task(self, message: dict) -> None:
         self.current_task = message  # NOTE: this marks this worker as busy
@@ -100,13 +100,29 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         if self.status not in ('stopping', 'exited'):
             await self.signal_stop()
 
-        try:
-            if self.status != 'exited':
-                await asyncio.wait_for(self.exit_msg_event.wait(), timeout=3)
-            self.exit_msg_event.clear()
-        except asyncio.TimeoutError:
-            logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in 3 seconds')
-            self.status = 'error'  # can signal for result task to exit, since no longer waiting for it here
+        # Poll for process status with shorter intervals
+        poll_interval = 0.2  # 200ms intervals
+        total_timeout = 3.0  # 3 second total timeout
+        start_time = time.monotonic()
+
+        while time.monotonic() - start_time < total_timeout:
+            if not self.process.is_alive():
+                # Process already exited, likely due to process group SIGTERM
+                logger.info(f'Worker {self.worker_id} pid={self.process.pid} already exited, likely due to process group signal')
+                self.status = 'error'  # Set status to 'error' instead of 'exited'
+                self.exit_msg_event.set()  # Set event to prevent other code from waiting
+                break
+
+            try:
+                # Try to wait for exit message with a short timeout
+                await asyncio.wait_for(self.exit_msg_event.wait(), timeout=poll_interval)
+                break  # Exit message received
+            except asyncio.TimeoutError:
+                continue  # Keep polling
+
+        else:  # Loop completed without break
+            logger.error(f'Worker {self.worker_id} pid={self.process.pid} failed to send exit message in {total_timeout} seconds')
+            self.status = 'error'
             self.process.message_queue.close()
 
         await self.join()  # If worker fails to exit, this returns control without raising an exception
@@ -118,7 +134,9 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
                 self.process.kill()
             else:
                 logger.debug(f'Worker {self.worker_id} pid={self.process.pid} exited code={self.process.exitcode()}')
-                self.status = 'retired'
+                # Only set to 'retired' if exit code is 0 (clean exit), otherwise keep as 'error'
+                if self.status != 'error' and self.process.exitcode() == 0:
+                    self.status = 'retired'
                 self.retired_at = time.monotonic()
                 return
 
@@ -131,9 +149,14 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
         self.is_active_cancel = True  # signal for result callback
 
         # If the process has never been started or is already gone, its pid may be None
-        if self.process.pid is None:
+        pid = self.process.pid
+        if pid is None or not self.process.is_alive():
+            logger.debug(f'Worker {self.worker_id} cancel skipped; process already exited')
             return  # it's effectively already canceled/not running
-        os.kill(self.process.pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
+        try:
+            os.kill(pid, signal.SIGUSR1)  # Use SIGUSR1 instead of SIGTERM
+        except ProcessLookupError:
+            logger.debug(f'Worker {self.worker_id} cancel skipped; pid {pid} missing')
 
     def get_status_data(self) -> dict[str, Any]:
         return {
@@ -477,7 +500,7 @@ class WorkerPool(WorkerPoolProtocol):
         stop_tasks = [worker.stop() for worker in workers_to_stop]
         await asyncio.gather(*stop_tasks)
 
-        # Tripple-check that all workers are stopped in practice
+        # Triple-check that all workers are stopped in practice
         for worker in self.workers:
             if worker.process.is_alive():
                 logger.warning(f'worker_id={worker.worker_id} was found alive unexpectedly')
@@ -488,6 +511,11 @@ class WorkerPool(WorkerPoolProtocol):
             if worker.process.pid and worker.process.is_alive():
                 logger.warning(f'Force killing worker {worker.worker_id} pid={worker.process.pid}')
                 worker.process.kill()
+
+        try:
+            self.process_manager.finished_queue.put_nowait('stop')
+        except Exception:
+            logger.exception('Failed to send stop sentinel to finished queue during force shutdown')
 
         if self.read_results_task:
             self.read_results_task.cancel()
@@ -516,7 +544,11 @@ class WorkerPool(WorkerPoolProtocol):
         self.queuer.shutdown()
         self.blocker.shutdown()
         await self.stop_workers()
-        self.process_manager.finished_queue.put('stop')
+
+        # If any worker has an 'error' status, send a stop message to the finished queue
+        if any(worker.status == 'error' for worker in self.workers):
+            logger.info("At least one worker has an 'error' status, sending stop message to finished queue.")
+            self.process_manager.finished_queue.put('stop')
 
         if self.read_results_task:
             logger.info('Waiting for the finished watcher to return')
@@ -596,12 +628,18 @@ class WorkerPool(WorkerPoolProtocol):
         running_ct = self.get_running_count()
         self.last_used_by_ct[running_ct] = time.monotonic()  # scale down may be allowed, clock starting now
 
+        is_stopping = message.get('is_stopping', False)
+
         # Mark the worker as no longer busy
         async with self.workers.management_lock:
             if worker.is_active_cancel and result == '<cancel>':
                 self.canceled_count += 1
             else:
                 self.finished_count += 1
+            if is_stopping:
+                worker.status = 'stopping'
+                if not worker.stopping_at:
+                    worker.stopping_at = time.monotonic()
             worker.mark_finished_task()
             self.workers.move_to_end(worker.worker_id)
 

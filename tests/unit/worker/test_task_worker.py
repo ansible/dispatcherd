@@ -1,4 +1,4 @@
-import multiprocessing
+from queue import SimpleQueue
 
 from dispatcherd.publish import task
 from dispatcherd.worker.task import TaskWorker
@@ -15,5 +15,14 @@ def test_run_method_with_bind(registry):
 
     dmethod = registry.get_from_callable(my_bound_task)
 
-    worker = TaskWorker(1, registry=registry, message_queue=multiprocessing.Queue(), finished_queue=multiprocessing.Queue())
+    queue = SimpleQueue()
+    worker = TaskWorker(1, registry=registry, message_queue=queue, finished_queue=queue)
     worker.run_callable({"task": dmethod.serialize_task(), "uuid": "12345"})
+
+
+class DummyQueue:
+    def __init__(self) -> None:
+        self.messages = []
+
+    def put(self, item, block=True):  # type: ignore[no-untyped-def]
+        self.messages.append((item, block))
