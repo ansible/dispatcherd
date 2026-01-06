@@ -595,17 +595,11 @@ class WorkerPool(WorkerPoolProtocol):
         self.read_results_task = None
 
     async def shutdown(self) -> None:
-        print('_shutdown_management_task')
         await self._shutdown_management_task()
-        print('_shutdown_work_queues')
         await self._shutdown_work_queues()
-        print('_stop_and_cleanup_workers')
         await self._stop_and_cleanup_workers()
-        print('_shutdown_results_task')
         await self._shutdown_results_task()
-        print('process_manager.shutdown')
         self.process_manager.shutdown()
-        print('end of pool shutdown')
 
         logger.info('Pool is shut down')
 
