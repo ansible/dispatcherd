@@ -25,7 +25,7 @@ linters:
 	black $(LINT_ROOT)
 	isort $(LINT_ROOT)
 	flake8 $(LINT_ROOT)
-	mypy $(LINT_ROOT)
+	mypy
 
 demo:
 	docker compose up -d --wait

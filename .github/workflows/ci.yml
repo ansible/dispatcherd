@@ -79,7 +79,7 @@ jobs:
       - run: pip install mypy
       - run: pip install -e .[pg_notify,metrics]
       - run: python3 -m pip install types-PyYAML
-      - run: mypy .
+      - run: mypy
 
   flake8:
     name: Run flake8
