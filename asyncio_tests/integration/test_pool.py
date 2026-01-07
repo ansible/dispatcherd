@@ -4,9 +4,9 @@ import time
 from copy import deepcopy
 
 import pytest
+from conftest import BASIC_CONFIG
 
 from dispatcherd.testing.asyncio import adispatcher_service
-from conftest import BASIC_CONFIG
 
 SLEEP_METHOD = 'lambda: __import__("time").sleep(1.5)'
 LIGHT_SLEEP_METHOD = 'lambda: __import__("time").sleep(0.03)'
