@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator
 
 from ..config import DispatcherSettings
 from ..factories import from_settings
+from ..service.asyncio_tasks import cancel_and_join
 from ..service.main import DispatcherMain
 from .producers import wait_for_producers_ready
 
@@ -45,8 +46,7 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
                         s = f"<failed to describe task: {type(e).__name__}: {e}> task_type={type(task)!r} task_repr={task}"
                     logger.error("Task still pending after shutdown: %s", s)
                 for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
+                    await cancel_and_join(task)
                 raise RuntimeError('Pending asyncio tasks detected during dispatcher teardown')
             try:
                 await dispatcher.cancel_tasks()
