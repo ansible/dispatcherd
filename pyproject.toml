@@ -75,7 +75,6 @@ extend-exclude = '''
   | \.pytest_cache
   | \.venv
   | logs
-  | research
   | dispatcher\.egg-info
   | dispatcherd\.egg-info
   | benchmark_data\.json
@@ -93,7 +92,6 @@ skip = [
     "dist",
     "docs",
     "logs",
-    "research",
     "dispatcher.egg-info",
     "dispatcherd.egg-info",
 ]
