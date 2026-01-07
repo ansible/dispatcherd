@@ -1,7 +1,7 @@
 DOCKER_COMPOSE ?= docker compose
 TEST_DIRS ?= tests
 ASYNC_TEST_DIRS ?= asyncio_tests
-PYTHON_LINT_PATHS := dispatcherd $(TEST_DIRS) $(ASYNC_TEST_DIRS)
+LINT_ROOT ?= .
 
 
 # Mostly copied from DAB
@@ -21,10 +21,10 @@ clean:
 	find . -mindepth 1 -type d -empty -delete
 
 linters:
-	black $(PYTHON_LINT_PATHS)
-	isort $(PYTHON_LINT_PATHS)
-	flake8 $(PYTHON_LINT_PATHS)
-	mypy $(PYTHON_LINT_PATHS)
+	black $(LINT_ROOT)
+	isort $(LINT_ROOT)
+	flake8 $(LINT_ROOT)
+	mypy
 
 demo:
 	docker compose up -d --wait

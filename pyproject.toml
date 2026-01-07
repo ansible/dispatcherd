@@ -55,10 +55,88 @@ local_scheme = "no-local-version"
 line-length = 160
 fast = true
 skip-string-normalization = true
+include = '''
+(
+  ^/dispatcherd/.*\.pyi?$
+  | ^/tests/.*\.pyi?$
+  | ^/asyncio_tests/.*\.pyi?$
+  | ^/tools/.*\.pyi?$
+  | ^/conftest\.pyi?$
+  | ^/run_demo\.pyi?$
+)
+'''
+extend-exclude = '''
+/(
+  build
+  | dist
+  | docs
+  | \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.venv
+  | logs
+  | dispatcher\.egg-info
+  | dispatcherd\.egg-info
+  | benchmark_data\.json
+)
+'''
 
 [tool.isort]
 profile = "black"
 line_length = 160
+src_paths = ["dispatcherd", "tests", "asyncio_tests", "tools"]
+extend_skip = [
+    ".env",
+    "benchmark_data.json",
+    "build",
+    "dist",
+    "docs",
+    "logs",
+    "dispatcher.egg-info",
+    "dispatcherd.egg-info",
+]
+
+[tool.mypy]
+files = [
+    "dispatcherd",
+    "tests",
+    "asyncio_tests",
+    "tools",
+    "run_demo.py",
+    "conftest.py",
+]
+
+[[tool.mypy.overrides]]
+module = ["dispatcherd.control"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["dispatcherd.service.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["dispatcherd.producers.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["dispatcherd.brokers.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["dispatcherd.worker.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["asyncio_tests.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["conftest"]
+ignore_errors = true
 
 [project.optional-dependencies]
 pg_notify = ["psycopg>=3.2.4"]

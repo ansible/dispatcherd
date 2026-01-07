@@ -2,8 +2,8 @@ import asyncio
 
 import psycopg
 import pytest
-
 from conftest import CONNECTION_STRING
+
 from dispatcherd.brokers.pg_notify import connection_save
 from dispatcherd.producers.brokered import BrokeredProducer
 

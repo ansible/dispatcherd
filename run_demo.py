@@ -3,14 +3,13 @@
 import json
 import logging
 import sys
-import time
 
+from dispatcherd.chunking import split_message
 from dispatcherd.config import setup
 from dispatcherd.factories import get_control_from_settings, get_publisher_from_settings
-from dispatcherd.chunking import split_message
-from dispatcherd.utils import MODULE_METHOD_DELIMITER
-from dispatcherd.processors.delayer import Delayer
 from dispatcherd.processors.blocker import Blocker
+from dispatcherd.processors.delayer import Delayer
+from dispatcherd.utils import MODULE_METHOD_DELIMITER
 from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout
 
 # Setup the global config from the settings file shared with the service
@@ -126,10 +125,7 @@ def main():
     print('running tests.data.methods.sleep_function with a delay')
     print('     10 second delay task')
     # NOTE: this task will error unless you run the dispatcherd itself with it in the PYTHONPATH, which is intended
-    sleep_function.apply_async(
-        args=[3],  # sleep 3 seconds
-        processor_options=[Delayer.Params(delay=10)]
-    )
+    sleep_function.apply_async(args=[3], processor_options=[Delayer.Params(delay=10)])  # sleep 3 seconds
 
     print('')
     print('showing delayed tasks in running list')
