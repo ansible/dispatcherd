@@ -16,7 +16,7 @@ from ..protocols import PoolWorker as PoolWorkerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
 from ..protocols import WorkerPool as WorkerPoolProtocol
-from .asyncio_tasks import cancel_and_join, ensure_fatal
+from .asyncio_tasks import ensure_fatal, wait_then_cancel
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
 
@@ -543,16 +543,15 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def _shutdown_management_task(self) -> None:
         self.events.management_event.set()
-        if not self.management_task:
+        management_task = self.management_task
+        if not management_task:
             return
         try:
-            await asyncio.wait_for(self.management_task, timeout=self.shutdown_timeout)
-        except asyncio.TimeoutError:
-            logger.error('Worker management task failed to shut down on its own, canceling')
-            await cancel_and_join(self.management_task, timeout=self.shutdown_timeout)
+            await wait_then_cancel(management_task, timeout=self.shutdown_timeout)
         except asyncio.CancelledError:
-            pass
-        self.management_task = None
+            logger.info('Worker management task canceled during shutdown')
+        finally:
+            self.management_task = None
 
     async def _shutdown_work_queues(self) -> None:
         await self.timeout_runner.kick()
@@ -581,17 +580,13 @@ class WorkerPool(WorkerPoolProtocol):
 
         logger.info('Waiting for the finished watcher to return')
         try:
-            # Task should exit either due to workers returning or receiving stop sentinel
-            await asyncio.wait_for(read_results_task, timeout=self.shutdown_timeout)
-        except asyncio.TimeoutError:
-            logger.warning(f'The finished task failed to cancel in {self.shutdown_timeout} seconds, will force.')
-            logger.info('Finished watcher had to be canceled, awaiting it a second time')
-            await cancel_and_join(read_results_task, timeout=self.shutdown_timeout)
+            await wait_then_cancel(read_results_task, timeout=self.shutdown_timeout)
         except asyncio.CancelledError:
             logger.info('The finished task was canceled, but we are shutting down so that is alright')
         self.read_results_task = None
 
     async def shutdown(self) -> None:
+        self.shared.exit_event.set()
         await self._shutdown_management_task()
         await self._shutdown_work_queues()
         await self._stop_and_cleanup_workers()

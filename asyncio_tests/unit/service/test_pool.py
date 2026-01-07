@@ -288,8 +288,8 @@ async def test_shutdown_is_idepotent(pool_factory):
     """Do some stuff to the pool that is a little weird, but still valid and should not break dispatcherd"""
     pool = pool_factory()
     await pool.shutdown()  # weird to shutdown before starting, but okay
-
-    dispatcher = DispatcherMain(producers=(), pool=pool, shared=SharedAsyncObjects())
+    dispatcher = DispatcherMain(producers=(), pool=pool, shared=pool.shared)
+    pool.shared.exit_event.clear()  # pool.shutdown sets this; DispatcherMain.start_working would clear
     await pool.start_working(dispatcher=dispatcher)
 
     await pool.shutdown()
