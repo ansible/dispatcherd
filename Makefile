@@ -1,7 +1,6 @@
 DOCKER_COMPOSE ?= docker compose
 TEST_DIRS ?= tests
 ASYNC_TEST_DIRS ?= asyncio_tests
-PYTHON_LINT_PATHS ?= dispatcherd $(TEST_DIRS) $(ASYNC_TEST_DIRS)
 LINT_ROOT ?= .
 
 
