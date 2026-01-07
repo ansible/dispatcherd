@@ -68,7 +68,15 @@ class DispatcherMain(DispatcherMainProtocol):
     async def wait_for_producers_ready(self) -> None:
         "Returns when all the producers have hit their ready event"
         tmp_tasks: list[asyncio.Task[Any]] = []
+        exit_wait_task: asyncio.Task[Any] | None = None
         try:
+            if not self.shared.exit_event.is_set():
+                exit_wait_task = asyncio.create_task(
+                    self.shared.exit_event.wait(),
+                    name='wait_for_producers_exit_event',
+                )
+                tmp_tasks.append(exit_wait_task)
+
             for producer in self.producers:
                 if self.shared.exit_event.is_set():
                     logger.debug('Exit event set before all producers became ready; stopping wait early')
@@ -79,10 +87,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 tmp_tasks.append(wait_task)
                 existing_tasks.append(wait_task)
 
-                exit_wait_task: asyncio.Task[Any] | None = None
-                if not self.shared.exit_event.is_set():
-                    exit_wait_task = asyncio.create_task(self.shared.exit_event.wait(), name=f'{producer}_exit_event_wait_for_ready')
-                    tmp_tasks.append(exit_wait_task)
+                if exit_wait_task is not None:
                     existing_tasks.append(exit_wait_task)
 
                 done, _ = await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)

@@ -571,7 +571,12 @@ class WorkerPool(WorkerPoolProtocol):
                 worker.process.kill()
 
     async def _shutdown_results_task(self) -> None:
-        if not self.read_results_task:
+        read_results_task = self.read_results_task
+        if not read_results_task:
+            return
+        if read_results_task.done():
+            logger.info('Finished watcher already completed, skipping shutdown logic')
+            self.read_results_task = None
             return
         try:
             self.process_manager.finished_queue.put('stop', timeout=self.shutdown_timeout / 2.0)
@@ -581,13 +586,13 @@ class WorkerPool(WorkerPoolProtocol):
         logger.info('Waiting for the finished watcher to return')
         try:
             # Task should exit either due to workers returning or receiving stop sentinel
-            await asyncio.wait_for(self.read_results_task, timeout=self.shutdown_timeout)
+            await asyncio.wait_for(read_results_task, timeout=self.shutdown_timeout)
         except asyncio.TimeoutError:
             logger.warning(f'The finished task failed to cancel in {self.shutdown_timeout} seconds, will force.')
-            self.read_results_task.cancel()
+            read_results_task.cancel()
             logger.info('Finished watcher had to be canceled, awaiting it a second time')
             try:
-                await self.read_results_task
+                await read_results_task
             except asyncio.CancelledError:
                 pass
         except asyncio.CancelledError:
