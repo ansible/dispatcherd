@@ -5,6 +5,7 @@ import pytest
 
 from dispatcherd.service.asyncio_tasks import SharedAsyncObjects
 from dispatcherd.service.main import DispatcherMain
+from dispatcherd.testing import wait_for_producers_ready
 
 
 class DummyPool:
@@ -58,7 +59,7 @@ def _pending_tmp_wait_tasks() -> list[asyncio.Task]:
 @pytest.mark.asyncio
 async def test_wait_for_producers_ready_exits_on_force_shutdown():
     dispatcher = _dispatcher_with_hanging_producer()
-    wait_task = asyncio.create_task(dispatcher.wait_for_producers_ready())
+    wait_task = asyncio.create_task(wait_for_producers_ready(dispatcher))
     await asyncio.sleep(0)
 
     dispatcher.shared.exit_event.set()
@@ -73,7 +74,7 @@ async def test_wait_for_producers_ready_exits_on_force_shutdown():
 @pytest.mark.asyncio
 async def test_wait_for_producers_ready_cleanup_on_cancel():
     dispatcher = _dispatcher_with_hanging_producer()
-    wait_task = asyncio.create_task(dispatcher.wait_for_producers_ready())
+    wait_task = asyncio.create_task(wait_for_producers_ready(dispatcher))
 
     await asyncio.sleep(0)
     wait_task.cancel()
@@ -90,7 +91,7 @@ async def test_wait_for_producers_ready_cleanup_on_timeout():
     dispatcher = _dispatcher_with_hanging_producer()
 
     with pytest.raises(asyncio.TimeoutError):
-        await asyncio.wait_for(dispatcher.wait_for_producers_ready(), timeout=0.01)
+        await asyncio.wait_for(wait_for_producers_ready(dispatcher), timeout=0.01)
 
     assert not _pending_tmp_wait_tasks()
 
