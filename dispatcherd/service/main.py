@@ -184,6 +184,7 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
+        self.shared.exit_event.clear()
         try:
             await self.pool.start_working(self)
         except Exception:
