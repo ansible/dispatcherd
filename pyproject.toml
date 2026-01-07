@@ -85,7 +85,7 @@ extend-exclude = '''
 profile = "black"
 line_length = 160
 src_paths = ["dispatcherd", "tests", "asyncio_tests", "tools"]
-skip = [
+extend_skip = [
     ".env",
     "benchmark_data.json",
     "build",
