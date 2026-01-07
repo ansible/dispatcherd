@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Any
 
+from ..service.asyncio_tasks import cancel_and_join
 from ..service.main import DispatcherMain
 
 logger = logging.getLogger(__name__)
@@ -44,11 +45,8 @@ async def wait_for_producers_ready(dispatcher: DispatcherMain) -> None:
                 producer.events.ready_event.set()  # exits wait_task, producer had error
     finally:
         cleanup_tasks = tuple(tmp_tasks)
-        for task in cleanup_tasks:
-            if not task.done():
-                task.cancel()
         if cleanup_tasks:
-            gather_future = asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            gather_future = asyncio.gather(*(cancel_and_join(task) for task in cleanup_tasks))
             try:
                 await asyncio.shield(gather_future)
             except asyncio.CancelledError:

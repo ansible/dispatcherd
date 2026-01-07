@@ -16,7 +16,7 @@ from ..protocols import Producer
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
 from . import control_tasks
-from .asyncio_tasks import ensure_fatal, wait_for_any
+from .asyncio_tasks import cancel_and_join, ensure_fatal, wait_for_any
 
 logger = logging.getLogger(__name__)
 
@@ -214,11 +214,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 continue
             if not task.done():
                 logger.warning(f'Task {task} did not shut down in shutdown method')
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+                await cancel_and_join(task)
 
     async def recycle_broker_producers(self) -> None:
         """For any producer in a broken state (likely due to external factors beyond our control) recycle it"""
@@ -270,11 +266,7 @@ class DispatcherMain(DispatcherMainProtocol):
                 await self.shutdown()
 
             if metrics_task:
-                metrics_task.cancel()
-                try:
-                    await metrics_task
-                except asyncio.CancelledError:
-                    logger.debug('Metrics server has been canceled')
+                await cancel_and_join(metrics_task)
 
     async def main(self) -> None:
         """Main method for the event loop, intended to be passed to loop.run_until_complete"""

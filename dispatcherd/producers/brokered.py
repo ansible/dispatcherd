@@ -4,6 +4,7 @@ from typing import Iterable, Optional
 
 from ..protocols import Broker, DispatcherMain
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
+from ..service.asyncio_tasks import cancel_and_join
 from .base import BaseProducer
 
 logger = logging.getLogger(__name__)
@@ -71,12 +72,7 @@ class BrokeredProducer(BaseProducer):
 
     async def shutdown(self) -> None:
         if self.production_task:
-            self.production_task.cancel()
-            try:
-                await self.production_task
-            except asyncio.CancelledError:
-                logger.info(f'Successfully canceled production from {self.broker}')
-
+            await cancel_and_join(self.production_task)
             self.production_task = None
 
         await self.broker.aclose()

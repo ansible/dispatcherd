@@ -8,7 +8,7 @@ from typing import Any, Optional
 from .chunking import ChunkAccumulator
 from .factories import get_broker
 from .protocols import Broker
-from .service.asyncio_tasks import ensure_fatal
+from .service.asyncio_tasks import cancel_and_join, ensure_fatal
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -126,7 +126,7 @@ class Control:
             await asyncio.wait_for(listen_task, timeout=timeout)
         except asyncio.TimeoutError:
             logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {len(control_callbacks.received_replies)}')
-            listen_task.cancel()
+            await cancel_and_join(listen_task, timeout=timeout)
         finally:
             await broker.aclose()
 
