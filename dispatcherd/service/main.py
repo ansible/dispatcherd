@@ -46,9 +46,6 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             self.node_id = str(uuid4())
 
-        # Address confusion about main task responsibility,
-        # if other code calls .shutdown() then we do not want to, avoid contention issues
-        self.has_shutdown = False
         self.shutdown_lock = asyncio.Lock()
 
         self.metrics = metrics
@@ -72,7 +69,6 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def shutdown(self) -> None:
         async with self.shutdown_lock:
-            self.has_shutdown = True
             self.shared.exit_event.set()  # may already be set
             logger.debug("Shutting down, starting with producers.")
             for producer in self.producers:
@@ -246,8 +242,6 @@ class DispatcherMain(DispatcherMainProtocol):
             metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
             ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
 
-        self.has_shutdown = False
-
         try:
             await self.start_working()
 
@@ -262,8 +256,7 @@ class DispatcherMain(DispatcherMainProtocol):
                     await self.recycle_broker_producers()  # Otherwise, one or some of the producers broke
 
         finally:
-            if not self.has_shutdown:
-                await self.shutdown()
+            await self.shutdown()
 
             if metrics_task:
                 await cancel_and_join(metrics_task)
