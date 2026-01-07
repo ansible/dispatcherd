@@ -14,15 +14,4 @@ exclude =
     dispatcher.egg-info,
     dispatcherd.egg-info,
     benchmark_data.json
-filename =
-    dispatcherd/*.py,
-    dispatcherd/**/*.py,
-    tests/*.py,
-    tests/**/*.py,
-    asyncio_tests/*.py,
-    asyncio_tests/**/*.py,
-    tools/*.py,
-    tools/**/*.py,
-    conftest.py,
-    run_demo.py
 max-complexity = 10

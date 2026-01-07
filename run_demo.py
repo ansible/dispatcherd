@@ -3,7 +3,6 @@
 import json
 import logging
 import sys
-import time
 
 from dispatcherd.chunking import split_message
 from dispatcherd.config import setup
