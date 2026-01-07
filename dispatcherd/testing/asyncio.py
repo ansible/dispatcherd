@@ -38,7 +38,7 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
             if pending:
                 for task in pending:
                     try:
-                        is_cancelling = getattr(task,'cancelling',lambda:None)()
+                        is_cancelling = getattr(task, 'cancelling', lambda: None)()
                         s = f"{task!r} name={task.get_name()!r} done={task.done()} cancelled={task.cancelled()} cancelling={is_cancelling}"
                     except Exception as e:
                         s = f"<failed to describe task: {type(e).__name__}: {e}> task_type={type(task)!r} task_repr={task}"
