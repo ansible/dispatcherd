@@ -41,34 +41,21 @@ async def aget_metrics():
 async def test_get_metrics(ametrics_dispatcher):
     assert ametrics_dispatcher.metrics.port == TEST_METRICS_PORT  # sanity, that config took effect
 
-    main_task = None
+    # Metrics server task starts from the main method
+    asyncio.create_task(ametrics_dispatcher.main_as_task())
 
-    try:
-        # Metrics server task starts from the main method
-        main_task = asyncio.create_task(ametrics_dispatcher.main_as_task())
+    await ametrics_dispatcher.metrics.ready_event.wait()
 
-        await ametrics_dispatcher.metrics.ready_event.wait()
-
-        # Actual test and assertion
-        get_task = asyncio.create_task(aget_metrics())
-        resp = await get_task
-        assert resp.status_code == 200
-        # Verify the Content-Type header for Prometheus metrics
-        expected_content_type = "text/plain; version=0.0.4; charset=utf-8"
-        assert resp.headers.get("content-type") == expected_content_type
-        assert "dispatcher_messages_received_total" in resp.text
-        # Check for another metric to be more thorough, e.g., worker_count
-        assert "dispatcher_worker_count" in resp.text
-
-    finally:
-
-        # Normally handled by fixture, we made a main loop task, so take care of our own task
-        if main_task:
-            main_task.cancel()
-            try:
-                await asyncio.wait_for(main_task, timeout=5)
-            except asyncio.CancelledError:
-                pass
+    # Actual test and assertion
+    get_task = asyncio.create_task(aget_metrics())
+    resp = await get_task
+    assert resp.status_code == 200
+    # Verify the Content-Type header for Prometheus metrics
+    expected_content_type = "text/plain; version=0.0.4; charset=utf-8"
+    assert resp.headers.get("content-type") == expected_content_type
+    assert "dispatcher_messages_received_total" in resp.text
+    # Check for another metric to be more thorough, e.g., worker_count
+    assert "dispatcher_worker_count" in resp.text
 
 
 @pytest.mark.asyncio
@@ -76,34 +63,25 @@ async def test_metrics_invalid_utf8_returns_400(ametrics_dispatcher):
     """Invalid UTF-8 in the request line should trigger a 400 response and close connection cleanly."""
     assert ametrics_dispatcher.metrics.port == TEST_METRICS_PORT
 
-    main_task = None
+    # Start service
+    asyncio.create_task(ametrics_dispatcher.main_as_task())
+
+    await ametrics_dispatcher.metrics.ready_event.wait()
+
+    reader, writer = await asyncio.open_connection("localhost", TEST_METRICS_PORT)
+    response_bytes = b""
     try:
-        main_task = asyncio.create_task(ametrics_dispatcher.main_as_task())
+        bad_request = b"GE\xffT /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        writer.write(bad_request)
+        await writer.drain()
 
-        await ametrics_dispatcher.metrics.ready_event.wait()
-
-        reader, writer = await asyncio.open_connection("localhost", TEST_METRICS_PORT)
-        response_bytes = b""
-        try:
-            bad_request = b"GE\xffT /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-            writer.write(bad_request)
-            await writer.drain()
-
-            response_bytes = await asyncio.wait_for(reader.read(), timeout=2)
-        finally:
-            writer.close()
-            try:
-                await writer.wait_closed()
-            except Exception:
-                pass
-
-        assert response_bytes.startswith(b"HTTP/1.1 400 Bad Request")
-        assert b"Bad Request" in response_bytes
-
+        response_bytes = await asyncio.wait_for(reader.read(), timeout=2)
     finally:
-        if main_task:
-            main_task.cancel()
-            try:
-                await asyncio.wait_for(main_task, timeout=5)
-            except asyncio.CancelledError:
-                pass
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+    assert response_bytes.startswith(b"HTTP/1.1 400 Bad Request")
+    assert b"Bad Request" in response_bytes
