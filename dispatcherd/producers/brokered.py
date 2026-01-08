@@ -71,7 +71,13 @@ class BrokeredProducer(BaseProducer):
 
     async def shutdown(self) -> None:
         if self.production_task:
-            self.production_task.cancel()
+            production_task = self.production_task
+            production_task.cancel()
+            try:
+                await production_task
+            except asyncio.CancelledError:
+                if not production_task.cancelled():
+                    raise  # the shutdown itself was cancelled
             self.production_task = None
 
         await self.broker.aclose()

@@ -126,14 +126,12 @@ class Control:
             await asyncio.wait_for(listen_task, timeout=timeout)
         except asyncio.TimeoutError:
             logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {len(control_callbacks.received_replies)}')
+            listen_task.cancel()
             try:
-                await asyncio.wait_for(asyncio.shield(listen_task), timeout=timeout)
-                logger.debug('Reply listener finished during grace period after timeout')
-            except asyncio.TimeoutError:
-                logger.warning('Grace period expired waiting for reply listener, canceling task')
-            if not listen_task.done():
-                listen_task.cancel()
-            await listen_task
+                await asyncio.wait_for(listen_task, timeout=timeout)
+            except asyncio.CancelledError:
+                if not listen_task.cancelled():
+                    raise
         finally:
             await broker.aclose()
 
