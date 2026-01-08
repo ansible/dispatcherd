@@ -48,4 +48,3 @@ async def test_task_does_not_fail_so_okay():
     ensure_fatal(aio_task, exit_event=event)
     await aio_task
     assert not event.is_set()
-
