@@ -43,7 +43,7 @@ class DummyBroker(Broker):
 async def test_acontrol_with_reply_resource_cleanup(monkeypatch):
     dummy_broker = DummyBroker()
 
-    def dummy_get_broker(broker_name, broker_config, channels=None):
+    def dummy_get_broker(broker_name, broker_config, channels=None, **kwargs):
         return dummy_broker
 
     monkeypatch.setattr("dispatcherd.control.get_broker", dummy_get_broker)
@@ -59,7 +59,7 @@ async def test_acontrol_with_reply_resource_cleanup(monkeypatch):
 async def test_acontrol_resource_cleanup(monkeypatch):
     dummy_broker = DummyBroker()
 
-    def dummy_get_broker(broker_name, broker_config, channels=None):
+    def dummy_get_broker(broker_name, broker_config, channels=None, **kwargs):
         return dummy_broker
 
     monkeypatch.setattr("dispatcherd.control.get_broker", dummy_get_broker)
