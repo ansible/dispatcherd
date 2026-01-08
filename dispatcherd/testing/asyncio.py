@@ -12,7 +12,6 @@ from .producers import wait_for_producers_ready
 logger = logging.getLogger(__name__)
 
 MAIN_AS_TASK_QUALNAME = f'{DispatcherMain.__name__}.main_as_task'
-MAIN_TASK_WAIT_TIMEOUT = 2
 
 
 def _get_pending_tasks() -> list[asyncio.Task[Any]]:
@@ -25,17 +24,6 @@ def _is_dispatcher_main_task(task: asyncio.Task[Any]) -> bool:
     code = getattr(coro, 'cr_code', None)
     qualname = getattr(code, 'co_qualname', None)
     return qualname == MAIN_AS_TASK_QUALNAME
-
-
-async def _await_dispatcher_main_tasks(tasks: Iterable[asyncio.Task[Any]], timeout: float) -> None:
-    main_tasks = [task for task in tasks if _is_dispatcher_main_task(task)]
-    if not main_tasks:
-        return
-    for task in main_tasks:
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
-        except asyncio.TimeoutError:
-            logger.warning('Dispatcher main_as_task task failed to finish within %s seconds: %r', timeout, task)
 
 
 @contextlib.asynccontextmanager
@@ -62,10 +50,20 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
                 logger.error('Dispatcher shutdown timed out; inspecting tasks before cancellation')
             except Exception:
                 logger.exception('shutdown had error')
+
+            # If main task is still running, allow that to finish
             pending = _get_pending_tasks()
             if pending:
-                await _await_dispatcher_main_tasks(pending, timeout=MAIN_TASK_WAIT_TIMEOUT)
-                pending = _get_pending_tasks()
+                main_tasks = [task for task in pending if _is_dispatcher_main_task(task)]
+                if main_tasks:
+                    for task in main_tasks:
+                        try:
+                            await asyncio.wait_for(asyncio.shield(task), timeout=2)
+                        except asyncio.TimeoutError:
+                            logger.warning('Dispatcher main_as_task task failed to finish within %s seconds: %r', 2, task)
+                    pending = _get_pending_tasks()  # refresh pending list
+
+            # Any tasks that are pending (main task resolved) should give an error
             if pending:
                 for task in pending:
                     try:
