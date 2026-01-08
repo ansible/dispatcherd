@@ -16,7 +16,7 @@ from ..protocols import PoolWorker as PoolWorkerProtocol
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerData as WorkerDataProtocol
 from ..protocols import WorkerPool as WorkerPoolProtocol
-from .asyncio_tasks import ensure_fatal, wait_then_cancel
+from .asyncio_tasks import ensure_fatal
 from .next_wakeup_runner import HasWakeup, NextWakeupRunner
 from .process import ProcessManager, ProcessProxy
 
@@ -547,7 +547,10 @@ class WorkerPool(WorkerPoolProtocol):
         if not management_task:
             return
         try:
-            await wait_then_cancel(management_task, timeout=self.shutdown_timeout)
+            await asyncio.wait_for(management_task, timeout=self.shutdown_timeout)
+        except asyncio.TimeoutError:
+            logger.warning('Timed out waiting %.2fs for management task to finish, canceling', self.shutdown_timeout)
+            management_task.cancel()
         except asyncio.CancelledError:
             logger.info('Worker management task canceled during shutdown')
         finally:
@@ -580,7 +583,10 @@ class WorkerPool(WorkerPoolProtocol):
 
         logger.info('Waiting for the finished watcher to return')
         try:
-            await wait_then_cancel(read_results_task, timeout=self.shutdown_timeout)
+            await asyncio.wait_for(read_results_task, timeout=self.shutdown_timeout)
+        except asyncio.TimeoutError:
+            logger.warning('Timed out waiting %.2fs for finished watcher to exit, canceling', self.shutdown_timeout)
+            read_results_task.cancel()
         except asyncio.CancelledError:
             logger.info('The finished task was canceled, but we are shutting down so that is alright')
         self.read_results_task = None

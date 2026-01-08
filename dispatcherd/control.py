@@ -8,7 +8,7 @@ from typing import Any, Optional
 from .chunking import ChunkAccumulator
 from .factories import get_broker
 from .protocols import Broker
-from .service.asyncio_tasks import ensure_fatal, wait_then_cancel
+from .service.asyncio_tasks import ensure_fatal
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -127,9 +127,13 @@ class Control:
         except asyncio.TimeoutError:
             logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {len(control_callbacks.received_replies)}')
             try:
-                await wait_then_cancel(listen_task, timeout=timeout)
-            except asyncio.CancelledError:
-                pass
+                await asyncio.wait_for(asyncio.shield(listen_task), timeout=timeout)
+                logger.debug('Reply listener finished during grace period after timeout')
+            except asyncio.TimeoutError:
+                logger.warning('Grace period expired waiting for reply listener, canceling task')
+            if not listen_task.done():
+                listen_task.cancel()
+            await listen_task
         finally:
             await broker.aclose()
 
