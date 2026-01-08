@@ -76,3 +76,44 @@ async def named_wait(event: asyncio.Event, name: str) -> None:
         current_task.set_name(name)
 
     await event.wait()
+
+
+async def cancel_other_tasks(*, timeout: float = 5.0) -> None:
+    current = asyncio.current_task()
+    if current is None:
+        return
+
+    tasks = {t for t in asyncio.all_tasks() if t is not current and not t.done()}
+    if not tasks:
+        return
+
+    # Request cancellation for all tasks first.
+    for t in tasks:
+        if t.cancelling():
+            logger.debug("Task %s already cancelling", t.get_name())
+        else:
+            logger.warning("Requesting cancel of lingering task %s", t.get_name())
+            t.cancel()
+
+    done, pending = await asyncio.wait(tasks, timeout=timeout)
+
+    # Drain done tasks so exceptions are observed.
+    for t in done:
+        try:
+            await asyncio.shield(t)
+        except asyncio.CancelledError:
+            # If the drained task ended up cancelled, that's expected.
+            if t.cancelled():
+                continue
+            # Otherwise, *we* were cancelled.
+            raise
+        except Exception:
+            logger.exception("Task %s raised while awaiting shutdown completion", t)
+
+    # Report anything still pending after timeout.
+    for t in pending:
+        logger.warning(
+            "Timed out waiting %.1fs for task %s to finish; leaving it cancelled",
+            timeout,
+            t.get_name(),
+        )

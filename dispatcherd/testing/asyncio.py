@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator
 
 from ..config import DispatcherSettings
 from ..factories import from_settings
+from ..service.asyncio_tasks import cancel_other_tasks
 from ..service.main import DispatcherMain
 from .producers import wait_for_producers_ready
 
@@ -81,6 +82,6 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
                 raise RuntimeError('Pending asyncio tasks detected during dispatcher teardown')
 
             try:
-                await dispatcher.cancel_tasks()
+                await cancel_other_tasks()
             except Exception:
                 logger.exception('cancel_tasks had error')
