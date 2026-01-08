@@ -5,6 +5,7 @@ import pytest
 
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.factories import from_settings
+from dispatcherd.service.asyncio_tasks import cancel_other_tasks
 from dispatcherd.testing import wait_for_producers_ready
 
 
@@ -35,4 +36,4 @@ async def test_on_start_tasks(caplog):
     finally:
         if dispatcher:
             await dispatcher.shutdown()
-            await dispatcher.cancel_tasks()
+            await cancel_other_tasks()
