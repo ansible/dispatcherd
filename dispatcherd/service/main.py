@@ -16,7 +16,7 @@ from ..protocols import Producer
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
 from . import control_tasks
-from .asyncio_tasks import ensure_fatal, wait_for_any
+from .asyncio_tasks import cancel_other_tasks, ensure_fatal, wait_for_any
 
 logger = logging.getLogger(__name__)
 
@@ -205,27 +205,6 @@ class DispatcherMain(DispatcherMainProtocol):
                 for task in producer.all_tasks():
                     ensure_fatal(task, exit_event=producer.events.recycle_event)
 
-    async def cancel_tasks(self) -> None:
-        wait_timeout = 5.0
-        for task in asyncio.all_tasks():
-            if task == asyncio.current_task():
-                continue
-            if task.done():
-                continue
-
-            if task.cancelled():
-                logger.debug('Task %s already canceling after timeout wait', task.get_name())
-            else:
-                logger.warning('Requesting cancel of lingering task %s', task.get_name())
-                task.cancel()
-
-            try:
-                await asyncio.wait_for(asyncio.shield(task), timeout=wait_timeout)
-            except asyncio.TimeoutError:
-                logger.warning('Timed out waiting %.1fs for task %s to finish; canceling', wait_timeout, task.get_name())
-            except Exception:
-                logger.exception('Task %s raised while awaiting shutdown completion', task)
-
     async def recycle_broker_producers(self) -> None:
         """For any producer in a broken state (likely due to external factors beyond our control) recycle it"""
         for producer in self.producers:
@@ -285,6 +264,6 @@ class DispatcherMain(DispatcherMainProtocol):
         try:
             await self.main_as_task()
         finally:
-            await self.cancel_tasks()
+            await cancel_other_tasks()
 
         logger.debug('Dispatcherd loop fully completed')
