@@ -27,7 +27,9 @@ def metrics_config():
 @pytest_asyncio.fixture
 async def ametrics_dispatcher(metrics_config) -> AsyncIterator[DispatcherMain]:
     async with adispatcher_service(metrics_config) as dispatcher:
+        assert dispatcher.metrics.port == TEST_METRICS_PORT  # sanity, that config took effect
         yield dispatcher
+
 
 
 async def aget_metrics():
@@ -39,7 +41,6 @@ async def aget_metrics():
 
 @pytest.mark.asyncio
 async def test_get_metrics(ametrics_dispatcher):
-    assert ametrics_dispatcher.metrics.port == TEST_METRICS_PORT  # sanity, that config took effect
 
     # Metrics server task starts from the main method
     asyncio.create_task(ametrics_dispatcher.main_as_task())
@@ -61,7 +62,6 @@ async def test_get_metrics(ametrics_dispatcher):
 @pytest.mark.asyncio
 async def test_metrics_invalid_utf8_returns_400(ametrics_dispatcher):
     """Invalid UTF-8 in the request line should trigger a 400 response and close connection cleanly."""
-    assert ametrics_dispatcher.metrics.port == TEST_METRICS_PORT
 
     # Start service
     asyncio.create_task(ametrics_dispatcher.main_as_task())
