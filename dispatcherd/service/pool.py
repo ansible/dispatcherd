@@ -114,6 +114,7 @@ class PoolWorker(HasWakeup, PoolWorkerProtocol):
                     logger.info(f'Worker {self.worker_id} pid={self.process.pid} already exited, likely due to process group signal')
                     self.status = 'error'  # Set status to 'error' instead of 'exited'
                     self.exit_msg_event.set()  # Set event to prevent other code from waiting
+                    self.process.message_queue.close()
                 break
 
             try:
