@@ -31,7 +31,6 @@ async def ametrics_dispatcher(metrics_config) -> AsyncIterator[DispatcherMain]:
         yield dispatcher
 
 
-
 async def aget_metrics():
     async with httpx.AsyncClient() as client:
         # Ensure the path is /metrics, as CustomHttpServer serves metrics on this specific path
