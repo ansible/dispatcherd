@@ -51,11 +51,13 @@ def work_loop_internal(worker: TaskWorker) -> None:
         except Exception:
             logger.exception('Worker pre_task error')
 
+        result = None
         try:
             result = worker.perform_work(message)
         finally:
             worker.enter_idle_mode()
-            worker.post_task(result)
+            if result:
+                worker.post_task(result)
 
         # Indicate that the task is finished by putting a message in the finished_queue
         worker.finished_queue.put(result)
