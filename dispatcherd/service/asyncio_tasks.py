@@ -70,20 +70,6 @@ async def cancel_and_join(task: asyncio.Task[Any], timeout: float = 5.0) -> None
         logger.debug('Task %s returned after intended cancel', task_name)
 
 
-async def wait_then_cancel(task: asyncio.Task[Any], timeout: float) -> None:
-    """Wait for a task to finish within ``timeout`` seconds, then cancel it."""
-    task_name = task.get_name()
-    try:
-        await asyncio.wait_for(asyncio.shield(task), timeout)
-        logger.debug('Task %s finished before cancellation request', task_name)
-    except asyncio.TimeoutError:
-        logger.warning('Timed out waiting %.2fs for task %s to complete before cancel', timeout, task_name)
-    if task.done():
-        return
-    task.cancel()
-    await task
-
-
 async def wait_for_any(events: Iterable[asyncio.Event], names: Optional[Iterable[str]] = None) -> int:
     """
     Wait for a list of events. If any of the events gets set, this function
