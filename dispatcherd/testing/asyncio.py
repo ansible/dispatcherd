@@ -1,17 +1,14 @@
 import asyncio
 import contextlib
 import logging
-from typing import Any, AsyncGenerator, Iterable
+from typing import Any, AsyncGenerator
 
 from ..config import DispatcherSettings
 from ..factories import from_settings
-from ..service.asyncio_tasks import cancel_and_join
 from ..service.main import DispatcherMain
 from .producers import wait_for_producers_ready
 
 logger = logging.getLogger(__name__)
-
-MAIN_AS_TASK_QUALNAME = f'{DispatcherMain.__name__}.main_as_task'
 
 
 def _get_pending_tasks() -> list[asyncio.Task[Any]]:
@@ -23,7 +20,7 @@ def _is_dispatcher_main_task(task: asyncio.Task[Any]) -> bool:
     coro = task.get_coro()
     code = getattr(coro, 'cr_code', None)
     qualname = getattr(code, 'co_qualname', None)
-    return qualname == MAIN_AS_TASK_QUALNAME
+    return qualname == f'{DispatcherMain.__name__}.main_as_task'
 
 
 @contextlib.asynccontextmanager
@@ -72,9 +69,17 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
                     except Exception as e:
                         s = f"<failed to describe task: {type(e).__name__}: {e}> task_type={type(task)!r} task_repr={task}"
                     logger.error("Task still pending after shutdown: %s", s)
-                for task in pending:
-                    await cancel_and_join(task)
+
+                    task.cancel()
+
+                # Give it some seconds for tasks to finish after cancel happening, but do not raise additional errors
+                try:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                except asyncio.TimeoutError:
+                    logger.error('Timed out waiting for pending tasks to cancel')
+
                 raise RuntimeError('Pending asyncio tasks detected during dispatcher teardown')
+
             try:
                 await dispatcher.cancel_tasks()
             except Exception:

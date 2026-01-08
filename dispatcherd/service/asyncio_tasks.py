@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Iterable, Optional
+from typing import Iterable, Optional
 
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 
@@ -47,29 +47,6 @@ def ensure_fatal(task: asyncio.Task, exit_event: Optional[asyncio.Event] = None)
     return task  # nicety so this can be used as a wrapper
 
 
-async def cancel_and_join(task: asyncio.Task[Any], timeout: float = 5.0) -> None:
-    """Cancel an asyncio.Task and await its completion with logging."""
-    task_name = task.get_name()
-    if task.done():
-        logger.debug('Task %s already completed prior to cancellation request, awaiting result', task_name)
-        await task
-        return
-
-    task.cancel()
-    try:
-        await asyncio.wait_for(task, timeout)
-    except asyncio.CancelledError:
-        if task.cancelled():
-            logger.debug('Task %s canceled cleanly', task_name)
-            return
-        raise
-    except asyncio.TimeoutError:
-        logger.warning('Timed out waiting %.2fs for task %s to cancel', timeout, task_name)
-        raise
-    else:
-        logger.debug('Task %s returned after intended cancel', task_name)
-
-
 async def wait_for_any(events: Iterable[asyncio.Event], names: Optional[Iterable[str]] = None) -> int:
     """
     Wait for a list of events. If any of the events gets set, this function
@@ -81,7 +58,9 @@ async def wait_for_any(events: Iterable[asyncio.Event], names: Optional[Iterable
         tasks = [asyncio.create_task(event.wait()) for event in events]
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     if pending:
-        await asyncio.gather(*(cancel_and_join(task) for task in pending))
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
     for i, task in enumerate(tasks):
         if task in done:

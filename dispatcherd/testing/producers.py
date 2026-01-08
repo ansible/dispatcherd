@@ -2,10 +2,10 @@ import asyncio
 import logging
 from typing import Any
 
-from ..service.asyncio_tasks import cancel_and_join
 from ..service.main import DispatcherMain
 
 logger = logging.getLogger(__name__)
+CLEANUP_TIMEOUT = 5.0
 
 
 async def wait_for_producers_ready(dispatcher: DispatcherMain) -> None:
@@ -46,9 +46,17 @@ async def wait_for_producers_ready(dispatcher: DispatcherMain) -> None:
     finally:
         cleanup_tasks = tuple(tmp_tasks)
         if cleanup_tasks:
-            gather_future = asyncio.gather(*(cancel_and_join(task) for task in cleanup_tasks))
-            try:
-                await asyncio.shield(gather_future)
-            except asyncio.CancelledError:
-                await gather_future
-                raise
+            for task in cleanup_tasks:
+                if task.done():
+                    await task
+                    continue
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=CLEANUP_TIMEOUT)
+                except asyncio.CancelledError:
+                    if task.cancelled():
+                        continue
+                    raise
+                except asyncio.TimeoutError:
+                    logger.warning('Timed out waiting for cleanup task %s to cancel', task.get_name())
+                    raise
