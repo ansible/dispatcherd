@@ -67,27 +67,30 @@ class DispatcherMain(DispatcherMainProtocol):
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self.receive_signal)
 
+    async def shutdown_no_lock(self) -> None:
+        self.shared.exit_event.set()  # may already be set
+        logger.debug("Shutting down, starting with producers.")
+        for producer in self.producers:
+            try:
+                await producer.shutdown()
+            except Exception:
+                logger.exception('Producer task had error')
+
+        # Handle delayed tasks and inform user
+        await self.delayer.shutdown()
+
+        logger.debug('Gracefully shutting down worker pool')
+        try:
+            await self.pool.shutdown()
+        except Exception:
+            logger.exception('Pool manager encountered error')
+
+        logger.debug('Setting event to exit main loop')
+        self.shared.exit_event.set()
+
     async def shutdown(self) -> None:
         async with self.shutdown_lock:
-            self.shared.exit_event.set()  # may already be set
-            logger.debug("Shutting down, starting with producers.")
-            for producer in self.producers:
-                try:
-                    await producer.shutdown()
-                except Exception:
-                    logger.exception('Producer task had error')
-
-            # Handle delayed tasks and inform user
-            await self.delayer.shutdown()
-
-            logger.debug('Gracefully shutting down worker pool')
-            try:
-                await self.pool.shutdown()
-            except Exception:
-                logger.exception('Pool manager encountered error')
-
-            logger.debug('Setting event to exit main loop')
-            self.shared.exit_event.set()
+            await self.shutdown_no_lock()
 
     async def connected_callback(self, producer: Producer) -> None:
         return
