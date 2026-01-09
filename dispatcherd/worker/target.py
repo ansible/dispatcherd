@@ -45,9 +45,19 @@ def work_loop_internal(worker: TaskWorker) -> None:
             logger.warning(f"Worker {worker.worker_id} exiting main loop due to stop message.")
             break
 
-        worker.pre_task(message)
-        result = worker.perform_work(message)
-        worker.post_task(result)
+        worker.enter_task_mode()
+        try:
+            worker.pre_task(message)
+        except Exception:
+            logger.exception('Worker pre_task error')
+
+        result = None
+        try:
+            result = worker.perform_work(message)
+        finally:
+            worker.enter_idle_mode()
+            if result:
+                worker.post_task(result)
 
         # Indicate that the task is finished by putting a message in the finished_queue
         worker.finished_queue.put(result)

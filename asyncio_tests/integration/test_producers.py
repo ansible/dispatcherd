@@ -5,6 +5,8 @@ import pytest
 
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.factories import from_settings
+from dispatcherd.service.asyncio_tasks import cancel_other_tasks
+from dispatcherd.testing import wait_for_producers_ready
 
 
 @pytest.mark.asyncio
@@ -25,7 +27,7 @@ async def test_on_start_tasks(caplog):
         await dispatcher.connect_signals()
         with caplog.at_level(logging.DEBUG):
             await dispatcher.start_working()
-            await dispatcher.wait_for_producers_ready()
+            await wait_for_producers_ready(dispatcher)
             await asyncio.wait_for(dispatcher.pool.events.work_cleared.wait(), timeout=2)
             await asyncio.sleep(0.02)  # still may be some time between clearing event and desired log
 
@@ -34,4 +36,4 @@ async def test_on_start_tasks(caplog):
     finally:
         if dispatcher:
             await dispatcher.shutdown()
-            await dispatcher.cancel_tasks()
+            await cancel_other_tasks()

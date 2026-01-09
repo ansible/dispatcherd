@@ -10,7 +10,7 @@ from typing import Any, Optional
 from ..protocols import TaskWorker as TaskWorkerProtocol
 from ..registry import DispatcherMethodRegistry
 from ..registry import registry as global_registry
-from .exceptions import DispatcherCancel
+from .exceptions import DispatcherCancel, DispatcherExit
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,7 @@ class WorkerSignalHandler:
     def __init__(self, worker_id: int) -> None:
         self.kill_now = False
         self.worker_id = worker_id
-        signal.signal(signal.SIGUSR1, self.task_cancel)
-        signal.signal(signal.SIGINT, self.exit_gracefully)
+        self.enter_idle_mode()
 
     def task_cancel(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
         raise DispatcherCancel
@@ -28,6 +27,18 @@ class WorkerSignalHandler:
     def exit_gracefully(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
         logger.info(f'Worker {self.worker_id} received worker process exit signal')
         self.kill_now = True
+
+    def enter_idle_mode(self) -> None:
+        """Install idle-mode handlers so signals request shutdown/cancel."""
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+        signal.signal(signal.SIGUSR1, self.task_cancel)
+
+    def enter_task(self) -> None:
+        """Restore default SIGINT/SIGTERM behavior so tasks can install their own handlers."""
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        signal.signal(signal.SIGUSR1, self.task_cancel)
 
 
 class DispatcherBoundMethods:
@@ -82,6 +93,7 @@ class TaskWorker(TaskWorkerProtocol):
         self.pid = os.getpid()
         self.signal_handler = WorkerSignalHandler(worker_id)
         self.idle_timeout = idle_timeout
+        self.exit_after_current_task = False
 
     def on_start(self) -> None:
         """For apps integrating callbacks"""
@@ -103,14 +115,26 @@ class TaskWorker(TaskWorkerProtocol):
         """For apps integrating callbacks"""
         pass
 
+    def enter_task_mode(self) -> None:
+        self.signal_handler.enter_task()
+
+    def enter_idle_mode(self) -> None:
+        self.signal_handler.enter_idle_mode()
+
     def should_exit(self) -> bool:
         """Called before continuing the loop, something suspicious, return True, should exit"""
         if os.getppid() != self.ppid:
             logger.error(f'Worker {self.worker_id}, my parent PID changed, this process has been orphaned, like segfault or sigkill, exiting')
             return True
-        elif self.signal_handler.kill_now:
+        elif self.signal_handler.kill_now or self.exit_after_current_task:
             return True
         return False
+
+    def _worker_is_stopping(self) -> bool:
+        """Check if the worker should avoid dispatching more follow-up work."""
+        if os.getppid() != self.ppid:
+            return True
+        return self.signal_handler.kill_now or self.exit_after_current_task
 
     def get_uuid(self, message: dict[str, Any]) -> str:
         return message.get('uuid', '<unknown>')
@@ -146,8 +170,11 @@ class TaskWorker(TaskWorkerProtocol):
             # Log exception because this can provide valuable info about where a task was when getting signal
             logger.exception(f'Worker {self.worker_id} task canceled (uuid={self.get_uuid(message)})')
             return '<cancel>'
+        except DispatcherExit:
+            logger.info(f'Worker {self.worker_id} task requested worker exit (uuid={self.get_uuid(message)})')
+            raise
 
-    def perform_work(self, message: dict) -> dict[str, Any]:
+    def perform_work(self, message: dict, *, _reset_exit_state: bool = True) -> dict[str, Any]:
         """
         Import and run code for a task e.g.,
 
@@ -169,8 +196,14 @@ class TaskWorker(TaskWorkerProtocol):
         """
         time_started = time.time()
         result = None
+        if _reset_exit_state:
+            self.exit_after_current_task = False
+
         try:
             result = self.run_callable(message)
+        except DispatcherExit as exit_exc:
+            self.exit_after_current_task = True
+            result = exit_exc.result
         except Exception as exc:
             result = exc
 
@@ -191,17 +224,26 @@ class TaskWorker(TaskWorkerProtocol):
                 traceback.print_tb(tb)
 
             for callback in message.get('errbacks', []) or []:
+                if self._worker_is_stopping():
+                    break
                 callback['uuid'] = self.get_uuid(message)
-                self.perform_work(callback)
+                self.perform_work(callback, _reset_exit_state=False)
         finally:
             # TODO: callback after running a task, previously ran
             # kube_config._cleanup_temp_files()
             pass
 
         for callback in message.get('callbacks', []) or []:
+            if self._worker_is_stopping():
+                break
             callback['uuid'] = self.get_uuid(message)
-            self.perform_work(callback)
-        return self.get_finished_message(result, message, time_started)
+            self.perform_work(callback, _reset_exit_state=False)
+        finished_message = self.get_finished_message(result, message, time_started)
+
+        if self._worker_is_stopping():
+            finished_message['is_stopping'] = True
+
+        return finished_message
 
     # TODO: new WorkerTaskCall class to track timings and such
     def get_finished_message(self, raw_result: Any, message: dict, time_started: float) -> dict[str, Any]:
