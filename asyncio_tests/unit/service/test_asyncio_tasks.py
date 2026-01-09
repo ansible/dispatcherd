@@ -1,8 +1,9 @@
 import asyncio
+import logging
 
 import pytest
 
-from dispatcherd.service.asyncio_tasks import ensure_fatal
+from dispatcherd.service.asyncio_tasks import cancel_other_tasks, ensure_fatal
 
 
 async def will_fail():
@@ -76,3 +77,48 @@ async def test_finished_task_failure_sets_exit_event():
     with pytest.raises(RuntimeError):
         ensure_fatal(aio_task, exit_event=event)
     assert event.is_set()
+
+
+@pytest.mark.asyncio
+async def test_cancel_other_tasks_logs_exceptions(caplog):
+    caplog.set_level(logging.ERROR)
+
+    async def exploding_task():
+        try:
+            while True:
+                await asyncio.sleep(0.01)
+        finally:
+            raise RuntimeError('boom')
+
+    worker = asyncio.create_task(exploding_task(), name='exploding_task')
+    await asyncio.sleep(0)
+
+    await cancel_other_tasks()
+
+    assert worker.done()
+    assert any('raised while awaiting shutdown completion' in record.getMessage() and 'exploding_task' in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_cancel_other_tasks_reports_pending_tasks(caplog):
+    caplog.set_level(logging.WARNING)
+    release = asyncio.Event()
+
+    async def stubborn_task():
+        try:
+            while True:
+                await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            await release.wait()
+            raise
+
+    worker = asyncio.create_task(stubborn_task(), name='stubborn_task')
+    await asyncio.sleep(0)
+
+    await cancel_other_tasks(timeout=0.0)
+
+    assert any('Timed out waiting 0.0s for task stubborn_task to finish' in record.getMessage() for record in caplog.records)
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
