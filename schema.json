@@ -13,7 +13,11 @@
     "socket": {
       "socket_path": "<class 'str'>"
     },
-    "noop": {}
+    "dispatcherd.testing.brokers.noop": {},
+    "dispatcherd.testing.brokers.error_only": {
+      "error_message": "<class 'str'>"
+    },
+    "dispatcherd.testing.brokers.memory": {}
   },
   "producers": {
     "ScheduledProducer": {

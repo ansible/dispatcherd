@@ -169,10 +169,15 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
     ret['worker']['worker_cls'] = str(Any)
     ret['worker']['worker_kwargs'] = schema_for_cls(TaskWorker)
 
-    # Copy brokers and always add noop
+    # Copy brokers and always add the debugging brokers that live under dispatcherd.testing
     all_brokers = dict(settings.brokers)
-    if 'noop' not in all_brokers:
-        all_brokers['noop'] = {}
+    testing_brokers: dict[str, dict[str, Any]] = {
+        'dispatcherd.testing.brokers.noop': {},
+        'dispatcherd.testing.brokers.error_only': {},
+        'dispatcherd.testing.brokers.memory': {},
+    }
+    for broker_name, broker_kwargs in testing_brokers.items():
+        all_brokers.setdefault(broker_name, broker_kwargs)
     for broker_name, broker_kwargs in all_brokers.items():
         broker = get_broker(broker_name, broker_kwargs)
         ret['brokers'][broker_name] = schema_for_cls(type(broker))
