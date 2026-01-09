@@ -18,3 +18,7 @@ class BaseProducer(ProducerProtocol):
 
     def get_status_data(self) -> dict:
         return {'produced_count': self.produced_count}
+
+    def __str__(self) -> str:
+        module_name = self.__class__.__module__.rsplit('.', 1)[-1]
+        return f'{module_name.replace("_", "-")}-producer'
