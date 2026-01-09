@@ -75,7 +75,7 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
 
                 # Give it some seconds for tasks to finish after cancel happening, but do not raise additional errors
                 try:
-                    await asyncio.gather(*pending, return_exceptions=True)
+                    await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=2.0)
                 except asyncio.TimeoutError:
                     logger.error('Timed out waiting for pending tasks to cancel')
 
