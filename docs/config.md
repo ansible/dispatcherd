@@ -117,7 +117,9 @@ These options are mainly concerned with worker
 management. For instance, auto-scaling options will be here,
 like worker count, etc.
 You can also tune `results_read_timeout`, which configures how long the pool waits
-for items on the finished queue before re-checking shutdown conditions.
+for items on the finished queue before re-checking shutdown conditions. The default
+is to wait indefinitely (set the option to `null`), but a float value can be provided
+to limit how long the queue read blocks before re-evaluating shutdown criteria.
 
 `worker_max_lifetime_seconds` controls how long a worker process may live before
 it will be retired. The default is 4 hours. Setting it to `null` disables

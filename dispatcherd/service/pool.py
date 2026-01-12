@@ -241,7 +241,7 @@ class WorkerPool(WorkerPoolProtocol):
         worker_stop_wait: float = 30.0,
         worker_removal_wait: float = 30.0,
         worker_max_lifetime_seconds: float | None = 4 * 60 * 60,
-        results_read_timeout: float = 0.5,
+        results_read_timeout: float | None = None,
     ) -> None:
         self.min_workers = min_workers
 

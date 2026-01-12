@@ -119,8 +119,13 @@ class ProcessManager:
         return ProcessProxy(args=args, kwargs=kwargs, ctx=self.ctx, **proxy_kwargs)
 
     async def read_finished(self, timeout: float | None = None) -> dict[str, str | int]:
+        if timeout is None:
+            get_task = asyncio.to_thread(self.finished_queue.get)
+        else:
+            get_task = asyncio.to_thread(self.finished_queue.get, timeout=timeout)
+
         t = asyncio.create_task(
-            asyncio.to_thread(self.finished_queue.get, timeout=timeout),
+            get_task,
             name="finished_queue_get",
         )
         t.add_done_callback(_read_finished_log_done)
