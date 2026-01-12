@@ -91,6 +91,7 @@ class ProcessManager:
     def __init__(self, settings: LazySettings = global_settings) -> None:
         self.ctx = multiprocessing.get_context(self.mp_context)
         self._finished_queue: multiprocessing.Queue | None = self.ctx.Queue()
+        self._finished_queue_stop_sent = False
 
         # Settings will be passed to the workers to initialize dispatcher settings
         settings_config: dict = settings.serialize()
@@ -105,7 +106,21 @@ class ProcessManager:
         if self._finished_queue:
             return self._finished_queue
         self._finished_queue = self.ctx.Queue()
+        self._finished_queue_stop_sent = False
         return self._finished_queue
+
+    def send_finished_queue_stop(self, timeout: float | None = None) -> None:
+        """Send the sentinel into the finished queue once."""
+        if self._finished_queue_stop_sent or not self._finished_queue:
+            return
+        try:
+            if timeout is None:
+                self._finished_queue.put('stop')
+            else:
+                self._finished_queue.put('stop', timeout=timeout)
+            self._finished_queue_stop_sent = True
+        except Exception:
+            logger.exception('Failed to send stop sentinel to finished queue')
 
     def create_process(  # type: ignore[no-untyped-def]
         self, args: Iterable[int | str | dict] | None = None, kwargs: dict | None = None, **proxy_kwargs
@@ -133,9 +148,11 @@ class ProcessManager:
 
     def shutdown(self) -> None:
         if self._finished_queue:
+            self.send_finished_queue_stop()
             logger.debug('Closing finished queue')
             self._finished_queue.close()
             self._finished_queue = None
+            self._finished_queue_stop_sent = False
 
 
 class ForkServerManager(ProcessManager):

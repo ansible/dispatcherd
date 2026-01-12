@@ -577,10 +577,7 @@ class WorkerPool(WorkerPoolProtocol):
             logger.info('Finished watcher already completed, skipping shutdown logic')
             self.read_results_task = None
             return
-        try:
-            self.process_manager.finished_queue.put('stop', timeout=self.shutdown_timeout / 2.0)
-        except Exception:
-            logger.exception('Failed to send stop sentinel to finished queue during force shutdown')
+        self.process_manager.send_finished_queue_stop(timeout=self.shutdown_timeout / 2.0)
 
         logger.info('Waiting for the finished watcher to return')
         try:
