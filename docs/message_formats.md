@@ -190,7 +190,3 @@ to the parent the process can be `.join()`ed.
     "event": "shutdown",
 }
 ```
-
-##### Distressed message
-
-Removed; not emitted in current implementation.
