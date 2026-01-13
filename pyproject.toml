@@ -146,6 +146,7 @@ metrics = ["prometheus-client"]
 
 [tool.pytest.ini_options]
 log_cli_level = "DEBUG"
+asyncio_mode = "strict"
 testpaths = [
     "tests",
     "asyncio_tests",

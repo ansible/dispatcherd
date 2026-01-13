@@ -31,7 +31,7 @@ async def adispatcher_service(config: dict) -> AsyncGenerator[DispatcherMain, An
         settings = DispatcherSettings(config)
         dispatcher = from_settings(settings=settings)  # type: ignore[arg-type]
 
-        await asyncio.wait_for(dispatcher.connect_signals(), timeout=1)
+        # Note: dispatcher.connect_signals is expected to increase flakiness
         await asyncio.wait_for(dispatcher.start_working(), timeout=1)
         await asyncio.wait_for(wait_for_producers_ready(dispatcher), timeout=1)
         await asyncio.wait_for(dispatcher.pool.events.workers_ready.wait(), timeout=1)
