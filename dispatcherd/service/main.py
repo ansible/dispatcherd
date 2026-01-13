@@ -85,6 +85,12 @@ class DispatcherMain(DispatcherMainProtocol):
         except Exception:
             logger.exception('Pool manager encountered error')
 
+        if self.metrics:
+            try:
+                await self.metrics.shutdown()
+            except Exception:
+                logger.exception('Metrics server shutdown encountered error')
+
         logger.debug('Setting event to exit main loop')
         self.shared.exit_event.set()
 
@@ -188,6 +194,12 @@ class DispatcherMain(DispatcherMainProtocol):
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
         self.shared.exit_event.clear()
+
+        if self.metrics:
+            metrics_task = await self.metrics.start_working(self)
+            if metrics_task:
+                ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
+
         try:
             await self.pool.start_working(self)
         except Exception:
@@ -233,11 +245,6 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def main_as_task(self) -> None:
         """This should be called for the main loop if running as part of another asyncio program"""
-        metrics_task: asyncio.Task | None = None
-        if self.metrics:
-            metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
-            ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
-
         try:
             await self.start_working()
 
@@ -253,9 +260,6 @@ class DispatcherMain(DispatcherMainProtocol):
 
         finally:
             await self.shutdown()
-
-            if metrics_task:
-                metrics_task.cancel()
 
     async def main(self) -> None:
         """Main method for the event loop, intended to be passed to loop.run_until_complete"""

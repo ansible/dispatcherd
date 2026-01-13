@@ -40,10 +40,6 @@ async def aget_metrics():
 
 @pytest.mark.asyncio
 async def test_get_metrics(ametrics_dispatcher):
-
-    # Metrics server task starts from the main method
-    asyncio.create_task(ametrics_dispatcher.main_as_task())
-
     await ametrics_dispatcher.metrics.ready_event.wait()
 
     # Actual test and assertion
@@ -61,10 +57,6 @@ async def test_get_metrics(ametrics_dispatcher):
 @pytest.mark.asyncio
 async def test_metrics_invalid_utf8_returns_400(ametrics_dispatcher):
     """Invalid UTF-8 in the request line should trigger a 400 response and close connection cleanly."""
-
-    # Start service
-    asyncio.create_task(ametrics_dispatcher.main_as_task())
-
     await ametrics_dispatcher.metrics.ready_event.wait()
 
     reader, writer = await asyncio.open_connection("localhost", TEST_METRICS_PORT)
