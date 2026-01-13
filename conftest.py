@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import multiprocessing
 from typing import AsyncIterator, Callable
 
 import pytest
@@ -76,6 +77,10 @@ async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
     this_test_config = BASIC_CONFIG.copy()
     this_test_config.setdefault('service', {})
     this_test_config['service']['process_manager_cls'] = request.param
+    ctx = multiprocessing.get_context()
+    lock = ctx.Lock()
+    lock.acquire()
+    lock.release()
     async with adispatcher_service(this_test_config) as dispatcher:
         yield dispatcher
 
