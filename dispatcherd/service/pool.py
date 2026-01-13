@@ -763,6 +763,7 @@ class WorkerPool(WorkerPoolProtocol):
                     )
                 except Exception:
                     logger.exception('Error with control request from worker task')
+                    return_data = {'error': 'Failed to run control task'}
 
                 worker.process.message_queue.put(return_data)
 

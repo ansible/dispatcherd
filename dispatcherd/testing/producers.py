@@ -48,7 +48,10 @@ async def wait_for_producers_ready(dispatcher: DispatcherMain) -> None:
         if cleanup_tasks:
             for task in cleanup_tasks:
                 if task.done():
-                    await task
+                    try:
+                        await task
+                    except Exception:
+                        logger.exception(f'Error awaiting tmp task {task}')
                     continue
                 task.cancel()
                 try:
@@ -60,3 +63,5 @@ async def wait_for_producers_ready(dispatcher: DispatcherMain) -> None:
                 except asyncio.TimeoutError:
                     logger.warning('Timed out waiting for cleanup task %s to cancel', task.get_name())
                     raise
+                except Exception:
+                    logger.exception(f'Error awaiting previously canceled tmp task {task}')
