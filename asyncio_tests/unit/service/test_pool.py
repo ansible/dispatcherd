@@ -67,7 +67,7 @@ async def test_read_results_forever_exits_after_process_manager_shutdown(test_se
     shared = SharedAsyncObjects()
 
     instrumented_queue = _InstrumentedQueueWrapper(process_manager.finished_queue, loop)
-    process_manager._finished_queue = instrumented_queue
+    process_manager.finished_queue = instrumented_queue
     pool = WorkerPool(process_manager=process_manager, shared=shared, min_workers=0, max_workers=0)
     dispatcher = mock.Mock(spec=DispatcherMain)
 
@@ -76,8 +76,7 @@ async def test_read_results_forever_exits_after_process_manager_shutdown(test_se
     await instrumented_queue.wait_for_reader()
     process_manager.shutdown()  # should also send sentinal
 
-    with pytest.raises((TypeError, OSError)):
-        await asyncio.wait_for(read_task, timeout=1)
+    await asyncio.wait_for(read_task, timeout=1)
 
 
 @pytest.mark.asyncio
