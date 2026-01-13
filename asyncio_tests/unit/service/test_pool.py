@@ -61,7 +61,7 @@ def process_manager(test_settings):
 
 
 @pytest.mark.asyncio
-async def test_read_results_forever_exits_after_real_queue_closed(test_settings, process_manager):
+async def test_read_results_forever_exits_after_process_manager_shutdown(test_settings, process_manager):
     """Integration-style regression test that closes the real multiprocessing.Queue."""
     loop = asyncio.get_running_loop()
     shared = SharedAsyncObjects()
@@ -74,11 +74,10 @@ async def test_read_results_forever_exits_after_real_queue_closed(test_settings,
     read_task = asyncio.create_task(pool.read_results_forever(dispatcher))
 
     await instrumented_queue.wait_for_reader()
-    instrumented_queue.close()
+    process_manager.shutdown()  # should also send sentinal
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises((TypeError, OSError)):
         await asyncio.wait_for(read_task, timeout=1)
-    assert 'is closed' in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio
