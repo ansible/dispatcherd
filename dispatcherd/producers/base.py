@@ -23,3 +23,7 @@ class BaseProducer(ProducerProtocol):
             'produced_count': self.produced_count,
             'uptime_seconds': time.monotonic() - self.started_at,
         }
+
+    def __str__(self) -> str:
+        module_name = self.__class__.__module__.rsplit('.', 1)[-1]
+        return f'{module_name.replace("_", "-")}-producer'
