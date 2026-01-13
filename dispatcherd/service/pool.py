@@ -326,6 +326,9 @@ class WorkerPool(WorkerPoolProtocol):
         }
 
     async def start_working(self, dispatcher: DispatcherMain) -> None:
+        if self.process_manager.has_shutdown():
+            logger.info("Process manager was shut down; recreating for a new run")
+            self.process_manager = self.process_manager.recreate()
         # NOTE: any of these critical tasks throwing unexpected errors should halt program by setting exit_event
         self.read_results_task = ensure_fatal(
             asyncio.create_task(self.read_results_forever(dispatcher=dispatcher), name='results_task'), exit_event=self.shared.exit_event
@@ -706,14 +709,15 @@ class WorkerPool(WorkerPoolProtocol):
                     logger.warning('Finished queue read timed out during shutdown, exiting results task')
                     return
                 continue
+            except (EOFError, OSError, RuntimeError, TypeError):
+                if self.shared.exit_event.is_set() or self.process_manager.has_shutdown():
+                    logger.warning('Finished queue read failed during shutdown, exiting results task')
+                    return
+                raise
 
             if message == 'stop':
-                if self.shared.exit_event.is_set():
-                    logger.debug(f'Results message got administrative stop message, worker status: {self.status_counts}')
-                    return
-                else:
-                    logger.error('Results queue got stop message even through not shutting down')
-                    continue
+                logger.debug(f'Results message got administrative stop message, worker status: {self.status_counts}')
+                return
 
             worker_id = int(message["worker"])
             event = message["event"]
