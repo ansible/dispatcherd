@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing
+import logging
 import time
 from typing import Callable
 from unittest import mock
@@ -77,6 +78,30 @@ async def test_read_results_forever_exits_after_process_manager_shutdown(test_se
     process_manager.shutdown()  # should also send sentinal
 
     await asyncio.wait_for(read_task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_read_results_forever_logs_and_skips_messages_missing_keys(caplog):
+    class FakeProcessManager:
+        def __init__(self, messages):
+            self._messages = iter(messages)
+
+        async def read_finished(self, timeout=None):
+            return next(self._messages)
+
+        def has_shutdown(self) -> bool:
+            return False
+
+    shared = SharedAsyncObjects()
+    process_manager = FakeProcessManager(messages=[{"event": "done"}, {"worker": "1"}, "stop"])
+    pool = WorkerPool(process_manager=process_manager, shared=shared, min_workers=0, max_workers=0)
+    dispatcher = mock.Mock(spec=DispatcherMain)
+
+    caplog.set_level(logging.ERROR, logger="dispatcherd.service.pool")
+    await asyncio.wait_for(pool.read_results_forever(dispatcher), timeout=1)
+
+    missing_key_warnings = [record for record in caplog.records if "Results message missing keys" in record.message]
+    assert len(missing_key_warnings) == 2
 
 
 @pytest.mark.asyncio

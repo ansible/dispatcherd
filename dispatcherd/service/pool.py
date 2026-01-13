@@ -719,6 +719,14 @@ class WorkerPool(WorkerPoolProtocol):
                 logger.debug(f'Results message got administrative stop message, worker status: {self.status_counts}')
                 return
 
+            if not isinstance(message, dict):
+                logger.error("Results message missing data: expected dict, got %s", type(message).__name__)
+                continue
+
+            if "worker" not in message or "event" not in message:
+                logger.error("Results message missing keys: %s", message)
+                continue
+
             worker_id = int(message["worker"])
             event = message["event"]
             worker = self.workers.get_by_id(worker_id)

@@ -74,17 +74,6 @@ class ProcessProxy:
         return None
 
 
-def _read_finished_log_done(t: asyncio.Task) -> None:
-    try:
-        exc = t.exception()
-    except asyncio.CancelledError:
-        return
-    if exc:
-        if isinstance(exc, queue.Empty):
-            return
-        logger.exception("finished_queue.get() task failed", exc_info=exc)
-
-
 class ProcessManager:
     mp_context = 'fork'
 
@@ -129,16 +118,8 @@ class ProcessManager:
         if self._shutdown:
             raise RuntimeError("ProcessManager is shut down")
         if timeout is None:
-            get_task = asyncio.to_thread(self.finished_queue.get)
-        else:
-            get_task = asyncio.to_thread(self.finished_queue.get, timeout=timeout)
-
-        t = asyncio.create_task(
-            get_task,
-            name="finished_queue_get",
-        )
-        t.add_done_callback(_read_finished_log_done)
-        return await t
+            return await asyncio.to_thread(self.finished_queue.get)
+        return await asyncio.to_thread(self.finished_queue.get, timeout=timeout)
 
     def shutdown(self) -> None:
         self._shutdown = True
