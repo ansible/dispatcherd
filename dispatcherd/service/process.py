@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import multiprocessing
-import queue
 from multiprocessing.context import BaseContext
 from types import ModuleType
 from typing import Any, Callable, Iterable

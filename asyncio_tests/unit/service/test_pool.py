@@ -1,6 +1,6 @@
 import asyncio
-import multiprocessing
 import logging
+import multiprocessing
 import time
 from typing import Callable
 from unittest import mock
