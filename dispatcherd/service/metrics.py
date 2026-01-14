@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 from typing import Any, Generator, Optional
 
@@ -42,6 +43,11 @@ def metrics_data(dispatcher: DispatcherMain) -> Generator[Metric, Any, Any]:
         'dispatcher_worker_count',
         'Number of workers running.',
         value=len(list(dispatcher.pool.workers)),
+    )
+    yield CounterMetricFamily(
+        'dispatcher_memory_objects_count',
+        'Number of GC-tracked objects in the dispatcher process.',
+        value=len(gc.get_objects()),
     )
 
 
