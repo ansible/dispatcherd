@@ -2,18 +2,14 @@ import asyncio
 import logging
 from typing import Any, AsyncGenerator, Callable, Coroutine, Iterator, Optional
 
-from ..protocols import Broker as BrokerProtocol
-from ..protocols import BrokerSelfCheckStatus
+from ...protocols import Broker as BrokerProtocol
+from ...protocols import BrokerSelfCheckStatus
 
 logger = logging.getLogger(__name__)
 
 
 class Broker(BrokerProtocol):
-    """A no-op broker that implements the Broker protocol but does nothing.
-
-    This broker is useful for testing or when you want to disable message passing
-    without changing the code that uses the broker interface.
-    """
+    """A no-op broker that implements the Broker protocol but does nothing."""
 
     def __init__(self) -> None:
         self.self_check_status = BrokerSelfCheckStatus.IDLE
@@ -24,7 +20,7 @@ class Broker(BrokerProtocol):
     async def aprocess_notify(
         self, connected_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
     ) -> AsyncGenerator[tuple[int | str, str], None]:
-        """No-op implementation that yields once after the forever loop."""
+        """No-op implementation that never yields messages."""
         if connected_callback:
             await connected_callback()
         # Never yield, allowing the no-op broker to coexist with other brokers
@@ -34,11 +30,11 @@ class Broker(BrokerProtocol):
 
     async def apublish_message(self, channel: Optional[str] = None, origin: int | str | None = None, message: str = '') -> None:
         """No-op implementation that does nothing."""
-        logger.debug(f'No-op broker ignoring message of length {len(message)}')
+        logger.debug('No-op broker ignoring message of length %s', len(message))
 
     async def aclose(self) -> None:
         """No-op implementation that does nothing."""
-        pass
+        return None
 
     def process_notify(
         self, connected_callback: Optional[Callable] = None, timeout: float = 5.0, max_messages: int | None = 1
@@ -50,13 +46,13 @@ class Broker(BrokerProtocol):
 
     def publish_message(self, channel: Optional[str] = None, message: Optional[str] = None) -> str:
         """No-op implementation that returns an empty string."""
-        logger.debug(f'No-op broker ignoring message of length {len(message) if message else 0}')
+        logger.debug('No-op broker ignoring message of length %s', len(message) if message else 0)
         return ''
 
     def close(self) -> None:
         """No-op implementation that does nothing."""
-        pass
+        return None
 
     def verify_self_check(self, message: dict[str, Any]) -> None:
         """No-op implementation that does nothing."""
-        pass
+        return None
