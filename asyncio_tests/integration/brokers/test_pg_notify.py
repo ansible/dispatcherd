@@ -1,9 +1,8 @@
 import multiprocessing
 import time
 
-import pytest
-
 import psycopg
+import pytest
 
 from dispatcherd.brokers.pg_notify import Broker, acreate_connection, create_connection
 
@@ -110,22 +109,10 @@ async def test_async_connection_from_config_reuse(conn_config):
     assert conn is not await acreate_connection(**conn_config)
 
 
-
-VALID_CHANNEL_NAMES = [
-    'foobar',
-    'foobar🔥',
-    'foo-bar',
-    '-foo-bar',
-    'a' * 63  # just under the limit
-]
+VALID_CHANNEL_NAMES = ['foobar', 'foobar🔥', 'foo-bar', '-foo-bar', 'a' * 63]  # just under the limit
 
 
-BAD_CHANNEL_NAMES = [
-    'a' + '🔥' * 22,  # under 64 but expanded unicode is over
-    'a' * 64,  # over the limit of 63
-    'a' * 120,
-    ''
-]
+BAD_CHANNEL_NAMES = ['a' + '🔥' * 22, 'a' * 64, 'a' * 120, '']  # under 64 but expanded unicode is over  # over the limit of 63
 
 
 class TestChannelSanitizationPostgresSanity:
@@ -133,6 +120,7 @@ class TestChannelSanitizationPostgresSanity:
 
     These tests validate that the valid and bad channel name lists are, in fact, bad and valid.
     """
+
     @pytest.mark.parametrize('channel_name', VALID_CHANNEL_NAMES)
     def test_psycopg_valid_sanity_check(self, channel_name, conn_config):
         """Sanity check that postgres itself will accept valid names for listening"""
@@ -167,6 +155,7 @@ class TestChannelSanitizationPostgresSanity:
                     return False
             finally:
                 gen.close()
+
         return _rf
 
     @pytest.mark.parametrize('channel_name', VALID_CHANNEL_NAMES)
