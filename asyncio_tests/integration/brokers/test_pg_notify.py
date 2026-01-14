@@ -1,6 +1,7 @@
 import multiprocessing
 import time
 
+import psycopg
 import pytest
 
 from dispatcherd.brokers.pg_notify import Broker, acreate_connection, create_connection
@@ -106,3 +107,90 @@ async def test_async_connection_from_config_reuse(conn_config):
     assert conn is conn2
 
     assert conn is not await acreate_connection(**conn_config)
+
+
+VALID_CHANNEL_NAMES = ['foobar', 'foobar🔥', 'foo-bar', '-foo-bar', 'a' * 63]  # just under the limit
+
+
+BAD_CHANNEL_NAMES = ['a' + '🔥' * 22, 'a' * 64, 'a' * 120, '']  # under 64 but expanded unicode is over  # over the limit of 63
+
+
+class TestChannelSanitizationPostgresSanity:
+    """These do not test dispatcherd itself, but give a reference by testing psycopg and postgres
+
+    These tests validate that the valid and bad channel name lists are, in fact, bad and valid.
+    """
+
+    @pytest.mark.parametrize('channel_name', VALID_CHANNEL_NAMES)
+    def test_psycopg_valid_sanity_check(self, channel_name, conn_config):
+        """Sanity check that postgres itself will accept valid names for listening"""
+        conn = psycopg.connect(**conn_config, autocommit=True)
+        conn.execute(psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel_name)))
+        conn.execute(Broker.NOTIFY_QUERY_TEMPLATE, (channel_name, 'foo'))
+
+    @pytest.mark.parametrize('channel_name', BAD_CHANNEL_NAMES)
+    def test_psycopg_error_sanity_check(self, channel_name, conn_config):
+        """Sanity check that postgres itself will raise an error for the known invalid names"""
+        conn = psycopg.connect(**conn_config, autocommit=True)
+        with pytest.raises(psycopg.DatabaseError):
+            conn.execute(psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel_name)))
+            conn.execute(Broker.NOTIFY_QUERY_TEMPLATE, (channel_name, 'foo'))
+
+    @pytest.fixture
+    def can_receive_notification(self, conn_config):
+        def _rf(channel_name):
+            conn = psycopg.connect(**conn_config, autocommit=True)
+            try:
+                conn.execute(psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel_name)))
+                conn.execute(Broker.NOTIFY_QUERY_TEMPLATE, (channel_name, 'this is a test message'))
+            except Exception:
+                return False  # did not work
+            gen = conn.notifies(timeout=0.001)
+            try:
+                for notify in gen:
+                    assert notify.payload == 'this is a test message'
+                    gen.close()
+                    return True
+                else:
+                    return False
+            finally:
+                gen.close()
+
+        return _rf
+
+    @pytest.mark.parametrize('channel_name', VALID_CHANNEL_NAMES)
+    def test_can_receive_over_valid_channels(self, can_receive_notification, channel_name):
+        assert can_receive_notification(channel_name)
+
+    @pytest.mark.parametrize('channel_name', BAD_CHANNEL_NAMES)
+    def test_can_not_receive_over_invalid_channels(self, can_receive_notification, channel_name):
+        assert not can_receive_notification(channel_name)
+
+
+class TestChannelSanitizationPostgres:
+    """These tests verify that we do early validation
+
+    Specifically, this means that dispatcherd will not let you listen to a channel you can not send to
+    and that you can not send to a channel you can not listen to"""
+
+    @pytest.mark.parametrize('channel_name', VALID_CHANNEL_NAMES)
+    def test_valid_channel_publish(self, channel_name, conn_config):
+        broker = Broker(config=conn_config)
+        broker.publish_message(channel=channel_name, message='foobar')
+
+    @pytest.mark.parametrize('channel_name', BAD_CHANNEL_NAMES)
+    def test_invalid_channel_publish(self, channel_name, conn_config):
+        broker = Broker(config=conn_config)
+        with pytest.raises(psycopg.DatabaseError):
+            broker.publish_message(channel=channel_name, message='foobar')
+
+    @pytest.mark.parametrize('channel_name', VALID_CHANNEL_NAMES)
+    def test_valid_channel_listen(self, channel_name, conn_config):
+        broker = Broker(config=conn_config, channels=[channel_name])
+        broker.process_notify(max_messages=0)
+
+    @pytest.mark.parametrize('channel_name', BAD_CHANNEL_NAMES)
+    def test_invalid_channel_listen(self, channel_name, conn_config):
+        with pytest.raises(psycopg.DatabaseError):
+            broker = Broker(config=conn_config, channels=[channel_name])
+            broker.process_notify(max_messages=0)

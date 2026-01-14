@@ -40,6 +40,24 @@ def create_connection(**config) -> psycopg.Connection:  # type: ignore[no-untype
     return connection
 
 
+class DispatcherdInvalidChannel(psycopg.errors.SyntaxError):
+    pass
+
+
+def validate_channel_name(channel_name: str) -> None:
+    """Raise an exception if the channel name can not be reliably used.
+
+    This might happen due to a number of reasons.
+    The notify logic uses the channel name as a parameter, which is good for
+      security reasons, but imposes a character length constraint.
+    """
+    if len(channel_name.encode('utf-8')) > 63:
+        raise DispatcherdInvalidChannel(f'Channel name is too long chars={len(channel_name.encode("utf-8"))}')
+
+    if not channel_name:
+        raise DispatcherdInvalidChannel(f'Received blank channel name {channel_name}. PG notify channel name can not be blank.')
+
+
 class Broker(BrokerProtocol):
     NOTIFY_QUERY_TEMPLATE = 'SELECT pg_notify(%s, %s);'
 
@@ -113,6 +131,10 @@ class Broker(BrokerProtocol):
             self.self_check_channel = None
         self.channels = server_channels
 
+        # Raise an early error if any of the channel names are invalid
+        for channel in self.channels:
+            validate_channel_name(channel)
+
         self.default_publish_channel = default_publish_channel
         self.self_check_status = BrokerSelfCheckStatus.IDLE
         self.last_self_check_message_time = time.monotonic() if self.max_connection_idle_seconds is not None else None
@@ -135,14 +157,17 @@ class Broker(BrokerProtocol):
     def get_publish_channel(self, channel: str | None = None) -> str:
         "Handle default for the publishing channel for calls to publish_message, shared sync and async"
         if channel is not None:
-            return channel
+            return_channel = channel
         elif self.default_publish_channel is not None:
-            return self.default_publish_channel
+            return_channel = self.default_publish_channel
         elif len(self.user_channels) == 1:
             # de-facto default channel, because there is only 1
-            return self.channels[0]
+            return_channel = self.channels[0]
+        else:
+            raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
 
-        raise ValueError('Could not determine a channel to use publish to from settings or PGNotify config')
+        validate_channel_name(return_channel)
+        return return_channel
 
     def __str__(self) -> str:
         return 'pg_notify-broker'
@@ -174,7 +199,9 @@ class Broker(BrokerProtocol):
         This uses the psycopg utilities which ensure correct escaping so SQL injection is not possible.
         Return value is a valid argument for cursor.execute()
         """
-        return psycopg.sql.SQL("LISTEN {};").format(psycopg.sql.Identifier(channel))
+        # Postgres does not allow parameters for identifiers, so this limits what channel we can accept
+        validate_channel_name(channel)
+        return psycopg.sql.SQL("LISTEN {}").format(psycopg.sql.Identifier(channel))
 
     def get_unlisten_query(self) -> psycopg.sql.SQL:
         """Stops listening on all channels for current session, see pg_notify docs"""
