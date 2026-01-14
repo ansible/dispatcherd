@@ -10,7 +10,7 @@ from dispatcherd.factories import get_control_from_settings, get_publisher_from_
 from dispatcherd.processors.blocker import Blocker
 from dispatcherd.processors.delayer import Delayer
 from dispatcherd.utils import MODULE_METHOD_DELIMITER
-from tests.data.methods import hello_world_binder, sleep_discard, sleep_function, task_has_timeout
+from tests.data.methods import break_connection, do_database_query, hello_world_binder, sleep_discard, sleep_function, task_has_timeout
 
 # Setup the global config from the settings file shared with the service
 setup(file_path='dispatcher.yml')
@@ -45,11 +45,15 @@ def main():
     for channel, message in TEST_MSGS:
         broker.publish_message(channel=channel, message=message)
 
-    # send more than number of workers quickly
     print('')
-    print('writing 15 messages fast')
-    for i in range(15):
-        broker.publish_message(message=f'lambda: {i}')
+    print(' -------- Showing loss of connection by bad task and recovery ---------')
+    import time
+
+    do_database_query.apply_async(uuid='normal_query')
+    time.sleep(0.1)
+    break_connection.apply_async(uuid='break_connection')
+    time.sleep(0.4)
+    do_database_query.apply_async(uuid='normal_query')
 
     print('')
     print(' -------- Demonstrating incomplete chunking ---------')
