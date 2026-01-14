@@ -166,3 +166,7 @@ used for testing this feature.
 The `idle_timeout` is a number of seconds which determines how long
 after no new tasks are received that the `on_idle` callback will be called.
 That can be useful for connection keep-alive work and such.
+
+`task_signal_handling` controls how SIGINT/SIGTERM are handled while a task is
+running. Supported values are `default` (use Python's default handler),
+`dispatcher_exit` (raise `DispatcherExit`), and `noop` (ignore the signal).

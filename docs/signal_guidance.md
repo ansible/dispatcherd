@@ -10,9 +10,10 @@ interplay is relevant to app developers embeding dispatcherd.
   this to an in-flight worker when a timeout or cancel or manual cancel occurs. The worker raises
   `DispatcherCancel`, so user code must let that exception propagate if it wants cancel requests
   to succeed while keeping the worker alive for future tasks.
-- **SIGINT** and **SIGTERM** – default python behavior while tasks are running.
-  Idle workers process these signals and exit, which is necessary when the signal
-  is given to the entire process group for shutdown.
+- **SIGINT** and **SIGTERM** – default python behavior while tasks are running unless
+  you override `task_signal_handling` in worker config. Idle workers process these
+  signals and exit, which is necessary when the signal is given to the entire
+  process group for shutdown.
 
 ### DispatcherCancel vs DispatcherExit
 
@@ -49,7 +50,8 @@ interplay is relevant to app developers embeding dispatcherd.
 
 - **Configure SIGINT/SIGTERM when your task starts.** Use your task’s `pre_task` hook (or
   equivalent entrypoint) to set application-specific handlers. Dispatcherd restores default
-  handlers just before `pre_task` runs and reinstalls idle-mode handlers after the task finishes.
+  handlers just before `pre_task` runs (or uses your configured `task_signal_handling`)
+  and reinstalls idle-mode handlers after the task finishes.
 - **Never touch SIGUSR1.** The dispatcher depends on it for cancels/timeouts; overriding it
   breaks task cancel semantics.
 - **Use `DispatcherCancel` for timeouts.** Treat it like any other exception that

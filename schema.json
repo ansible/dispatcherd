@@ -58,7 +58,8 @@
   "worker": {
     "worker_kwargs": {
       "worker_id": "<class 'int'>",
-      "idle_timeout": "<class 'int'>"
+      "idle_timeout": "<class 'int'>",
+      "task_signal_handling": "typing.Literal['default', 'dispatcher_exit', 'noop']"
     },
     "worker_cls": "typing.Any"
   }
