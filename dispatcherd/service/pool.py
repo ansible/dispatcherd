@@ -709,7 +709,7 @@ class WorkerPool(WorkerPoolProtocol):
                     logger.warning('Finished queue read timed out during shutdown, exiting results task')
                     return
                 continue
-            except (EOFError, OSError, RuntimeError, TypeError):
+            except (EOFError, OSError, RuntimeError, TypeError, ValueError):
                 if self.shared.exit_event.is_set() or self.process_manager.has_shutdown():
                     logger.warning('Finished queue read failed during shutdown, exiting results task')
                     return
