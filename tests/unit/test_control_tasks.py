@@ -47,3 +47,16 @@ def test_set_log_level_integer(dispatcherd_logger):
     result = asyncio.run(control_tasks.set_log_level(dispatcher=None, data={'level': 30}))
     assert dispatcherd_logger.level == logging.WARNING
     assert result == {'logger': 'dispatcherd', 'level': 'WARNING', 'previous_level': 'ERROR'}
+
+
+def test_memory_reports_object_count(monkeypatch):
+    monkeypatch.setattr(control_tasks.gc, 'get_objects', lambda: [object(), object(), object()])
+    result = asyncio.run(control_tasks.memory(dispatcher=None, data={}))
+    assert result == {'objects': 3}
+
+
+def test_memory_offenders_uses_helper(monkeypatch):
+    expected = {'total_objects': 5, 'offenders': [{'type': 'X', 'count': 5, 'size_bytes': 40}]}
+    monkeypatch.setattr(control_tasks.memory_inspect, 'get_object_size_stats', lambda limit=10, group_by='type': expected)
+    result = asyncio.run(control_tasks.memory_offenders(dispatcher=None, data={'limit': 5, 'group_by': 'class'}))
+    assert result == expected
