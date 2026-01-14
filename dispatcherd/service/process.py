@@ -77,8 +77,11 @@ class ProcessManager:
     mp_context = 'fork'
 
     def __init__(self, settings: LazySettings = global_settings) -> None:
+        self._settings = settings
         self.ctx = multiprocessing.get_context(self.mp_context)
-        self._finished_queue: multiprocessing.Queue | None = self.ctx.Queue()
+        self.finished_queue: multiprocessing.Queue = self.ctx.Queue()
+        self._shutdown = False
+        self._recreate_kwargs: dict[str, Any] = {"settings": settings}
 
         # Settings will be passed to the workers to initialize dispatcher settings
         settings_config: dict = settings.serialize()
@@ -87,13 +90,15 @@ class ProcessManager:
         # this assures we do not pass python objects inside of settings by accident
         self.settings_stash: str = json.dumps(settings_config)
 
-    @property
-    def finished_queue(self) -> multiprocessing.Queue:
-        """The processor manager owns the lifecycle of the finished queue, so if pool is restarted we have to handle this"""
-        if self._finished_queue:
-            return self._finished_queue
-        self._finished_queue = self.ctx.Queue()
-        return self._finished_queue
+    def send_finished_queue_stop(self, timeout: float | None = None) -> None:
+        """Send the sentinel into the finished queue once."""
+        try:
+            if timeout is None:
+                self.finished_queue.put('stop')
+            else:
+                self.finished_queue.put('stop', timeout=timeout)
+        except Exception:
+            logger.exception('Failed to send stop sentinel to finished queue')
 
     def create_process(  # type: ignore[no-untyped-def]
         self, args: Iterable[int | str | dict] | None = None, kwargs: dict | None = None, **proxy_kwargs
@@ -103,18 +108,29 @@ class ProcessManager:
         if kwargs is None:
             kwargs = {}
         kwargs['settings'] = self.settings_stash
+        if self._shutdown:
+            raise RuntimeError("ProcessManager is shut down")
         kwargs['finished_queue'] = self.finished_queue
         return ProcessProxy(args=args, kwargs=kwargs, ctx=self.ctx, **proxy_kwargs)
 
-    async def read_finished(self) -> dict[str, str | int]:
-        message = await asyncio.to_thread(self.finished_queue.get)
-        return message
+    async def read_finished(self, timeout: float | None = None) -> dict[str, str | int]:
+        if self._shutdown:
+            raise RuntimeError("ProcessManager is shut down")
+        if timeout is None:
+            return await asyncio.to_thread(self.finished_queue.get)
+        return await asyncio.to_thread(self.finished_queue.get, timeout=timeout)
 
     def shutdown(self) -> None:
-        if self._finished_queue:
-            logger.debug('Closing finished queue')
-            self._finished_queue.close()
-            self._finished_queue = None
+        self._shutdown = True
+        self.send_finished_queue_stop()
+        logger.debug('Closing finished queue')
+        self.finished_queue.close()
+
+    def recreate(self) -> "ProcessManager":
+        return type(self)(**self._recreate_kwargs)
+
+    def has_shutdown(self) -> bool:
+        return self._shutdown
 
 
 class ForkServerManager(ProcessManager):
@@ -123,6 +139,7 @@ class ForkServerManager(ProcessManager):
     def __init__(self, preload_modules: list[str] | None = None, settings: LazySettings = global_settings):
         super().__init__(settings=settings)
         self.ctx.set_forkserver_preload(preload_modules if preload_modules else [])
+        self._recreate_kwargs = {"settings": settings, "preload_modules": preload_modules}
 
 
 class SpawnServerManager(ProcessManager):

@@ -32,7 +32,8 @@
       "scaledown_interval": "<class 'float'>",
       "worker_stop_wait": "<class 'float'>",
       "worker_removal_wait": "<class 'float'>",
-      "worker_max_lifetime_seconds": "float | None"
+      "worker_max_lifetime_seconds": "float | None",
+      "results_read_timeout": "float | None"
     },
     "main_kwargs": {
       "node_id": "str | None",

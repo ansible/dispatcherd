@@ -134,13 +134,32 @@ Other information is given for various stats tracking.
     "result": null,
     "uuid": "9760671a-6261-45aa-881a-f66929ff9725",
     "time_started": 1744992973.5737305,
-    "time_finish": 1744992980.0253727,
+    "time_finish": 1744992980.0253727
 }
 ```
 
 Most tasks are expected to give a `None` value for its return value.
 This library does not support handling of results formally,
 but result may be used for some testing function via logging.
+
+When a worker raises `DispatcherExit` (for example, because an application-level SIGTERM
+handler decided to shut it down), the done message includes an extra boolean flag so
+the pool manager knows not to dispatch more work:
+
+```json
+{
+    "worker": 3,
+    "event": "done",
+    "result": "<exit>",
+    "uuid": "9760671a-6261-45aa-881a-f66929ff9725",
+    "time_started": 1744992973.5737305,
+    "time_finish": 1744992980.0253727,
+    "is_stopping": true
+}
+```
+
+The pool manager marks the worker as `stopping` **before** clearing its `current_task`
+so the worker will not be scheduled for more work and will proceed to exit gracefully.
 
 ##### Control-action message
 

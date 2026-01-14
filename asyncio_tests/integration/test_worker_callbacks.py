@@ -1,11 +1,8 @@
 import asyncio
 import os
-from typing import AsyncIterator
 
 import pytest
-import pytest_asyncio
 
-from dispatcherd.protocols import DispatcherMain
 from dispatcherd.testing.asyncio import adispatcher_service
 
 LOG_PATH = 'logs/app.log'
@@ -21,24 +18,17 @@ def callback_config():
     }
 
 
-@pytest_asyncio.fixture
-async def acallback_dispatcher(callback_config) -> AsyncIterator[DispatcherMain]:
+@pytest.mark.asyncio
+async def test_worker_callback_usage(callback_config):
     if os.path.exists(LOG_PATH):
         os.remove(LOG_PATH)
 
     async with adispatcher_service(callback_config) as dispatcher:
-        yield dispatcher
+        await dispatcher.process_message({'task': 'lambda: "This worked!"'})
 
+        await asyncio.sleep(0.15)  # to get the idle log
 
-@pytest.mark.asyncio
-async def test_worker_callback_usage(acallback_dispatcher):
-
-    await acallback_dispatcher.process_message({'task': 'lambda: "This worked!"'})
-
-    await asyncio.sleep(0.15)  # to get the idle log
-
-    acallback_dispatcher.shared.exit_event.set()
-    await acallback_dispatcher.shutdown()
+        dispatcher.shared.exit_event.set()
 
     with open(LOG_PATH, 'r') as f:
         output = f.read()

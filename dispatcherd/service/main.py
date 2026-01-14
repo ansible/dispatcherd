@@ -16,7 +16,7 @@ from ..protocols import Producer
 from ..protocols import SharedAsyncObjects as SharedAsyncObjectsProtocol
 from ..protocols import WorkerPool
 from . import control_tasks
-from .asyncio_tasks import ensure_fatal, wait_for_any
+from .asyncio_tasks import cancel_other_tasks, ensure_fatal, wait_for_any
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,8 @@ class DispatcherMain(DispatcherMainProtocol):
         else:
             self.node_id = str(uuid4())
 
+        self.shutdown_lock = asyncio.Lock()
+
         self.metrics = metrics
 
         self.delayer: DelayerProtocol = Delayer(self.process_message_now, shared=shared)
@@ -60,22 +62,12 @@ class DispatcherMain(DispatcherMainProtocol):
     def get_status_data(self) -> dict[str, Any]:
         return {"received_count": self.received_count, "control_count": self.control_count, "pid": getpid()}
 
-    async def wait_for_producers_ready(self) -> None:
-        "Returns when all the producers have hit their ready event"
-        for producer in self.producers:
-            existing_tasks = list(producer.all_tasks())
-            wait_task = asyncio.create_task(producer.events.ready_event.wait(), name=f'tmp_{producer}_wait_task')
-            existing_tasks.append(wait_task)
-            await asyncio.wait(existing_tasks, return_when=asyncio.FIRST_COMPLETED)
-            if not wait_task.done():
-                producer.events.ready_event.set()  # exits wait_task, producer had error
-
     async def connect_signals(self) -> None:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self.receive_signal)
 
-    async def shutdown(self) -> None:
+    async def shutdown_no_lock(self) -> None:
         self.shared.exit_event.set()  # may already be set
         logger.debug("Shutting down, starting with producers.")
         for producer in self.producers:
@@ -93,8 +85,18 @@ class DispatcherMain(DispatcherMainProtocol):
         except Exception:
             logger.exception('Pool manager encountered error')
 
+        if self.metrics:
+            try:
+                await self.metrics.shutdown()
+            except Exception:
+                logger.exception('Metrics server shutdown encountered error')
+
         logger.debug('Setting event to exit main loop')
         self.shared.exit_event.set()
+
+    async def shutdown(self) -> None:
+        async with self.shutdown_lock:
+            await self.shutdown_no_lock()
 
     async def connected_callback(self, producer: Producer) -> None:
         return
@@ -191,6 +193,13 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def start_working(self) -> None:
         logger.debug('Filling the worker pool')
+        self.shared.exit_event.clear()
+
+        if self.metrics:
+            metrics_task = await self.metrics.start_working(self)
+            if metrics_task:
+                ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
+
         try:
             await self.pool.start_working(self)
         except Exception:
@@ -210,18 +219,6 @@ class DispatcherMain(DispatcherMainProtocol):
                 # https://github.com/ansible/dispatcherd/issues/2
                 for task in producer.all_tasks():
                     ensure_fatal(task, exit_event=producer.events.recycle_event)
-
-    async def cancel_tasks(self) -> None:
-        for task in asyncio.all_tasks():
-            if task == asyncio.current_task():
-                continue
-            if not task.done():
-                logger.warning(f'Task {task} did not shut down in shutdown method')
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
 
     async def recycle_broker_producers(self) -> None:
         """For any producer in a broken state (likely due to external factors beyond our control) recycle it"""
@@ -248,11 +245,6 @@ class DispatcherMain(DispatcherMainProtocol):
 
     async def main_as_task(self) -> None:
         """This should be called for the main loop if running as part of another asyncio program"""
-        metrics_task: asyncio.Task | None = None
-        if self.metrics:
-            metrics_task = asyncio.create_task(self.metrics.start_server(self), name='metrics_server')
-            ensure_fatal(metrics_task, exit_event=self.shared.exit_event)
-
         try:
             await self.start_working()
 
@@ -269,13 +261,6 @@ class DispatcherMain(DispatcherMainProtocol):
         finally:
             await self.shutdown()
 
-            if metrics_task:
-                metrics_task.cancel()
-                try:
-                    await metrics_task
-                except asyncio.CancelledError:
-                    logger.debug('Metrics server has been canceled')
-
     async def main(self) -> None:
         """Main method for the event loop, intended to be passed to loop.run_until_complete"""
         current_task = asyncio.current_task()
@@ -286,6 +271,6 @@ class DispatcherMain(DispatcherMainProtocol):
         try:
             await self.main_as_task()
         finally:
-            await self.cancel_tasks()
+            await cancel_other_tasks()
 
         logger.debug('Dispatcherd loop fully completed')

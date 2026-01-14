@@ -127,6 +127,11 @@ class Control:
         except asyncio.TimeoutError:
             logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {len(control_callbacks.received_replies)}')
             listen_task.cancel()
+            try:
+                await asyncio.wait_for(listen_task, timeout=timeout)
+            except asyncio.CancelledError:
+                if not listen_task.cancelled():
+                    raise
         finally:
             await broker.aclose()
 

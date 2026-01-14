@@ -11,6 +11,7 @@ from prometheus_client.metrics_core import Metric
 from prometheus_client.registry import Collector
 
 from ..protocols import DispatcherMain
+from .asyncio_tasks import ensure_fatal
 
 PLAINTEXT_UTF8 = "text/plain; charset=utf-8"
 PLAINTEXT_METRICS = "text/plain; version=0.0.4; charset=utf-8"
@@ -284,6 +285,7 @@ class DispatcherMetricsServer:
         self.host = host
         self.ready_event = asyncio.Event()
         self.http_server: Optional[CustomHttpServer] = None
+        self._task: Optional[asyncio.Task[None]] = None
 
     async def start_server(self, dispatcher: DispatcherMain) -> None:
         """Run Prometheus metrics server forever."""
@@ -308,6 +310,21 @@ class DispatcherMetricsServer:
             # that's not KeyboardInterrupt (which is handled in CustomHttpServer's main example)
             logger.info("Attempting to stop CustomHttpServer...")
             await self.http_server.stop()  # Assuming stop is robust enough to be called even if start failed partially
+
+    async def start_working(self, dispatcher: DispatcherMain) -> asyncio.Task[None] | None:
+        if self._task and not self._task.done():
+            return self._task
+
+        self._task = ensure_fatal(asyncio.create_task(self.start_server(dispatcher), name='metrics_server'))
+        return self._task
+
+    async def shutdown(self) -> None:
+        if self._task and not self._task.done():
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+        self._task = None
+        if self.http_server:
+            await self.http_server.stop()
 
     def get_status_data(self) -> dict[str, Any]:
         http_server_status = self.http_server.get_status_data() if self.http_server else {}

@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import queue
 
 import pytest
 
@@ -71,3 +72,10 @@ def test_pid_is_correct(manager_cls, test_settings):
 
     msg = process_manager.finished_queue.get()
     assert int(msg) == process.pid
+
+
+@pytest.mark.parametrize('manager_cls', [ProcessManager, ForkServerManager])
+def test_finished_queue_get_timeout_returns_control(manager_cls, test_settings):
+    process_manager = manager_cls(settings=test_settings)
+    with pytest.raises(queue.Empty):
+        process_manager.finished_queue.get(timeout=0.05)

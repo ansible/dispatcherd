@@ -71,12 +71,13 @@ class BrokeredProducer(BaseProducer):
 
     async def shutdown(self) -> None:
         if self.production_task:
-            self.production_task.cancel()
+            production_task = self.production_task
+            production_task.cancel()
             try:
-                await self.production_task
+                await production_task
             except asyncio.CancelledError:
-                logger.info(f'Successfully canceled production from {self.broker}')
-
+                if not production_task.cancelled():
+                    raise  # the shutdown itself was cancelled
             self.production_task = None
 
         await self.broker.aclose()
