@@ -30,9 +30,13 @@ jobs:
       - run: make postgres
       - run: pip install -r requirements_dev.txt
       - name: Run synchronous tests with coverage
-        run: pytest tests/ -vv -s --cov=dispatcherd --cov-report=xml --cov-append
+        run: pytest tests/ -vv -s --cov=dispatcherd --cov-append
       - name: Run asyncio tests with coverage
-        run: pytest asyncio_tests/ -vv -s --cov=dispatcherd --cov-report=xml --cov-append
+        run: pytest asyncio_tests/ -vv -s --cov=dispatcherd --cov-append
+      - name: Combine coverage data
+        run: python -m coverage combine --append
+      - name: Generate coverage.xml
+        run: python -m coverage xml
       - name: Inject PR number into coverage.xml
         if: github.event_name == 'pull_request'
         run: |

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import multiprocessing
+import os
 import sys
 import traceback
 from multiprocessing.context import BaseContext
@@ -74,9 +75,35 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
             else:
                 eval(message)
 
+def _should_start_coverage() -> bool:
+    value = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE')
+    if value is None:
+        return False
+    return value.strip().lower() not in ('0', 'false', 'no', 'off', '')
+
+
+def _start_subprocess_coverage():
+    if not _should_start_coverage():
+        return None
+    try:
+        import coverage
+    except Exception as exc:
+        raise RuntimeError('DISPATCHERD_SUBPROCESS_COVERAGE enabled, but coverage is unavailable') from exc
+    data_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_FILE')
+    config_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_CONFIG')
+    kwargs = {'data_suffix': True}
+    if data_file:
+        kwargs['data_file'] = data_file
+    if config_file:
+        kwargs['config_file'] = config_file
+    cov = coverage.Coverage(**kwargs)
+    cov.start()
+    return cov
+
 
 def subprocess_main(config, comms):
     """The subprocess (synchronous) target for the testing dispatcherd service"""
+    coverage_session = _start_subprocess_coverage()
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(asyncio_target(config, comms))
@@ -88,6 +115,9 @@ def subprocess_main(config, comms):
         comms.q_out.put(stack_trace)
         raise
     finally:
+        if coverage_session is not None:
+            coverage_session.stop()
+            coverage_session.save()
         loop.close()
 
 
@@ -98,13 +128,7 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     Note this is likely to have problems if mixed with code running asyncio loops.
     It is mainly intended to be called from synchronous python.
     """
-    # Use forkserver for Python 3.14+ compatibility (fork is deprecated in multi-threaded contexts)
-    import sys as _sys
-
-    if _sys.version_info >= (3, 14):
-        ctx = multiprocessing.get_context('forkserver')
-    else:
-        ctx = multiprocessing.get_context('fork')
+    ctx = multiprocessing.get_context('spawn')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
     process = ctx.Process(target=subprocess_main, args=(config, comms))
     try:
