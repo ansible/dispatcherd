@@ -7,7 +7,7 @@ from typing import Any, Generator, Optional
 from prometheus_client import CollectorRegistry, generate_latest
 
 # For production of the metrics
-from prometheus_client.core import CounterMetricFamily
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.metrics_core import Metric
 from prometheus_client.registry import Collector
 
@@ -44,7 +44,7 @@ def metrics_data(dispatcher: DispatcherMain) -> Generator[Metric, Any, Any]:
         'Number of workers running.',
         value=len(list(dispatcher.pool.workers)),
     )
-    yield CounterMetricFamily(
+    yield GaugeMetricFamily(
         'dispatcher_memory_objects_count',
         'Number of GC-tracked objects in the dispatcher process.',
         value=len(gc.get_objects()),
