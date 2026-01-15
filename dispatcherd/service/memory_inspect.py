@@ -7,9 +7,9 @@ class _Offender(TypedDict):
     count: int
     size_bytes: int
     type: str
+    class_: NotRequired[str]
     module: NotRequired[str]
     qualname: NotRequired[str]
-    class_: NotRequired[str]
 
 
 def _class_identifier(obj: object) -> tuple[str, str, str]:
@@ -54,7 +54,9 @@ def get_object_size_stats(limit: int = 10, group_by: str = 'type') -> dict[str, 
     offenders = []
     for entry in totals.values():
         if 'class_' in entry:
-            offenders.append({**entry, 'class': entry['class_']})
+            trimmed = {key: value for key, value in entry.items() if key != 'class_'}
+            trimmed['class'] = entry['class_']
+            offenders.append(trimmed)
         else:
             offenders.append(dict(entry))
     offenders.sort(key=lambda item: (item['size_bytes'], item['count'], item['type']), reverse=True)
