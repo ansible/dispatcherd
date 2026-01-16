@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # This will tell the dispatcher_service context manager to collect coverage
 os.environ.setdefault('DISPATCHERD_SUBPROCESS_COVERAGE', '1')
+os.environ.setdefault('DISPATCHERD_SUBPROCESS_COVERAGE_FILE', '.coverage_subprocess')
 
 
 # List of channels to listen on

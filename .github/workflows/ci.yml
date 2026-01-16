@@ -35,9 +35,9 @@ jobs:
         run: pytest asyncio_tests/ -vv -s --cov=dispatcherd --cov-append
       - name: Combine coverage data
         run: |
-          if ls .coverage.* >/dev/null 2>&1; then
+          if ls .coverage_subprocess.* >/dev/null 2>&1; then
             echo "Combining subprocess coverage files"
-            python -m coverage combine --append
+            python -m coverage combine --append .coverage_subprocess.*
           else
             echo "No subprocess coverage files to combine; skipping combine"
           fi
