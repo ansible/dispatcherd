@@ -97,9 +97,9 @@ def _start_subprocess_coverage():
         import coverage  # type: ignore[import-not-found]
     except Exception as exc:
         raise RuntimeError('DISPATCHERD_SUBPROCESS_COVERAGE enabled, but coverage is unavailable') from exc
-    data_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_FILE') or '.coverage'
+    data_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_FILE') or '.coverage_subprocess'
     config_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_CONFIG')
-    kwargs = {'data_suffix': False}
+    kwargs = {'data_suffix': True}
     if data_file:
         kwargs['data_file'] = data_file
     if config_file:
@@ -112,7 +112,6 @@ def _start_subprocess_coverage():
 
 def subprocess_main(config, comms):
     """The subprocess (synchronous) target for the testing dispatcherd service"""
-    coverage_session = _start_subprocess_coverage()
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(asyncio_target(config, comms))
@@ -124,10 +123,17 @@ def subprocess_main(config, comms):
         comms.q_out.put(stack_trace)
         raise
     finally:
+        loop.close()
+
+
+def _subprocess_entry(config, comms):
+    coverage_session = _start_subprocess_coverage()
+    try:
+        subprocess_main(config, comms)
+    finally:
         if coverage_session is not None:
             coverage_session.stop()
             coverage_session.save()
-        loop.close()
 
 
 @contextlib.contextmanager
@@ -139,7 +145,7 @@ def dispatcher_service(config, main_events=(), pool_events=()):
     """
     ctx = multiprocessing.get_context('spawn')
     comms = CommunicationItems(main_events=main_events, pool_events=pool_events, context=ctx)
-    process = ctx.Process(target=subprocess_main, args=(config, comms))
+    process = ctx.Process(target=_subprocess_entry, args=(config, comms))
     try:
         process.start()
         ready_msg = comms.q_out.get()
