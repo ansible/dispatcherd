@@ -97,9 +97,9 @@ def _start_subprocess_coverage():
         import coverage  # type: ignore[import-not-found]
     except Exception as exc:
         raise RuntimeError('DISPATCHERD_SUBPROCESS_COVERAGE enabled, but coverage is unavailable') from exc
-    data_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_FILE') or '.coverage_subprocess'
+    data_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_FILE') or '.coverage'
     config_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_CONFIG')
-    kwargs = {'data_suffix': True}
+    kwargs = {'data_suffix': False}
     if data_file:
         kwargs['data_file'] = data_file
     if config_file:

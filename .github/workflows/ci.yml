@@ -33,14 +33,6 @@ jobs:
         run: pytest tests/ -vv -s --cov=dispatcherd --cov-append
       - name: Run asyncio tests with coverage
         run: pytest asyncio_tests/ -vv -s --cov=dispatcherd --cov-append
-      - name: Combine coverage data
-        run: |
-          if ls .coverage_subprocess.* >/dev/null 2>&1; then
-            echo "Combining subprocess coverage files"
-            python -m coverage combine --append .coverage_subprocess.*
-          else
-            echo "No subprocess coverage files to combine; skipping combine"
-          fi
       - name: Generate coverage.xml
         run: python -m coverage xml
       - name: Inject PR number into coverage.xml
