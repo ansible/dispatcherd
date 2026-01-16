@@ -75,6 +75,7 @@ async def asyncio_target(config: dict, comms: CommunicationItems) -> None:
             else:
                 eval(message)
 
+
 def _should_start_coverage() -> bool:
     value = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE')
     if value is None:
@@ -86,7 +87,7 @@ def _start_subprocess_coverage():
     if not _should_start_coverage():
         return None
     try:
-        import coverage
+        import coverage  # type: ignore[import-not-found]
     except Exception as exc:
         raise RuntimeError('DISPATCHERD_SUBPROCESS_COVERAGE enabled, but coverage is unavailable') from exc
     data_file = os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_FILE')
