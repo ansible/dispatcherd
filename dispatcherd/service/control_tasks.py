@@ -3,7 +3,6 @@ import io
 import logging
 
 from ..protocols import DispatcherMain
-from . import coverage_probe as coverage_probe_module
 
 __all__ = [
     'running',
@@ -17,7 +16,6 @@ __all__ = [
     'status',
     'chunks',
     'set_log_level',
-    'coverage_probe',
 ]
 
 
@@ -134,18 +132,6 @@ async def aio_tasks(dispatcher: DispatcherMain, data: dict) -> dict[str, dict]:
 async def alive(dispatcher: DispatcherMain, data: dict) -> dict:
     """Returns no information, used to get fast roll-call of instances"""
     return {}
-
-
-async def coverage_probe(dispatcher: DispatcherMain, data: dict) -> dict[str, str]:
-    """Return a deterministic payload to validate subprocess coverage.
-
-    Control Args:
-        token:
-            type: str
-            help: Optional value to echo back in the response.
-    """
-    token = data.get('token')
-    return coverage_probe_module.build_coverage_probe_response(token=token)
 
 
 async def workers(dispatcher: DispatcherMain, data: dict) -> dict:
