@@ -83,15 +83,8 @@ def _should_start_coverage() -> bool:
     return value.strip().lower() not in ('0', 'false', 'no', 'off', '')
 
 
-def _coverage_debug(message: str) -> None:
-    if os.getenv('DISPATCHERD_SUBPROCESS_COVERAGE_DEBUG'):
-        sys.stderr.write(f"[dispatcherd subprocess coverage] {message}\n")
-        sys.stderr.flush()
-
-
 def _start_subprocess_coverage():
     if not _should_start_coverage():
-        _coverage_debug("coverage disabled; DISPATCHERD_SUBPROCESS_COVERAGE not truthy")
         return None
     try:
         import coverage  # type: ignore[import-not-found]
@@ -104,7 +97,6 @@ def _start_subprocess_coverage():
         kwargs['data_file'] = data_file
     if config_file:
         kwargs['config_file'] = config_file
-    _coverage_debug(f"starting coverage: cwd={os.getcwd()} data_file={data_file!r} " f"config_file={config_file!r} data_suffix={kwargs['data_suffix']!r}")
     cov = coverage.Coverage(**kwargs)
     cov.start()
     return cov
