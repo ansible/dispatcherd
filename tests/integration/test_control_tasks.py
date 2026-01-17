@@ -100,3 +100,11 @@ def test_pg_notify_large_control_reply(pg_dispatcher, pg_broker, pg_control, get
     pg_control.control_with_reply('cancel', data={'uuid': 'big_payload_control'}, timeout=1)
     status = pg_dispatcher.q_out.get(timeout=2)
     assert status == 'work_cleared'
+
+
+def test_control_coverage_probe(pg_dispatcher, pg_control, get_worker_data):
+    result = pg_control.control_with_reply('coverage_probe', data={'token': 'probe'}, timeout=1)
+    assert len(result) == 1
+    payload = result[0]
+    payload.pop('node_id', None)
+    assert payload == {'probe': 'ok', 'token': 'probe'}
