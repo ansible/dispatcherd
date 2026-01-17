@@ -100,4 +100,3 @@ def test_pg_notify_large_control_reply(pg_dispatcher, pg_broker, pg_control, get
     pg_control.control_with_reply('cancel', data={'uuid': 'big_payload_control'}, timeout=1)
     status = pg_dispatcher.q_out.get(timeout=2)
     assert status == 'work_cleared'
-
