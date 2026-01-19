@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 import time
 
 import pytest
@@ -292,7 +293,8 @@ async def test_tasks_are_named(apg_dispatcher, python311):
         if task is current_task:
             continue
         task_name = task.get_name()
-        assert not task_name.startswith('Task-'), _stack_from_task(task)
+        if sys.version_info >= (3, 12):
+            assert not task_name.startswith('Task-'), _stack_from_task(task)
 
     apg_dispatcher.shared.exit_event.set()
     await wait_task

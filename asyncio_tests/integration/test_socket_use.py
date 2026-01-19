@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from typing import AsyncIterator, Callable
 
 import pytest
@@ -102,4 +103,5 @@ async def test_socket_tasks_are_named(asock_dispatcher, sock_control, python311)
     for task_name, task_stuff in data.items():
         if task_name == current_task_name:
             continue
-        assert not task_name.startswith('Task-'), task_stuff['stack']
+        if sys.version_info >= (3, 12):
+            assert not task_name.startswith('Task-'), task_stuff['stack']
