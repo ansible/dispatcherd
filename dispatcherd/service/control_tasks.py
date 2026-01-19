@@ -4,19 +4,7 @@ import logging
 
 from ..protocols import DispatcherMain
 
-__all__ = [
-    'running',
-    'cancel',
-    'alive',
-    'aio_tasks',
-    'workers',
-    'producers',
-    'metrics',
-    'main',
-    'status',
-    'chunks',
-    'set_log_level',
-]
+__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'metrics', 'main', 'status', 'chunks', 'set_log_level']
 
 
 logger = logging.getLogger(__name__)
