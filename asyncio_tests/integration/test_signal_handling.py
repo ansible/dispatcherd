@@ -54,7 +54,7 @@ async def test_sigusr1_cancel_avoids_sigterm(apg_dispatcher, pg_control, test_se
     assert canceled_info, f"Missing worker data: {canceled_info}"
 
     # We'll search for any subdict that has 'uuid': our expected value
-    (worker_key, worker_data) = list(canceled_info.items())[0]
+    worker_key, worker_data = list(canceled_info.items())[0]
     assert worker_data["uuid"] == uuid_val
 
     # Check that 1 task was canceled, and no SIGTERM printout

@@ -21,10 +21,10 @@ class WorkerSignalHandler:
         self.worker_id = worker_id
         self.enter_idle_mode()
 
-    def task_cancel(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
+    def task_cancel(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         raise DispatcherCancel
 
-    def exit_gracefully(self, *args, **kwargs) -> None:  # type:ignore[no-untyped-def]
+    def exit_gracefully(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.info(f'Worker {self.worker_id} received worker process exit signal')
         self.kill_now = True
 

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from typing import AsyncIterator, Callable
 
 import pytest
@@ -87,7 +88,7 @@ async def test_simple_control_and_reply(asock_dispatcher, sock_control):
 
 
 @pytest.mark.asyncio
-async def test_socket_tasks_are_named(asock_dispatcher, sock_control, python312):
+async def test_socket_tasks_are_named(asock_dispatcher, sock_control, python311):
     loop = asyncio.get_event_loop()
 
     def aio_tasks_cmd():
@@ -102,4 +103,5 @@ async def test_socket_tasks_are_named(asock_dispatcher, sock_control, python312)
     for task_name, task_stuff in data.items():
         if task_name == current_task_name:
             continue
-        assert not task_name.startswith('Task-'), task_stuff['stack']
+        if sys.version_info >= (3, 12):
+            assert not task_name.startswith('Task-'), task_stuff['stack']

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 import time
 
 import pytest
@@ -284,7 +285,7 @@ async def test_scale_up(apg_dispatcher, test_settings):
 
 
 @pytest.mark.asyncio
-async def test_tasks_are_named(apg_dispatcher, python312):
+async def test_tasks_are_named(apg_dispatcher, python311):
     wait_task = asyncio.create_task(apg_dispatcher.main_loop_wait(), name='this_is_for_test')
 
     current_task = asyncio.current_task()
@@ -292,7 +293,8 @@ async def test_tasks_are_named(apg_dispatcher, python312):
         if task is current_task:
             continue
         task_name = task.get_name()
-        assert not task_name.startswith('Task-'), _stack_from_task(task)
+        if sys.version_info >= (3, 12):
+            assert not task_name.startswith('Task-'), _stack_from_task(task)
 
     apg_dispatcher.shared.exit_event.set()
     await wait_task
