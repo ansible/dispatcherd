@@ -5,7 +5,7 @@ import signal
 import sys
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any, Literal, Optional, cast
 
 from ..protocols import TaskWorker as TaskWorkerProtocol
 from ..registry import DispatcherMethodRegistry
@@ -16,17 +16,43 @@ logger = logging.getLogger(__name__)
 
 
 class WorkerSignalHandler:
-    def __init__(self, worker_id: int) -> None:
+    TASK_SIGNAL_DEFAULT: Literal["default"] = "default"
+    TASK_SIGNAL_DISPATCHER_EXIT: Literal["dispatcher_exit"] = "dispatcher_exit"
+    TASK_SIGNAL_NOOP: Literal["noop"] = "noop"
+    VALID_TASK_SIGNAL_HANDLING = {
+        TASK_SIGNAL_DEFAULT,
+        TASK_SIGNAL_DISPATCHER_EXIT,
+        TASK_SIGNAL_NOOP,
+    }
+
+    def __init__(
+        self,
+        worker_id: int,
+        task_signal_handling: Literal["default", "dispatcher_exit", "noop"] = TASK_SIGNAL_DEFAULT,
+    ) -> None:
         self.kill_now = False
         self.worker_id = worker_id
+        if task_signal_handling not in self.VALID_TASK_SIGNAL_HANDLING:
+            raise ValueError("task_signal_handling must be one of " f"{sorted(self.VALID_TASK_SIGNAL_HANDLING)}, got {task_signal_handling!r}")
+        self.task_signal_handling = task_signal_handling
         self.enter_idle_mode()
 
     def task_cancel(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         raise DispatcherCancel
 
+    def task_exit(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        raise DispatcherExit
+
     def exit_gracefully(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         logger.info(f'Worker {self.worker_id} received worker process exit signal')
         self.kill_now = True
+
+    def _task_signal_handler(self) -> signal.Handlers:
+        if self.task_signal_handling == self.TASK_SIGNAL_DEFAULT:
+            return signal.SIG_DFL
+        if self.task_signal_handling == self.TASK_SIGNAL_DISPATCHER_EXIT:
+            return cast(signal.Handlers, self.task_exit)
+        return signal.SIG_IGN
 
     def enter_idle_mode(self) -> None:
         """Install idle-mode handlers so signals request shutdown/cancel."""
@@ -35,9 +61,10 @@ class WorkerSignalHandler:
         signal.signal(signal.SIGUSR1, self.task_cancel)
 
     def enter_task(self) -> None:
-        """Restore default SIGINT/SIGTERM behavior so tasks can install their own handlers."""
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        """Apply task-mode SIGINT/SIGTERM behavior so tasks can install their own handlers."""
+        handler = self._task_signal_handler()
+        signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGTERM, handler)
         signal.signal(signal.SIGUSR1, self.task_cancel)
 
 
@@ -84,6 +111,7 @@ class TaskWorker(TaskWorkerProtocol):
         finished_queue: multiprocessing.Queue,
         registry: DispatcherMethodRegistry = global_registry,
         idle_timeout: int = 0,
+        task_signal_handling: Literal["default", "dispatcher_exit", "noop"] = WorkerSignalHandler.TASK_SIGNAL_DEFAULT,
     ) -> None:
         self.worker_id: int = worker_id
         self.message_queue = message_queue
@@ -91,7 +119,7 @@ class TaskWorker(TaskWorkerProtocol):
         self.registry = registry
         self.ppid = os.getppid()
         self.pid = os.getpid()
-        self.signal_handler = WorkerSignalHandler(worker_id)
+        self.signal_handler = WorkerSignalHandler(worker_id, task_signal_handling=task_signal_handling)
         self.idle_timeout = idle_timeout
         self.exit_after_current_task = False
 

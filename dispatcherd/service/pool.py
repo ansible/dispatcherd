@@ -242,6 +242,7 @@ class WorkerPool(WorkerPoolProtocol):
         worker_removal_wait: float = 30.0,
         worker_max_lifetime_seconds: float | None = 4 * 60 * 60,
         results_read_timeout: float | None = None,
+        shutdown_task_grace_period: float = 0.0,
     ) -> None:
         self.min_workers = min_workers
 
@@ -265,6 +266,7 @@ class WorkerPool(WorkerPoolProtocol):
         self.canceled_count: int = 0
         self.retirement_count: int = 0
         self.shutdown_timeout = 3
+        self.shutdown_task_grace_period = shutdown_task_grace_period
 
         # the timeout runner keeps its own task
         self.timeout_runner = NextWakeupRunner(self.workers, self.cancel_worker, shared=shared, name='worker_timeout_manager')
@@ -565,12 +567,49 @@ class WorkerPool(WorkerPoolProtocol):
         self.queuer.shutdown()
         self.blocker.shutdown()
 
-    async def _stop_and_cleanup_workers(self) -> None:
-        await self.stop_workers()
+    def _active_worker_count(self) -> int:
+        return sum(1 for worker in self.workers if worker.current_task)
+
+    async def _signal_workers_for_shutdown(self) -> None:
+        worker_ct = 0
+        async with self.workers.management_lock:
+            for worker in self.workers:
+                if worker.counts_for_capacity:
+                    await worker.signal_stop(cancel_if_busy=False)
+                    worker_ct += 1
+        if worker_ct:
+            logger.info('Sent stop message to %d workers for shutdown', worker_ct)
+
+    async def _wait_for_shutdown_grace_period(self) -> None:
+        grace_period = self.shutdown_task_grace_period
+        if grace_period <= 0.0:
+            return
+        read_results_task = self.read_results_task
+        if not read_results_task or read_results_task.done():
+            return
+        logger.info('Waiting up to %.2fs for workers to exit before canceling tasks', grace_period)
+        try:
+            await asyncio.wait_for(read_results_task, timeout=grace_period)
+        except asyncio.TimeoutError:
+            logger.warning('Grace period %.2fs elapsed before workers finished, continuing shutdown', grace_period)
+        except asyncio.CancelledError:
+            logger.info('Finished watcher canceled while waiting for shutdown grace period')
+
+    def _cancel_active_workers(self) -> int:
+        canceled_count = 0
         for worker in self.workers:
-            if worker.counts_for_capacity and worker.process.pid and worker.process.is_alive():
-                logger.warning(f'Force killing worker {worker.worker_id} pid={worker.process.pid}')
-                worker.process.kill()
+            if worker.current_task:
+                worker.cancel()
+                canceled_count += 1
+        if canceled_count:
+            logger.warning('Canceling %d workers still running tasks during shutdown', canceled_count)
+        return canceled_count
+
+    async def _stop_and_cleanup_workers(self) -> None:
+        workers_to_stop = list(self.workers)
+        stop_tasks = [worker.stop() for worker in workers_to_stop]
+        if stop_tasks:
+            await asyncio.gather(*stop_tasks)
 
     async def _shutdown_results_task(self) -> None:
         read_results_task = self.read_results_task
@@ -594,9 +633,14 @@ class WorkerPool(WorkerPoolProtocol):
 
     async def shutdown(self) -> None:
         self.shared.exit_event.set()
+        # Worker and task shutdown phase
         await self._shutdown_management_task()
         await self._shutdown_work_queues()
+        await self._signal_workers_for_shutdown()
+        await self._wait_for_shutdown_grace_period()
+        self._cancel_active_workers()
         await self._stop_and_cleanup_workers()
+        # end worker phase, rest is internal stuff
         await self._shutdown_results_task()
         self.process_manager.shutdown()
 

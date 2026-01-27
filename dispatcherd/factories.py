@@ -130,7 +130,10 @@ SERIALIZED_TYPES = (int, str, dict, type(None), tuple, list, float, bool)
 
 
 def is_valid_annotation(annotation):
-    if get_origin(annotation):
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return all(isinstance(arg, SERIALIZED_TYPES) for arg in get_args(annotation))
+    if origin:
         for arg in get_args(annotation):
             if not is_valid_annotation(arg):
                 return False
