@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import multiprocessing
+import os
 from typing import AsyncIterator, Callable
 
 import pytest
@@ -15,6 +16,11 @@ from dispatcherd.service.main import DispatcherMain
 from dispatcherd.testing.asyncio import adispatcher_service
 
 logger = logging.getLogger(__name__)
+
+
+# This will tell the dispatcher_service context manager to collect coverage
+os.environ.setdefault('DISPATCHERD_SUBPROCESS_COVERAGE', '1')
+os.environ.setdefault('DISPATCHERD_SUBPROCESS_COVERAGE_FILE', '.coverage_subprocess')
 
 
 # List of channels to listen on
