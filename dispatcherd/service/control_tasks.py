@@ -1,10 +1,26 @@
 import asyncio
+import gc
 import io
 import logging
 
 from ..protocols import DispatcherMain
+from . import memory_inspect
 
-__all__ = ['running', 'cancel', 'alive', 'aio_tasks', 'workers', 'producers', 'metrics', 'main', 'status', 'chunks', 'set_log_level']
+__all__ = [
+    'running',
+    'cancel',
+    'alive',
+    'aio_tasks',
+    'workers',
+    'producers',
+    'metrics',
+    'main',
+    'status',
+    'chunks',
+    'memory',
+    'memory_offenders',
+    'set_log_level',
+]
 
 
 logger = logging.getLogger(__name__)
@@ -186,11 +202,37 @@ async def status(dispatcher: DispatcherMain, data: dict) -> dict:
     """Information from all other non-destructive commands nested in a sub-dictionary"""
     ret = {}
     for command in __all__:
-        if command in ('cancel', 'alive', 'status', 'run', 'set_log_level'):
+        if command in ('cancel', 'alive', 'status', 'run', 'set_log_level', 'memory_offenders'):
             continue
         control_method = globals()[command]
         ret[command] = await control_method(dispatcher=dispatcher, data={})
     return ret
+
+
+async def memory(dispatcher: DispatcherMain, data: dict) -> dict[str, int]:
+    """Return memory-related information for the dispatcher process."""
+    return {'objects': len(gc.get_objects())}
+
+
+async def memory_offenders(dispatcher: DispatcherMain, data: dict) -> dict[str, object]:
+    """Return a list of object types with the largest shallow memory usage.
+
+    Control Args:
+        limit:
+            type: int
+            help: Maximum number of offender types to return.
+        group_by:
+            type: str
+            choices: [type, class]
+            help: Group by type name or module-qualified class name.
+    """
+    limit = data.get('limit', 10)
+    if type(limit) is not int:
+        limit = 10
+    group_by = data.get('group_by', 'type')
+    if group_by not in ('type', 'class'):
+        group_by = 'type'
+    return memory_inspect.get_object_size_stats(limit=limit, group_by=group_by)
 
 
 def _coerce_log_level(level_name: str | None) -> int | None:
