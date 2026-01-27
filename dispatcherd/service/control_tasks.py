@@ -227,7 +227,7 @@ async def memory_offenders(dispatcher: DispatcherMain, data: dict) -> dict[str, 
             help: Group by type name or module-qualified class name.
     """
     limit = data.get('limit', 10)
-    if not isinstance(limit, int):
+    if type(limit) is not int:
         limit = 10
     group_by = data.get('group_by', 'type')
     if group_by not in ('type', 'class'):

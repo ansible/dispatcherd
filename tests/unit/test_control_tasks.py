@@ -57,6 +57,14 @@ def test_memory_reports_object_count(monkeypatch):
 
 def test_memory_offenders_uses_helper(monkeypatch):
     expected = {'total_objects': 5, 'offenders': [{'type': 'X', 'count': 5, 'size_bytes': 40}]}
-    monkeypatch.setattr(control_tasks.memory_inspect, 'get_object_size_stats', lambda limit=10, group_by='type': expected)
+    received = {}
+
+    def fake_get_object_size_stats(*, limit=10, group_by='type'):
+        received['limit'] = limit
+        received['group_by'] = group_by
+        return expected
+
+    monkeypatch.setattr(control_tasks.memory_inspect, 'get_object_size_stats', fake_get_object_size_stats)
     result = asyncio.run(control_tasks.memory_offenders(dispatcher=None, data={'limit': 5, 'group_by': 'class'}))
+    assert received == {'limit': 5, 'group_by': 'class'}
     assert result == expected
