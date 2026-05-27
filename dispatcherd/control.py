@@ -161,6 +161,13 @@ class Control:
         replies: list[dict] = []
         try:
             for channel, payload in broker.process_notify(connected_callback=callbacks.connected_callback, max_messages=None, timeout=timeout):
+                if isinstance(channel, str) and channel != reply_queue:
+                    logger.warning(
+                        'Received reply on channel %s but expected %s — discarding stale notification',
+                        channel,
+                        reply_queue,
+                    )
+                    continue
                 if _ingest_reply_payload(reply_accumulator, replies, payload, idx=len(replies)):
                     if len(replies) >= expected_replies:
                         break

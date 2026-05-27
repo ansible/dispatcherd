@@ -9,14 +9,15 @@ from tests.unit.utils import DummyAsyncConnection, DummySyncConnection
 class DummyBroker(Broker):
     """Simple broker stub to ensure cleanup paths close resources."""
 
-    def __init__(self):
+    def __init__(self, channel="dummy_channel"):
         self.close_called = False
         self.sent_message = None
+        self.channel = channel
 
     async def aprocess_notify(self, connected_callback=None):
         if connected_callback:
             await connected_callback()
-        yield ("dummy_channel", json.dumps({"result": "ok"}))
+        yield (self.channel, json.dumps({"result": "ok"}))
 
     async def apublish_message(self, channel=None, message=""):
         self.sent_message = message
@@ -27,7 +28,7 @@ class DummyBroker(Broker):
     def process_notify(self, connected_callback=None, timeout: float = 5.0, max_messages: int | None = 1):
         if connected_callback:
             connected_callback()
-        yield ("dummy_channel", json.dumps({"result": "ok"}))
+        yield (self.channel, json.dumps({"result": "ok"}))
 
     def publish_message(self, channel=None, message=""):
         self.sent_message = message
@@ -41,6 +42,8 @@ def test_control_with_reply_resource_cleanup(monkeypatch):
     dummy_broker = DummyBroker()
 
     def dummy_get_broker(broker_name, broker_config, channels=None, **kwargs):
+        if channels:
+            dummy_broker.channel = channels[0]
         return dummy_broker
 
     monkeypatch.setattr("dispatcherd.control.get_broker", dummy_get_broker)
@@ -62,6 +65,21 @@ def test_control_resource_cleanup(monkeypatch):
 
     control = Control(broker_name="dummy", broker_config={}, queue="test_queue")
     control.control(command="test_command", data={"foo": "bar"})
+    assert dummy_broker.close_called is True
+
+
+def test_control_with_reply_discards_stale_notifications(monkeypatch):
+    """control_with_reply should discard replies on mismatched channels."""
+    dummy_broker = DummyBroker(channel="stale_reply_channel")
+
+    def dummy_get_broker(broker_name, broker_config, channels=None, **kwargs):
+        return dummy_broker
+
+    monkeypatch.setattr("dispatcherd.control.get_broker", dummy_get_broker)
+
+    control = Control(broker_name="dummy", broker_config={}, queue="test_queue")
+    result = control.control_with_reply(command="test_command", expected_replies=1, timeout=1, data={"foo": "bar"})
+    assert result == []
     assert dummy_broker.close_called is True
 
 

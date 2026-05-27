@@ -352,6 +352,8 @@ class Broker(BrokerProtocol):
 
         with connection.cursor() as cur:
             try:
+                # Clear any stale LISTEN state from previous users of this cached connection
+                cur.execute(self.get_unlisten_query())
                 for channel in self.channels:
                     cur.execute(self.get_listen_query(channel))
                     logger.info(f"Set up pg_notify listening on channel '{channel}'")
