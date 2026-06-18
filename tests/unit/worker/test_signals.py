@@ -57,6 +57,56 @@ def test_worker_signal_handler_modes(monkeypatch):
     assert_bound(registered[signal.SIGUSR1], WorkerSignalHandler.task_cancel)
 
 
+def test_worker_signal_handler_task_signal_dispatcher_exit(monkeypatch):
+    from dispatcherd.worker.task import WorkerSignalHandler
+
+    registered: dict[int, object] = {}
+
+    def fake_signal(sig: int, handler: object) -> object:
+        registered[sig] = handler
+        return handler
+
+    monkeypatch.setattr(signal, "signal", fake_signal)
+
+    handler = WorkerSignalHandler(worker_id=42, task_signal_handling=WorkerSignalHandler.TASK_SIGNAL_DISPATCHER_EXIT)
+
+    def assert_bound(value: object, func: object) -> None:
+        assert hasattr(value, "__func__")
+        assert value.__func__ is func  # type: ignore[attr-defined]
+
+    handler.enter_task()
+    assert_bound(registered[signal.SIGINT], WorkerSignalHandler.task_exit)
+    assert_bound(registered[signal.SIGTERM], WorkerSignalHandler.task_exit)
+    assert_bound(registered[signal.SIGUSR1], WorkerSignalHandler.task_cancel)
+
+
+def test_worker_signal_handler_task_signal_noop(monkeypatch):
+    from dispatcherd.worker.task import WorkerSignalHandler
+
+    registered: dict[int, object] = {}
+
+    def fake_signal(sig: int, handler: object) -> object:
+        registered[sig] = handler
+        return handler
+
+    monkeypatch.setattr(signal, "signal", fake_signal)
+
+    handler = WorkerSignalHandler(worker_id=42, task_signal_handling=WorkerSignalHandler.TASK_SIGNAL_NOOP)
+
+    handler.enter_task()
+    assert registered[signal.SIGINT] is signal.SIG_IGN
+    assert registered[signal.SIGTERM] is signal.SIG_IGN
+    assert hasattr(registered[signal.SIGUSR1], "__func__")
+    assert registered[signal.SIGUSR1].__func__ is WorkerSignalHandler.task_cancel  # type: ignore[attr-defined]
+
+
+def test_worker_signal_handler_invalid_task_signal_handling():
+    from dispatcherd.worker.task import WorkerSignalHandler
+
+    with pytest.raises(ValueError):
+        WorkerSignalHandler(worker_id=42, task_signal_handling="nope")
+
+
 def test_worker_signal_handler_task_cancel_raises():
     handler = WorkerSignalHandler(worker_id=99)
     with pytest.raises(DispatcherCancel):

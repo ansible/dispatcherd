@@ -125,6 +125,10 @@ to limit how long the queue read blocks before re-evaluating shutdown criteria.
 it will be retired. The default is 4 hours. Setting it to `null` disables
 automatic retirement, which is not recommended for long-running services.
 
+`shutdown_task_grace_period` controls how long the pool waits (in seconds) after
+issuing a stop message before canceling active tasks. Use `0` to keep the
+previous behavior of canceling immediately.
+
 #### Producers
 
 These are "producers of tasks" in the dispatcherd service.
@@ -166,3 +170,7 @@ used for testing this feature.
 The `idle_timeout` is a number of seconds which determines how long
 after no new tasks are received that the `on_idle` callback will be called.
 That can be useful for connection keep-alive work and such.
+
+`task_signal_handling` controls how SIGINT/SIGTERM are handled while a task is
+running. Supported values are `default` (use Python's default handler),
+`dispatcher_exit` (raise `DispatcherExit`), and `noop` (ignore the signal).
