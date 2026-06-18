@@ -100,3 +100,32 @@ def test_pg_notify_large_control_reply(pg_dispatcher, pg_broker, pg_control, get
     pg_control.control_with_reply('cancel', data={'uuid': 'big_payload_control'}, timeout=1)
     status = pg_dispatcher.q_out.get(timeout=2)
     assert status == 'work_cleared'
+
+
+def test_memory_control(pg_dispatcher, pg_control):
+    memory_stats = pg_control.control_with_reply('memory', timeout=1)
+    assert len(memory_stats) == 1
+    memory_reply = memory_stats[0].copy()
+    memory_reply.pop('node_id', None)
+    assert len(memory_reply) == 1
+    memory_data = list(memory_reply.values())[0]
+    assert memory_data > 0
+
+
+def test_memory_offenders_control(pg_dispatcher, pg_control):
+    offenders_stats = pg_control.control_with_reply(
+        'memory_offenders',
+        data={'limit': 5, 'group_by': 'type'},
+        timeout=2,
+    )
+    assert len(offenders_stats) == 1
+    offenders_data = offenders_stats[0].copy()
+    offenders_data.pop('node_id', None)
+    assert offenders_data['group_by'] == 'type'
+    assert offenders_data['total_objects'] > 0
+    offenders = offenders_data['offenders']
+    assert len(offenders) <= 5
+    for offender in offenders:
+        assert offender['count'] > 0
+        assert offender['size_bytes'] > 0
+        assert offender['type']
