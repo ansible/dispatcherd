@@ -831,6 +831,16 @@ class WorkerPool(WorkerPoolProtocol):
 
             worker_id = int(message["worker"])
             event = message["event"]
+
+            if worker_id not in self.workers:
+                logger.warning(
+                    "Received result for unknown worker %d (event=%s), "
+                    "worker may have been removed already. Ignoring.",
+                    worker_id,
+                    event,
+                )
+                continue
+
             worker = self.workers.get_by_id(worker_id)
 
             if event == 'ready':
