@@ -32,7 +32,7 @@ async def test_sigusr1_cancel_avoids_sigterm(apg_dispatcher, pg_control, test_se
     """
 
     # Submit the task
-    uuid_val = "test-sigusr1-cancel-inline"
+    uuid_val = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f"
     sigterm_interceptor_task.apply_async(uuid=uuid_val, settings=test_settings)
 
     # Give the dispatcher a moment to start the task

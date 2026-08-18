@@ -1,17 +1,14 @@
 import inspect
 import json
-import logging
 import threading
 import time
 from typing import Callable, Iterable, Optional, Set, Tuple
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .config import LazySettings
 from .config import settings as global_settings
 from .protocols import ProcessorParams
 from .utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
-
-logger = logging.getLogger(__name__)
 
 
 class DispatcherError(RuntimeError):
@@ -87,6 +84,7 @@ class DispatcherMethod:
         args: Optional[tuple] = None,
         kwargs: Optional[dict] = None,
         uuid: Optional[str] = None,
+        origin: Optional[str] = None,
         bind: bool = False,
         timeout: Optional[float] = 0.0,
         processor_options: Iterable[ProcessorParams] = (),
@@ -97,8 +95,29 @@ class DispatcherMethod:
         If a task is submitted to a multiprocessing pool, skipping pg_notify, this might be used directly
         """
         body = self.publication_defaults()
-        # These params are forced to be set on every submission, can not be generic to task
-        body['uuid'] = uuid or str(uuid4())
+
+        if uuid:
+            # Fail loudly on invalid input — silent replacement made debugging very hard.
+            # AWX passes uuid4() output (canonical lowercase), which is accepted as-is.
+            try:
+                val = UUID(uuid, version=4)
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ValueError(
+                    f"Invalid UUID4 format provided: {uuid!r}. Caller must supply a valid uuid4 string."
+                ) from exc
+            # Require canonical lowercase hyphenated form (str(UUID) / uuid4()).
+            if str(val) != uuid:
+                raise ValueError(
+                    f"Invalid UUID4 format provided: {uuid!r}. "
+                    "Caller must supply a canonical uuid4 string."
+                )
+        else:
+            uuid = str(uuid4())
+
+        body['uuid'] = uuid
+
+        if origin:
+            body['origin'] = origin
 
         if args:
             body['args'] = args
@@ -122,6 +141,7 @@ class DispatcherMethod:
         kwargs: Optional[dict] = None,
         queue: str | Callable[..., str] | None = None,
         uuid: Optional[str] = None,
+        origin: Optional[str] = None,
         settings: LazySettings = global_settings,
         bind: bool = False,
         timeout: Optional[float] = 0.0,
@@ -140,7 +160,9 @@ class DispatcherMethod:
         else:
             resolved_queue = effective_queue  # Can still be None if we rely on the broker default channel
 
-        obj = self.get_async_body(args=args, kwargs=kwargs, uuid=uuid, bind=bind, timeout=timeout, processor_options=processor_options)
+        obj = self.get_async_body(
+            args=args, kwargs=kwargs, uuid=uuid, origin=origin, bind=bind, timeout=timeout, processor_options=processor_options
+        )
 
         from dispatcherd.factories import get_publisher_from_settings
 

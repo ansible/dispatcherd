@@ -76,7 +76,7 @@ async def test_task_breaks_connection(apg_dispatcher, test_settings, caplog):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     caplog.clear()
     with caplog.at_level("DEBUG"):
-        do_database_query.apply_async(settings=test_settings, uuid='sanity')
+        do_database_query.apply_async(settings=test_settings, uuid='a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d')
         await asyncio.wait_for(clearing_task, timeout=3)
 
     assert "Worker 0 finished task" in caplog.text
@@ -94,8 +94,8 @@ async def test_task_breaks_connection(apg_dispatcher, test_settings, caplog):
     clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     caplog.clear()
     with caplog.at_level("DEBUG"):
-        do_database_query.apply_async(settings=test_settings, uuid='real_test')
+        do_database_query.apply_async(settings=test_settings, uuid='b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e')
         await asyncio.wait_for(clearing_task, timeout=3)
 
-    assert "Worker 0 finished task (uuid=real_test)" in caplog.text
+    assert "Worker 0 finished task (uuid=b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e)" in caplog.text
     assert apg_dispatcher.pool.finished_count == 3

@@ -60,3 +60,47 @@ def test_surprise_registration():
     assert len(surprised_registry.lookup_dict) == 1
     assert isinstance(dmethod, DispatcherMethod)
     assert not isinstance(dmethod, UnregisteredMethod)
+
+
+def test_get_async_body_rejects_invalid_uuid4(registry):
+    """Invalid uuid4 inputs must raise rather than being silently replaced."""
+
+    def test_method():
+        return
+
+    dmethod = registry.register(test_method)
+
+    with pytest.raises(ValueError, match="Invalid UUID4 format"):
+        dmethod.get_async_body(uuid="not-a-uuid")
+
+    with pytest.raises(ValueError, match="Invalid UUID4 format"):
+        dmethod.get_async_body(uuid="1234")
+
+    # Non-canonical (uppercase) form is rejected — AWX uses uuid4() lowercase output
+    good = "550e8400-e29b-41d4-a716-446655440000"
+    with pytest.raises(ValueError, match="Invalid UUID4 format"):
+        dmethod.get_async_body(uuid=good.upper())
+
+
+def test_get_async_body_accepts_canonical_uuid4(registry):
+    def test_method():
+        return
+
+    dmethod = registry.register(test_method)
+    good = "550e8400-e29b-41d4-a716-446655440000"
+    body = dmethod.get_async_body(uuid=good)
+    assert body["uuid"] == good
+
+
+def test_get_async_body_generates_uuid_when_omitted(registry):
+    def test_method():
+        return
+
+    dmethod = registry.register(test_method)
+    body = dmethod.get_async_body()
+    # Generated values are canonical uuid4 strings
+    from uuid import UUID
+
+    UUID(body["uuid"], version=4)
+    assert body["uuid"] == str(UUID(body["uuid"], version=4))
+

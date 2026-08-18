@@ -122,6 +122,7 @@ def submit_task(
     args: Optional[tuple] = None,
     kwargs: Optional[dict] = None,
     uuid: Optional[str] = None,
+    origin: Optional[str] = None,
     queue: Optional[str] = None,
     timeout: Optional[float] = 0.0,
     processor_options: Iterable[ProcessorParams] = (),
@@ -163,5 +164,5 @@ def submit_task(
         dmethod = DispatcherMethod(fn)
 
     return dmethod.apply_async(
-        args=args, kwargs=kwargs, queue=queue, uuid=uuid, bind=bind, settings=settings, timeout=timeout, processor_options=processor_options
+        args=args, kwargs=kwargs, queue=queue, uuid=uuid, origin=origin, bind=bind, settings=settings, timeout=timeout, processor_options=processor_options
     )
