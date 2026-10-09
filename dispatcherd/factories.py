@@ -175,6 +175,7 @@ def generate_settings_schema(settings: LazySettings = global_settings) -> dict:
         'dispatcherd.testing.brokers.noop': {},
         'dispatcherd.testing.brokers.error_only': {},
         'dispatcherd.testing.brokers.memory': {},
+        'sql_server': {'config': {}},
     }
     for broker_name, broker_kwargs in testing_brokers.items():
         all_brokers.setdefault(broker_name, broker_kwargs)

@@ -4,8 +4,8 @@
 ## Dispatcherd
 
 The dispatcherd is a service to run python tasks in subprocesses,
-designed specifically to work well with pg_notify,
-but intended to be extensible to other message delivery means.
+with configurable message brokers. It includes a PostgreSQL `pg_notify`
+broker and a SQL Server table broker.
 Its philosophy is to have a limited scope
 as a "local" runner of background tasks, but to be composable
 so that it can be "wrapped" easily to enable clustering and
@@ -18,8 +18,8 @@ Licensed under [Apache Software License 2.0](LICENSE)
 
 ### Usage
 
-You have a postgres server configured and a python project.
-You will use dispatcherd to trigger a background task over pg_notify.
+The PostgreSQL demo uses a postgres server and `pg_notify`. Applications can
+choose either included broker in dispatcherd configuration.
 Both your *background dispatcherd service* and your *task publisher* process must have
 python configured so that your task is importable. Instructions are broken into 3 steps:
 
@@ -54,25 +54,58 @@ This tells dispatcherd how to submit tasks to be ran.
 from dispatcherd.config import setup
 
 config = {
-    "producers": {
-        "brokers": {
-            "pg_notify": {
-                "conninfo": "dbname=postgres user=postgres"
-                "channels": [
-                    "test_channel",
-                ],
-            },
+    "version": 2,
+    "brokers": {
+        "pg_notify": {
+            "config": {"dbname": "postgres", "user": "postgres"},
+            "channels": ["test_channel"],
+            "default_publish_channel": "test_channel",
         },
     },
-    "pool": {"max_workers": 4},
+    "service": {"pool_kwargs": {"max_workers": 4}},
 }
 setup(config)
 ```
 
 For more on how to set up and the allowed options in the config,
 see the section [config](docs/config.md) docs.
-The `queue` passed to `@task` needs to match a pg_notify channel in the `config`.
+The `queue` passed to `@task` needs to match a channel configured for the selected broker.
 It is often useful to have different workers listen to different sets of channels.
+For SQL Server table broker configuration, ODBC requirements, and delivery behavior,
+see [docs/config.md](docs/config.md#sql-server-table-broker).
+
+#### SQL Server broker
+
+Install the SQL Server extra with `pip install 'dispatcherd[sql_server]'` and
+install Microsoft ODBC Driver 18 in the runtime environment. Provision the
+dedicated `dispatcherd` database with
+[`tools/sql_server/setup.sql`](tools/sql_server/setup.sql), then configure the
+`sql_server` broker for both publishers and the dispatcherd service. Keep its
+credentials in deployment secret configuration. The PostgreSQL `pg_notify`
+broker remains available for applications that select it.
+
+#### SQL Server demo
+
+The PostgreSQL demo is separate. To run a one-shot SQL Server handoff between two
+dispatcherd containers, copy `.env.ms-demo.example` to `.env.ms-demo`, set the
+external SQL Server credentials, and make sure the `dispatcherd` database/table
+from [`tools/sql_server/setup.sql`](tools/sql_server/setup.sql) already exists.
+
+```bash
+cp .env.ms-demo.example .env.ms-demo
+# Edit .env.ms-demo with the SQL Server host and password.
+make ms-demo
+```
+
+`make ms-demo` starts two isolated containers, sends a task from node 1 to a
+channel subscribed only by node 2, checks node 2's SQL Server acknowledgment,
+then removes the containers. Each run gets a unique Compose project name, so
+overlapping runs do not share containers or networks. It does not start or stop
+the external SQL Server.
+Use `host.docker.internal` for a host-published database with Docker Compose; for
+Podman, set the server to `host.containers.internal` if that alias is available.
+If a run is interrupted, use the printed run ID to clean it up with
+`MS_DEMO_RUN_ID=<run-id> make stop-ms-demo`.
 
 #### dispatcherd service
 
@@ -93,7 +126,7 @@ from dispatcherd import run_service
 run_service()
 ```
 
-Configuration tells how to connect to postgres, and what channel(s) to listen to.
+Configuration tells the service how to connect to the selected broker and what channel(s) to listen to.
 
 #### Publisher
 
@@ -122,7 +155,7 @@ For more options related to publishing tasks see [docs/submit_task.md](docs/subm
 Initial setup:
 
 ```
-pip install -e .[pg_notify]
+pip install -e '.[pg_notify_dev]'
 ```
 
 To experience running a `dispatcherd` service, you can try this:
@@ -230,7 +263,7 @@ Dispatcherd is sponsored by [Red Hat, Inc](https://www.redhat.com).
 You can run a demo of the metrics server. In your first terminal tab, run:
 
 ```
-pip install .[pg_notify,metrics]
+pip install '.[pg_notify_dev,metrics]'
 dispatcherd
 ```
 

@@ -1,0 +1,28 @@
+FROM registry.access.redhat.com/ubi9/python-312:latest
+
+WORKDIR /dispatcherd
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/dispatcherd/venv \
+    PATH=/dispatcherd/venv/bin:$PATH \
+    PYTHONPATH=/dispatcherd/src
+
+USER root
+RUN dnf install -y unixODBC unixODBC-devel && \
+    curl --fail --silent --show-error --location \
+        https://packages.microsoft.com/config/rhel/9.0/prod.repo \
+        --output /etc/yum.repos.d/mssql-release.repo && \
+    ACCEPT_EULA=Y dnf install -y msodbcsql18 && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf && \
+    mkdir -p /dispatcherd && \
+    chown -R 1001:0 /dispatcherd
+
+USER 1001
+RUN python3.12 -m venv /dispatcherd/venv
+
+COPY --chown=1001:0 . /dispatcherd/src
+RUN /dispatcherd/venv/bin/pip install --no-cache-dir -e "/dispatcherd/src[sql-server]"
+
+CMD ["/dispatcherd/venv/bin/python", "-m", "tools.demo.ms_sql_demo", "service"]
