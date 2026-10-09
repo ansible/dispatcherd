@@ -1,0 +1,28 @@
+services:
+  ms_dispatcherd1:
+    build:
+      context: .
+      dockerfile: tools/demo/Dockerfile.ms-demo
+    env_file:
+      - .env.ms-demo
+    environment:
+      MS_DEMO_NODE: node1
+      MS_DEMO_RUN_ID: ${MS_DEMO_RUN_ID:?make ms-demo must provide a run id}
+      PYTHONPATH: /dispatcherd/src
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["/dispatcherd/venv/bin/python", "-m", "tools.demo.ms_sql_demo", "service"]
+
+  ms_dispatcherd2:
+    build:
+      context: .
+      dockerfile: tools/demo/Dockerfile.ms-demo
+    env_file:
+      - .env.ms-demo
+    environment:
+      MS_DEMO_NODE: node2
+      MS_DEMO_RUN_ID: ${MS_DEMO_RUN_ID:?make ms-demo must provide a run id}
+      PYTHONPATH: /dispatcherd/src
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["/dispatcherd/venv/bin/python", "-m", "tools.demo.ms_sql_demo", "service"]

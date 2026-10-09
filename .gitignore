@@ -26,6 +26,7 @@ htmlcov
 *.tox
 venv/
 .venv/
+.env.ms-demo
 
 # Mac OS X
 *.DS_Store

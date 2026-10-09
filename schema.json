@@ -17,7 +17,11 @@
     "dispatcherd.testing.brokers.error_only": {
       "error_message": "<class 'str'>"
     },
-    "dispatcherd.testing.brokers.memory": {}
+    "dispatcherd.testing.brokers.memory": {},
+    "sql_server": {
+      "default_publish_channel": "str | None",
+      "poll_interval_seconds": "<class 'float'>"
+    }
   },
   "producers": {
     "ScheduledProducer": {
