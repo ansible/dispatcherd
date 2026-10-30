@@ -33,13 +33,13 @@ async def _find_tasks(dispatcher: DispatcherMain, data: dict, cancel: bool = Fal
                     logger.warning(f'Canceling task in worker {worker.worker_id}, task: {worker.current_task}')
                     worker.cancel()
                 ret[f'worker-{worker.worker_id}'] = worker.current_task
-    for i, message in enumerate(dispatcher.pool.blocker):
+    for i, message in enumerate(list(dispatcher.pool.blocker)):
         if task_filter_match(message, data):
             if cancel:
                 logger.warning(f'Canceling task in pool blocker: {message}')
                 dispatcher.pool.blocker.remove_task(message)
             ret[f'blocked-{i}'] = message
-    for i, message in enumerate(dispatcher.pool.queuer):
+    for i, message in enumerate(list(dispatcher.pool.queuer)):
         if task_filter_match(message, data):
             if cancel:
                 logger.warning(f'Canceling task in pool queue: {message}')
