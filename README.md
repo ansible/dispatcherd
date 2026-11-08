@@ -18,6 +18,10 @@ Licensed under [Apache Software License 2.0](LICENSE)
 
 ### Usage
 
+For SQL Server, see the [SQL Server application setup guide](docs/sqlserver.md),
+including installation, provisioning, configuration, routing and cleanup.
+The PostgreSQL walkthrough follows below.
+
 You have a postgres server configured and a python project.
 You will use dispatcherd to trigger a background task over pg_notify.
 Both your *background dispatcherd service* and your *task publisher* process must have

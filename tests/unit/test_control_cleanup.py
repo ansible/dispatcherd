@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from dispatcherd.brokers.pg_notify import Broker as PGNotifyBroker
 from dispatcherd.control import Control
 from dispatcherd.protocols import Broker
@@ -23,7 +25,7 @@ class DummyBroker(Broker):
         self.sent_message = message
 
     async def aclose(self):
-        return
+        self.close_called = True
 
     def process_notify(self, connected_callback=None, timeout: float = 5.0, max_messages: int | None = 1):
         if connected_callback:
@@ -102,3 +104,85 @@ def test_pg_notify_control_overrides_disable_self_checks():
     assert stats['success_count'] == 0
     assert stats['average_time_seconds'] is None
     assert stats['max_time_seconds'] is None
+
+
+@pytest.mark.asyncio
+async def test_async_control_keeps_channel_fallback(monkeypatch):
+    broker = DummyBroker()
+
+    def create(broker_name, broker_config, channels=None, **kwargs):
+        broker.channel = channels[0]
+        return broker
+
+    monkeypatch.setattr('dispatcherd.control.get_broker', create)
+    control = Control('dummy', {}, queue='requests')
+    assert await control.acontrol_with_reply('alive') == [{'result': 'ok'}]
+    assert json.loads(broker.sent_message)['reply_to'] == broker.channel
+    assert broker.close_called
+
+
+@pytest.mark.parametrize('async_client', [False, True])
+@pytest.mark.asyncio
+async def test_optional_reply_endpoint_prepared_before_send(monkeypatch, async_client):
+    class DirectBroker(DummyBroker):
+        def open_reply_endpoint(self, timeout):
+            assert self.sent_message is None
+            self.channel = 'opaque-return-address'
+            return self.channel
+
+        async def aopen_reply_endpoint(self, timeout):
+            return self.open_reply_endpoint(timeout)
+
+    broker = DirectBroker()
+    monkeypatch.setattr('dispatcherd.control.get_broker', lambda *args, **kwargs: broker)
+    control = Control('direct', {}, queue='requests')
+    if async_client:
+        result = await control.acontrol_with_reply('alive')
+    else:
+        result = control.control_with_reply('alive')
+    assert result == [{'result': 'ok'}]
+    assert json.loads(broker.sent_message)['reply_to'] == 'opaque-return-address'
+    assert broker.close_called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stage', ['prepare', 'receive'])
+@pytest.mark.parametrize('outcome', ['timeout', 'cancel', 'error'])
+async def test_async_reply_cleanup_on_interrupted_operation(monkeypatch, stage, outcome):
+    import asyncio
+
+    entered = asyncio.Event()
+
+    async def interrupt():
+        entered.set()
+        if outcome == 'error':
+            raise RuntimeError('broker failed')
+        await asyncio.Event().wait()
+
+    class InterruptedBroker(DummyBroker):
+        async def aopen_reply_endpoint(self, timeout):
+            if stage == 'prepare':
+                await interrupt()
+            return self.channel
+
+        async def aprocess_notify(self, connected_callback=None):
+            await connected_callback()
+            yield (self.channel, json.dumps({'result': 'first'}))
+            await interrupt()
+
+    broker = InterruptedBroker()
+    monkeypatch.setattr('dispatcherd.control.get_broker', lambda *args, **kwargs: broker)
+    control = Control('dummy', {}, queue='requests')
+    task = asyncio.create_task(control.acontrol_with_reply('alive', expected_replies=2, timeout=0.05 if outcome == 'timeout' else 5))
+    await asyncio.wait_for(entered.wait(), 1)
+    if outcome == 'cancel':
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    elif outcome == 'error':
+        with pytest.raises(RuntimeError, match='broker failed'):
+            await task
+    else:
+        assert await task == ([] if stage == 'prepare' else [{'result': 'first'}])
+    assert broker.close_called
+    assert (broker.sent_message is None) == (stage == 'prepare')

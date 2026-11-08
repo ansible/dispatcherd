@@ -36,3 +36,24 @@ stop-demo:
 test:
 	pytest $(TEST_DIRS)
 	pytest $(ASYNC_TEST_DIRS)
+
+## Start SQL Server for local integration tests (export MSSQL_SA_PASSWORD first).
+.PHONY: sqlserver stop-sqlserver test-sqlserver test-sqlserver-docker
+sqlserver:
+	@test -n "$$MSSQL_SA_PASSWORD" || (echo "Export MSSQL_SA_PASSWORD before starting SQL Server"; exit 1)
+	$(DOCKER_COMPOSE) up -d --wait sqlserver
+
+## Stop SQL Server, preserving its database volume.
+stop-sqlserver:
+	$(DOCKER_COMPOSE) stop sqlserver
+
+## Use the local Python virtual environment and native Microsoft ODBC Driver 18.
+test-sqlserver:
+	@test -n "$$MSSQL_SA_PASSWORD" || (echo "Export MSSQL_SA_PASSWORD so integration tests do not skip"; exit 1)
+	.venv/bin/python -c 'import django, mssql, pyodbc; assert "ODBC Driver 18 for SQL Server" in pyodbc.drivers(), "Install Microsoft ODBC Driver 18 or use make test-sqlserver-docker"'
+	.venv/bin/pytest -q --confcutdir=tests/sqlserver tests/sqlserver
+
+## Alternative: driver and Python virtual environment are provided in the image.
+test-sqlserver-docker:
+	@test -n "$$MSSQL_SA_PASSWORD" || (echo "Export MSSQL_SA_PASSWORD before running SQL Server tests"; exit 1)
+	$(DOCKER_COMPOSE) --profile sqlserver run --build --rm sqlserver-tests

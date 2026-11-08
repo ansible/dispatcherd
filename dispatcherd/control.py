@@ -8,7 +8,6 @@ from typing import Any, Optional
 from .chunking import ChunkAccumulator
 from .factories import get_broker
 from .protocols import Broker
-from .service.asyncio_tasks import ensure_fatal
 
 logger = logging.getLogger('awx.main.dispatch.control')
 
@@ -112,30 +111,26 @@ class Control:
             to_send['control_data'] = send_data
         return json.dumps(to_send)
 
-    async def acontrol_with_reply(self, command: str, expected_replies: int = 1, timeout: int = 1, data: Optional[dict] = None) -> list[dict]:
+    async def acontrol_with_reply(self, command: str, expected_replies: int = 1, timeout: float = 1, data: Optional[dict] = None) -> list[dict]:
         reply_queue = Control.generate_reply_queue_name()
         broker = get_broker(self.broker_name, self.broker_config, channels=[reply_queue], **self._control_broker_overrides())
-        send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
-
-        control_callbacks = BrokerCallbacks(broker=broker, queuename=self.queuename, send_message=send_message, expected_replies=expected_replies)
-
-        listen_task = asyncio.create_task(control_callbacks.listen_for_replies())
-        ensure_fatal(listen_task)
-
+        callbacks: BrokerCallbacks | None = None
         try:
-            await asyncio.wait_for(listen_task, timeout=timeout)
-        except asyncio.TimeoutError:
-            logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {len(control_callbacks.received_replies)}')
-            listen_task.cancel()
-            try:
-                await asyncio.wait_for(listen_task, timeout=timeout)
-            except asyncio.CancelledError:
-                if not listen_task.cancelled():
-                    raise
+            # Include reply-address preparation in the same deadline as receiving.
+            async with asyncio.timeout(timeout):
+                prepare = getattr(broker, 'aopen_reply_endpoint', None)
+                if prepare is not None:
+                    reply_queue = await prepare(timeout=timeout)
+                send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
+                callbacks = BrokerCallbacks(broker=broker, queuename=self.queuename, send_message=send_message, expected_replies=expected_replies)
+                await callbacks.listen_for_replies()
+        except TimeoutError:
+            received = len(callbacks.received_replies) if callbacks is not None else 0
+            logger.warning(f'Did not receive {expected_replies} reply in {timeout} seconds, only {received}')
         finally:
             await broker.aclose()
 
-        return control_callbacks.received_replies
+        return callbacks.received_replies if callbacks is not None else []
 
     async def acontrol(self, command: str, data: Optional[dict] = None) -> None:
         broker = get_broker(self.broker_name, self.broker_config, channels=[], **self._control_broker_overrides())
@@ -148,7 +143,6 @@ class Control:
     def control_with_reply(self, command: str, expected_replies: int = 1, timeout: float = 1.0, data: Optional[dict] = None) -> list[dict]:
         start = time.perf_counter()
         reply_queue = Control.generate_reply_queue_name()
-        send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
 
         reply_accumulator = ChunkAccumulator()
         try:
@@ -156,10 +150,13 @@ class Control:
         except TypeError:
             broker = get_broker(self.broker_name, self.broker_config, **self._control_broker_overrides())
 
-        callbacks = SyncBrokerCallbacks(control=self, broker=broker, message=send_message)
-
         replies: list[dict] = []
         try:
+            prepare = getattr(broker, 'open_reply_endpoint', None)
+            if prepare is not None:
+                reply_queue = prepare(timeout=timeout)
+            send_message = self.create_message(command=command, reply_to=reply_queue, send_data=data)
+            callbacks = SyncBrokerCallbacks(control=self, broker=broker, message=send_message)
             for channel, payload in broker.process_notify(connected_callback=callbacks.connected_callback, max_messages=None, timeout=timeout):
                 if isinstance(channel, str) and channel != reply_queue:
                     logger.warning(
