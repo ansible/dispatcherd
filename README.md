@@ -186,6 +186,9 @@ pytest tests/
 pytest asyncio_tests/
 ```
 
+See the [broker parity test guide](docs/broker-parity-tests.md) for the shared
+database broker contract and optional SQL Server setup.
+
 ### Background
 
 This is intended to be a working space for prototyping a code split of:
