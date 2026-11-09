@@ -3,7 +3,9 @@
 import asyncio
 import importlib
 import json
+import logging
 import random
+import sys
 import threading
 import time
 import uuid
@@ -17,6 +19,8 @@ import pyodbc  # type: ignore[import-not-found]
 
 from ..chunking import split_message
 from ..protocols import Broker as BrokerProtocol
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 REPLY_PREFIX = "sqlserver-reply:"
@@ -281,7 +285,7 @@ class Broker(BrokerProtocol):
                     time.sleep(0.02)
                 raise TimeoutError('Reply endpoint did not become ready')
             except BaseException:
-                self._close_listener()
+                self._close_listener(suppress_errors=True)
                 raise
 
     def snapshot(self, channel: str | None = None) -> list[dict[str, Any]]:
@@ -313,7 +317,7 @@ class Broker(BrokerProtocol):
                     self._receive(self._receive_timeout())
                 return self.instance_id
             except BaseException:
-                self._close_listener()
+                self._close_listener(suppress_errors=True)
                 raise
 
     def _payloads(self, channel: str, message: str) -> list[bytes]:
@@ -328,14 +332,18 @@ class Broker(BrokerProtocol):
         bodies = self._payloads(channel, message)
         with self._publish_lock:
             recipients = [handle] if handle else _recipients(self.snapshot(channel), mode, worker_id)
+            if not recipients and not handle:
+                logger.warning('SQL Server publication has no recipients: channel=%s mode=%s target=%s', channel, mode, worker_id)
             delivered = []
             for recipient in recipients:
-                for body in bodies:
+                for chunk_index, body in enumerate(bodies, 1):
                     if handle:
                         result = _rows(self._get_publisher(), 'EXEC dbo.DispatcherdSendReply ?,?', handle, body)
                     else:
                         result = _rows(self._get_publisher(), 'EXEC dbo.DispatcherdSend ?,?,?', recipient, channel, body)
                     if not result[0]['sent']:
+                        log = logger.debug if handle else logger.warning
+                        log('SQL Server send rejected: channel=%s destination=%s chunk=%s/%s', channel, recipient, chunk_index, len(bodies))
                         break
                 else:
                     delivered.append(recipient)
@@ -371,7 +379,7 @@ class Broker(BrokerProtocol):
             row = rows[0]
             if row["message_type_name"] != "DispatcherdPayload":
                 # Never hand EndDialog/Error (XML) to dispatcherd's JSON decoder.
-                self._close_listener()
+                self._close_listener(suppress_errors=True)
                 raise ConnectionError(f"Service Broker conversation ended: {row['message_type_name']}")
             envelope = json.loads(bytes(row["message_body"]).decode("utf-8"))
             self._last_activity = time.monotonic()
@@ -405,23 +413,20 @@ class Broker(BrokerProtocol):
                 if remaining <= 0:
                     break
                 if self._self_check_due():
-                    assert self._listener is not None
-                    result_rows = _rows(
-                        self._listener,
-                        'EXEC dbo.DispatcherdSend ?,?,?',
-                        self.instance_id,
-                        self.channels[0],
-                        self._new_self_check(self.max_self_check_message_age_seconds),
-                    )
-                    if not result_rows[0]['sent']:
-                        raise ConnectionError('Self-check destination is unavailable')
+                    with self._listen_lock:
+                        if self._listener is None or self._stopping.is_set():
+                            break
+                        self._new_self_check(self.max_self_check_message_age_seconds)
+                        rows = _rows(self._listener, 'SELECT CAST(? AS nvarchar(36)) AS token', self._check_token)
+                        if rows:
+                            self.verify_self_check(rows[0])
                 result = self._receive(max(1, min(self.wait_timeout_ms, int(remaining * 1000))))
                 if result is not None:
                     count += 1
                     yield result
         finally:
             try:
-                self._close_listener()
+                self._close_listener(suppress_errors=sys.exc_info()[0] is not None)
             finally:
                 self._iteration_lock.release()
 
@@ -452,7 +457,13 @@ class Broker(BrokerProtocol):
     def _receive_query(self, timeout_ms: int) -> tuple[str, str | None]:
         proc = 'DispatcherdReceiveReply' if self._reply_publisher else 'DispatcherdReceive'
         identity = self.receiver_handle if self._reply_publisher else self.instance_id
-        return f'SET LOCK_TIMEOUT {int(timeout_ms)}; EXEC dbo.{proc} ?,?', identity
+        # SET options are restored when sp_executesql returns, including on errors.
+        # LOCK_TIMEOUT requires a literal; only the bounded integer is interpolated.
+        sql = (
+            f"EXEC sys.sp_executesql N'SET LOCK_TIMEOUT {int(timeout_ms)}; EXEC dbo.{proc} @identity,@timeout', "
+            "N'@identity uniqueidentifier,@timeout int', ?,?"
+        )
+        return sql, identity
 
     def _reset_listener(self) -> None:
         self._check_token = None
@@ -463,31 +474,40 @@ class Broker(BrokerProtocol):
         self._reply_deadline = None
         self._listener_mode = None
 
-    def _close_listener(self) -> None:
+    def _close_listener(self, *, suppress_errors: bool = False) -> None:
         if self._listener_mode == 'sync':
             self._stopping.set()
         with self._listen_lock:
-            if self._listener is not None:
-                try:
-                    if self._reply_publisher:
-                        connection = connect({**self.config, 'autocommit': True})
-                        try:
-                            _rows(connection, 'EXEC dbo.DispatcherdCloseReply ?', self._reply_publisher)
-                        finally:
-                            connection.close()
-                    elif self.instance_id:
-                        # Use a fresh connection even if the receive connection failed.
-                        self.retire([self.instance_id])
-                finally:
+            if self._listener is None:
+                return
+            identity = self._reply_publisher or self.instance_id
+            errors = []
+            try:
+                if self._reply_publisher:
+                    connection = connect({**self.config, 'autocommit': True})
                     try:
-                        self._listener.close()
+                        _rows(connection, 'EXEC dbo.DispatcherdCloseReply ?', self._reply_publisher)
                     finally:
-                        self._listener = None
-                        self._reset_listener()
+                        connection.close()
+                elif self.instance_id:
+                    self.retire([self.instance_id])
+            except Exception as exc:
+                logger.warning('SQL Server retirement failed for %s; explicit cleanup may be required', identity, exc_info=True)
+                errors.append(exc)
+            try:
+                self._listener.close()
+            except Exception as exc:
+                logger.warning('SQL Server listener close failed for %s', identity, exc_info=True)
+                errors.append(exc)
+            finally:
+                self._listener = None
+                self._reset_listener()
+            if errors and not suppress_errors:
+                raise errors[0]
 
     def close(self) -> None:
         try:
-            self._close_listener()
+            self._close_listener(suppress_errors=sys.exc_info()[0] is not None)
         finally:
             with self._publish_lock:
                 if self._publisher is not None and self._owns_publisher:
@@ -502,6 +522,7 @@ class Broker(BrokerProtocol):
             raise ConnectionError('SQL Server self-check timed out')
         self._check_token = None
         self._check_success_count += 1
+        self._last_activity = time.monotonic()
 
     def _new_self_check(self, timeout: float) -> bytes:
         self._check_token = str(uuid.uuid4())
@@ -598,7 +619,7 @@ class Broker(BrokerProtocol):
             try:
                 return await _complete_io(register())
             except BaseException:
-                await _complete_io(self._aclose_listener_unlocked())
+                await _complete_io(self._aclose_listener_unlocked(suppress_errors=True))
                 raise
 
     async def aopen_reply_endpoint(self, timeout: float) -> str:
@@ -627,7 +648,7 @@ class Broker(BrokerProtocol):
             try:
                 return await _complete_io(open_endpoint())
             except BaseException:
-                await _complete_io(self._aclose_listener_unlocked())
+                await _complete_io(self._aclose_listener_unlocked(suppress_errors=True))
                 raise
 
     async def _asend(self, channel: str | None, message: str, mode: str, worker_id: str | None = None) -> list[str]:
@@ -641,14 +662,18 @@ class Broker(BrokerProtocol):
             else:
                 rows = _subscriptions(await _arows(connection, 'EXEC dbo.DispatcherdSnapshot ?', channel))
                 recipients = _recipients(rows, mode, worker_id)
+            if not recipients and not handle:
+                logger.warning('SQL Server publication has no recipients: channel=%s mode=%s target=%s', channel, mode, worker_id)
             delivered = []
             for recipient in recipients:
-                for body in bodies:
+                for chunk_index, body in enumerate(bodies, 1):
                     if handle:
                         result = await _arows(connection, 'EXEC dbo.DispatcherdSendReply ?,?', handle, body)
                     else:
                         result = await _arows(connection, 'EXEC dbo.DispatcherdSend ?,?,?', recipient, channel, body)
                     if not result[0]['sent']:
+                        log = logger.debug if handle else logger.warning
+                        log('SQL Server send rejected: channel=%s destination=%s chunk=%s/%s', channel, recipient, chunk_index, len(bodies))
                         break
                 else:
                     delivered.append(recipient)
@@ -679,7 +704,7 @@ class Broker(BrokerProtocol):
                 return None
             row = rows[0]
             if row['message_type_name'] != 'DispatcherdPayload':
-                await _complete_io(self._aclose_listener_unlocked())
+                await _complete_io(self._aclose_listener_unlocked(suppress_errors=True))
                 raise ConnectionError(f"Service Broker conversation ended: {row['message_type_name']}")
             envelope = json.loads(bytes(row['message_body']).decode('utf-8'))
             self._last_activity = time.monotonic()
@@ -713,23 +738,19 @@ class Broker(BrokerProtocol):
                 timeout_ms = self.wait_timeout_ms if remaining == float('inf') else max(1, min(self.wait_timeout_ms, int(remaining * 1000)))
                 if self._self_check_due():
                     async with self._async_listen_lock:
-                        assert self._async_listener is not None
-                        rows = await _arows(
-                            self._async_listener,
-                            'EXEC dbo.DispatcherdSend ?,?,?',
-                            self.instance_id,
-                            self.channels[0],
-                            self._new_self_check(self.max_self_check_message_age_seconds),
-                        )
-                        if not rows[0]['sent']:
-                            raise ConnectionError('Self-check destination is unavailable')
+                        if self._async_listener is None or self._stopping.is_set():
+                            break
+                        self._new_self_check(self.max_self_check_message_age_seconds)
+                        rows = await _arows(self._async_listener, 'SELECT CAST(? AS nvarchar(36)) AS token', self._check_token)
+                        if rows:
+                            self.verify_self_check(rows[0])
                 result = await self._areceive(timeout_ms)
                 if result is not None:
                     yield result
         finally:
             try:
                 async with self._async_listen_lock:
-                    await _complete_io(self._aclose_listener_unlocked())
+                    await _complete_io(self._aclose_listener_unlocked(suppress_errors=sys.exc_info()[0] is not None))
             finally:
                 self._iteration_lock.release()
 
@@ -790,27 +811,39 @@ class Broker(BrokerProtocol):
         finally:
             await reply.aclose()
 
-    async def _aclose_listener_unlocked(self) -> None:
+    async def _aclose_listener_unlocked(self, *, suppress_errors: bool = False) -> None:
         if self._listener_mode == 'async':
             self._stopping.set()
-        if self._async_listener is not None:
-            try:
-                if self._reply_publisher:
-                    await self._admin('DispatcherdCloseReply', [self._reply_publisher])
-                elif self.instance_id:
-                    await self.aretire([self.instance_id])
-            finally:
-                try:
-                    await self._async_listener.close()
-                finally:
-                    self._async_listener = None
-                    self._reset_listener()
+        if self._async_listener is None:
+            return
+        identity = self._reply_publisher or self.instance_id
+        errors = []
+        try:
+            if self._reply_publisher:
+                await self._admin('DispatcherdCloseReply', [self._reply_publisher])
+            elif self.instance_id:
+                await self.aretire([self.instance_id])
+        except Exception as exc:
+            logger.warning('SQL Server retirement failed for %s; explicit cleanup may be required', identity, exc_info=True)
+            errors.append(exc)
+        try:
+            await self._async_listener.close()
+        except Exception as exc:
+            logger.warning('SQL Server listener close failed for %s', identity, exc_info=True)
+            errors.append(exc)
+        finally:
+            self._async_listener = None
+            self._reset_listener()
+        if errors and not suppress_errors:
+            raise errors[0]
 
     async def aclose(self) -> None:
+        suppress_errors = sys.exc_info()[0] is not None
+
         async def close() -> None:
             try:
                 async with self._async_listen_lock:
-                    await self._aclose_listener_unlocked()
+                    await self._aclose_listener_unlocked(suppress_errors=suppress_errors)
             finally:
                 async with self._async_publish_lock:
                     if self._async_publisher is not None and self._owns_async_publisher:

@@ -1,7 +1,6 @@
 """Conversation identity, transient self-checks and real producer recovery."""
 
 import asyncio
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -131,8 +130,8 @@ async def test_real_producer_recycles_and_replies(config, brokers, monkeypatch, 
         else:
 
             async def lose_check(connection, statement, *args):
-                if 'DispatcherdSend ' in statement and json.loads(args[-1]).get('kind') == 'self_check':
-                    return [{'sent': 1}]
+                if statement == 'SELECT CAST(? AS nvarchar(36)) AS token':
+                    return []
                 return await real(connection, statement, *args)
 
             monkeypatch.setattr(sqlserver, '_arows', lose_check)
@@ -179,3 +178,161 @@ async def test_initial_check_failure_cleans_registration(brokers, monkeypatch):
         await listener.aregister()
     assert listener.instance_id is None
     assert await brokers().asnapshot(listener.channels[0]) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('commit', [True, False])
+async def test_periodic_connectivity_while_publication_is_uncommitted(config, brokers, commit):
+    topic = channel()
+    listener = brokers([topic], max_connection_idle_seconds=0.05, max_self_check_message_age_seconds=0.5)
+    await listener.aregister()
+    identity = listener.instance_id
+    connection = connect({**config, 'autocommit': False})
+    publisher = sqlserver.Broker(config, sync_connection=connection)
+    received = []
+
+    async def listen():
+        async for item in listener.aprocess_notify():
+            received.append(item)
+
+    task = asyncio.create_task(listen())
+    try:
+        publisher.publish_message(topic, 'pending')
+        initial = listener.get_self_check_stats()['success_count']
+        async with asyncio.timeout(3):
+            while listener.get_self_check_stats()['success_count'] < initial + 3:
+                await asyncio.sleep(0.02)
+        assert listener.instance_id == identity
+        assert received == []
+        if commit:
+            connection.commit()
+            async with asyncio.timeout(3):
+                while not received:
+                    await asyncio.sleep(0.02)
+            assert received == [(topic, 'pending')]
+        else:
+            connection.rollback()
+            await asyncio.sleep(0.2)
+            assert received == []
+    finally:
+        connection.rollback()
+        connection.close()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+def test_receive_restores_session_lock_timeout(brokers):
+    listener = brokers([channel()])
+    listener.register()
+    _rows(listener._listener, 'SET LOCK_TIMEOUT 9876')
+    assert listener._receive(1) is None
+    assert _rows(listener._listener, 'SELECT @@LOCK_TIMEOUT AS timeout')[0]['timeout'] == 9876
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('async_client', [False, True])
+async def test_retirement_failure_preserves_listener_error(config, brokers, monkeypatch, caplog, async_client):
+    listener = brokers([channel()])
+    if async_client:
+        await listener.aregister()
+    else:
+        listener.register()
+    identity = listener.instance_id
+
+    def fail_retire(*args):
+        raise RuntimeError('retirement unavailable')
+
+    async def afail_retire(*args):
+        fail_retire()
+
+    def failed_callback():
+        raise ConnectionError('original listener failure')
+
+    async def afailed_callback():
+        failed_callback()
+
+    monkeypatch.setattr(listener, 'retire', fail_retire)
+    monkeypatch.setattr(listener, 'aretire', afail_retire)
+    try:
+        with pytest.raises(ConnectionError, match='original listener failure'):
+            if async_client:
+                async for _ in listener.aprocess_notify(connected_callback=afailed_callback):
+                    pass
+            else:
+                list(listener.process_notify(connected_callback=failed_callback))
+        assert listener.instance_id is None
+        assert listener._listener is None
+        assert listener._async_listener is None
+        assert identity in caplog.text
+        assert 'explicit cleanup may be required' in caplog.text
+    finally:
+        sqlserver.Broker(config).retire([identity])
+
+
+def test_failed_registration_rolls_back_owned_transaction(config):
+    connection = connect(config)
+    try:
+        with pytest.raises(sqlserver.pyodbc.Error):
+            _rows(connection, 'EXEC dbo.DispatcherdRegister ?,?,?', None, '["duplicate","duplicate"]', b'{}')
+        assert _rows(connection, 'SELECT @@TRANCOUNT AS count')[0]['count'] == 0
+    finally:
+        connection.close()
+
+
+def test_reply_receive_restores_lock_timeout_on_error(brokers):
+    listener = brokers()
+    listener.open_reply_endpoint(timeout=2)
+    _rows(listener._listener, 'SET LOCK_TIMEOUT 9876')
+    assert listener._receive(1) is None
+    assert _rows(listener._listener, 'SELECT @@LOCK_TIMEOUT AS timeout')[0]['timeout'] == 9876
+    sql, _ = listener._receive_query(1)
+    with pytest.raises(sqlserver.pyodbc.Error):
+        _rows(listener._listener, sql, '00000000-0000-0000-0000-000000000000', 1)
+    assert _rows(listener._listener, 'SELECT @@LOCK_TIMEOUT AS timeout')[0]['timeout'] == 9876
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('async_client', [False, True])
+async def test_publication_diagnostics(brokers, monkeypatch, caplog, async_client):
+    topic = channel()
+    publisher = brokers(max_message_bytes=1024)
+    if async_client:
+        await publisher.apublish_message(topic, 'secret body')
+    else:
+        publisher.publish_message(topic, 'secret body')
+    assert 'has no recipients' in caplog.text
+    assert topic in caplog.text
+    caplog.clear()
+    listener = brokers([topic])
+    identity = listener.register()
+    real_rows, real_arows = sqlserver._rows, sqlserver._arows
+    sends = 0
+
+    def after_send(statement):
+        nonlocal sends
+        if 'EXEC dbo.DispatcherdSend ' in statement:
+            sends += 1
+            if sends == 1:
+                listener.retire([identity])
+
+    def rows(connection, statement, *args):
+        result = real_rows(connection, statement, *args)
+        after_send(statement)
+        return result
+
+    async def arows(connection, statement, *args):
+        result = await real_arows(connection, statement, *args)
+        after_send(statement)
+        return result
+
+    monkeypatch.setattr(sqlserver, '_rows', rows)
+    monkeypatch.setattr(sqlserver, '_arows', arows)
+    if async_client:
+        assert await publisher.abroadcast(topic, 'secret body' * 300) == []
+    else:
+        assert publisher.broadcast(topic, 'secret body' * 300) == []
+    assert 'send rejected' in caplog.text
+    assert 'chunk=2/' in caplog.text
+    assert identity in caplog.text
+    assert 'secret body' not in caplog.text

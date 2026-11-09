@@ -46,7 +46,9 @@ WITH EXECUTE AS OWNER AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-    BEGIN TRANSACTION;
+    DECLARE @owns_transaction bit=CASE WHEN @@TRANCOUNT=0 THEN 1 ELSE 0 END;
+    BEGIN TRY
+    IF @owns_transaction=1 BEGIN TRANSACTION;
     DECLARE @h uniqueidentifier, @id uniqueidentifier;
     BEGIN DIALOG CONVERSATION @h
         FROM SERVICE [DispatcherdPublisher] TO SERVICE 'DispatcherdListener'
@@ -58,8 +60,13 @@ BEGIN
     INSERT dbo.DispatcherdSubscription SELECT @id,value FROM OPENJSON(@channels) OPTION (LOOP JOIN);
     -- Initial reactive self-check. No persistent readiness state or publication gate.
     SEND ON CONVERSATION @h MESSAGE TYPE [DispatcherdPayload] (@check);
-    COMMIT;
+    IF @owns_transaction=1 COMMIT;
     SELECT @id AS instance_id;
+    END TRY
+    BEGIN CATCH
+        IF @owns_transaction=1 AND XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.DispatcherdSnapshot @channel nvarchar(256)=NULL
@@ -82,22 +89,27 @@ WITH EXECUTE AS OWNER AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-    -- Hold the registration through SEND, serializing publication against retirement.
-    -- This also participates in a caller-owned transaction without committing it.
-    BEGIN TRANSACTION;
-    DECLARE @h uniqueidentifier;
-    SELECT @h=p.conversation_handle FROM dbo.DispatcherdListenerRegistry r WITH (UPDLOCK,HOLDLOCK)
-        JOIN sys.conversation_endpoints p ON p.conversation_id=r.conversation_id AND p.is_initiator=1
-        WHERE r.conversation_id=@id
+    DECLARE @outer_transaction int=@@TRANCOUNT, @h uniqueidentifier;
+    -- Membership is checked without an application-level update lock. SEND
+    -- acquires SQL Server's own conversation lock until the transaction ends.
+    SELECT @h=p.conversation_handle FROM sys.conversation_endpoints p
+        WHERE p.conversation_id=@id AND p.is_initiator=1 AND p.state IN ('CO','SO')
         AND EXISTS (SELECT 1 FROM dbo.DispatcherdSubscription s WHERE s.conversation_id=@id AND channel=@channel);
-    IF @h IS NOT NULL AND EXISTS
-        (SELECT 1 FROM sys.conversation_endpoints WHERE conversation_handle=@h AND state IN ('CO','SO'))
+    IF @h IS NULL
     BEGIN
+        SELECT 0 AS sent;
+        RETURN;
+    END;
+    BEGIN TRY
         SEND ON CONVERSATION @h MESSAGE TYPE [DispatcherdPayload] (@body);
-        SELECT CAST(1 AS int) AS sent;
-    END
-    ELSE SELECT CAST(0 AS int) AS sent;
-    COMMIT;
+        SELECT 1 AS sent;
+    END TRY
+    BEGIN CATCH
+        -- Retirement can win after lookup. Only absorb the invalid-endpoint
+        -- race outside an application transaction, whose errors must propagate.
+        IF ERROR_NUMBER() <> 8429 OR @outer_transaction > 0 THROW;
+        SELECT 0 AS sent;
+    END CATCH;
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.DispatcherdReceive @id uniqueidentifier, @timeout int
@@ -106,8 +118,6 @@ BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
     DECLARE @h uniqueidentifier;
-    IF NOT EXISTS (SELECT 1 FROM dbo.DispatcherdListenerRegistry WHERE conversation_id=@id)
-        THROW 50001, 'Listener registration is unavailable', 1;
     SELECT @h=conversation_handle FROM sys.conversation_endpoints WHERE conversation_id=@id AND is_initiator=0;
     IF @h IS NULL
     BEGIN
@@ -136,7 +146,9 @@ WITH EXECUTE AS OWNER AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-    BEGIN TRANSACTION;
+    DECLARE @owns_transaction bit=CASE WHEN @@TRANCOUNT=0 THEN 1 ELSE 0 END;
+    BEGIN TRY
+    IF @owns_transaction=1 BEGIN TRANSACTION;
     DECLARE @p uniqueidentifier, @r uniqueidentifier, @c uniqueidentifier;
     SELECT @c=conversation_id FROM dbo.DispatcherdListenerRegistry WITH (UPDLOCK,HOLDLOCK)
         WHERE conversation_id=@id;
@@ -148,7 +160,12 @@ BEGIN
     IF EXISTS (SELECT 1 FROM sys.conversation_endpoints WHERE conversation_handle=@p AND state <> 'CD')
         END CONVERSATION @p;
     DELETE dbo.DispatcherdListenerRegistry WHERE conversation_id=@id;
-    COMMIT;
+    IF @owns_transaction=1 COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @owns_transaction=1 AND XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
 END;
 GO
 GRANT EXECUTE ON dbo.DispatcherdRegister TO dispatcherd_runtime;
@@ -175,14 +192,21 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
     IF @lifetime < 1 OR @lifetime > 300 THROW 50004, 'Reply lifetime must be 1 to 300 seconds', 1;
-    BEGIN TRANSACTION;
+    DECLARE @owns_transaction bit=CASE WHEN @@TRANCOUNT=0 THEN 1 ELSE 0 END;
+    BEGIN TRY
+    IF @owns_transaction=1 BEGIN TRANSACTION;
     DECLARE @h uniqueidentifier;
     BEGIN DIALOG CONVERSATION @h FROM SERVICE [DispatcherdPublisher]
         TO SERVICE 'DispatcherdReplyListener' ON CONTRACT [DispatcherdReplyContract]
         WITH ENCRYPTION=OFF, LIFETIME=@lifetime;
     SEND ON CONVERSATION @h MESSAGE TYPE [DispatcherdPayload] (0x7B7D);
     SELECT @h AS publisher_handle,conversation_id FROM sys.conversation_endpoints WHERE conversation_handle=@h;
-    COMMIT;
+    IF @owns_transaction=1 COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @owns_transaction=1 AND XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.DispatcherdReplyReady @publisher uniqueidentifier
@@ -209,31 +233,29 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
     DECLARE @outer_transaction int=@@TRANCOUNT;
-    BEGIN TRANSACTION;
-    DECLARE @lock int, @resource nvarchar(255)=N'dispatcherd_reply_'+CONVERT(nvarchar(36),@publisher);
-    EXEC @lock=sys.sp_getapplock @Resource=@resource,@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000;
-    IF @lock < 0 THROW 50005, 'Could not lock reply conversation', 1;
-    IF EXISTS (SELECT 1 FROM sys.conversation_endpoints WHERE conversation_handle=@publisher
-        AND is_initiator=1 AND state IN ('CO','SO') AND lifetime>GETUTCDATE()
-        AND service_id=(SELECT service_id FROM sys.services WHERE name='DispatcherdPublisher')
-        AND service_contract_id=(SELECT service_contract_id FROM sys.service_contracts WHERE name='DispatcherdReplyContract'))
-    BEGIN
-        BEGIN TRY
+    BEGIN TRY
+        IF @outer_transaction=0 BEGIN TRANSACTION;
+        DECLARE @lock int, @resource nvarchar(255)=N'dispatcherd_reply_'+CONVERT(nvarchar(36),@publisher);
+        EXEC @lock=sys.sp_getapplock @Resource=@resource,@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000;
+        IF @lock < 0 THROW 50005, 'Could not lock reply conversation', 1;
+        IF EXISTS (SELECT 1 FROM sys.conversation_endpoints WHERE conversation_handle=@publisher
+            AND is_initiator=1 AND state IN ('CO','SO') AND lifetime>GETUTCDATE()
+            AND service_id=(SELECT service_id FROM sys.services WHERE name='DispatcherdPublisher')
+            AND service_contract_id=(SELECT service_contract_id FROM sys.service_contracts WHERE name='DispatcherdReplyContract'))
+        BEGIN
             SEND ON CONVERSATION @publisher MESSAGE TYPE [DispatcherdPayload] (@body);
             SELECT 1 AS sent;
-        END TRY
-        BEGIN CATCH
-            -- Lifetime expiration is asynchronous; it can race the catalog check.
-            IF ERROR_NUMBER() <> 8429 OR @outer_transaction > 0 THROW;
-            -- Only an owned autocommit send may absorb the late-expiry race.
-            -- Never silently roll back a caller-owned transaction.
-            IF XACT_STATE() <> 0 ROLLBACK;
-            SELECT 0 AS sent;
-            RETURN;
-        END CATCH;
-    END
-    ELSE SELECT 0 AS sent;
-    COMMIT;
+        END
+        ELSE SELECT 0 AS sent;
+        IF @outer_transaction=0 COMMIT;
+    END TRY
+    BEGIN CATCH
+        -- Roll back only transactions this procedure started. Lifetime expiration
+        -- can race the catalog check; absorb it only outside application transactions.
+        IF @outer_transaction=0 AND XACT_STATE()<>0 ROLLBACK;
+        IF ERROR_NUMBER() <> 8429 OR @outer_transaction > 0 THROW;
+        SELECT 0 AS sent;
+    END CATCH;
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.DispatcherdReceiveReply @receiver uniqueidentifier, @timeout int
@@ -259,7 +281,9 @@ WITH EXECUTE AS OWNER AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-    BEGIN TRANSACTION;
+    DECLARE @owns_transaction bit=CASE WHEN @@TRANCOUNT=0 THEN 1 ELSE 0 END;
+    BEGIN TRY
+    IF @owns_transaction=1 BEGIN TRANSACTION;
     DECLARE @lock int, @resource nvarchar(255)=N'dispatcherd_reply_'+CONVERT(nvarchar(36),@publisher);
     EXEC @lock=sys.sp_getapplock @Resource=@resource,@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000;
     IF @lock < 0 THROW 50005, 'Could not lock reply conversation', 1;
@@ -271,7 +295,12 @@ BEGIN
         END CONVERSATION @receiver;
     IF EXISTS (SELECT 1 FROM sys.conversation_endpoints WHERE conversation_handle=@publisher AND conversation_id=@c AND state<>'CD')
         END CONVERSATION @publisher;
-    COMMIT;
+    IF @owns_transaction=1 COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @owns_transaction=1 AND XACT_STATE()<>0 ROLLBACK;
+        THROW;
+    END CATCH;
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.DispatcherdExpiredReplies

@@ -579,3 +579,13 @@ async def test_cancel_joins_thread_even_when_operation_fails():
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_repeated_transaction_and_retirement_with_default_pooling(config, brokers):
+    # Reproduce the reported ordering, including an unfinished SELECT transaction
+    # on the borrowed connection. Do not disable process-wide ODBC pooling.
+    for commit in [True, False] * 3:
+        test_transaction_visibility(config, brokers, commit)
+        listener = brokers([channel()])
+        listener.register()
+        listener.close()

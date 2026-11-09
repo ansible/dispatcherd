@@ -39,3 +39,9 @@ suite covers additional task scheduling, duplication policies, worker behavior,
 and connection disruptions. Backend-specific channel limits, health checks, and
 connection failure/recovery should be tested separately, and additional common
 cases should be added here as their cross-backend semantics are defined.
+
+The SQL Server Docker runner also runs these shared cases, selecting only the
+SQL Server backend. Export `MSSQL_SA_PASSWORD` and run
+`make test-sqlserver-docker`; the image supplies a Python virtual environment and
+the ODBC driver. No PostgreSQL server is needed for this invocation. The SQL Server
+CI job runs the same command.

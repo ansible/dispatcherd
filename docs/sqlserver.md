@@ -65,9 +65,11 @@ WHERE channel = N'broadcast_all';
 
 The backend resolves these conversations' sending handles through SQL Server's
 endpoint catalog. A small parent table, `DispatcherdListenerRegistry`, holds only
-the conversation ID, optional node label and registration timestamp. It also
-provides a row lock to coordinate sending with removal of a registration. Neither
-table stores endpoint handles or readiness state.
+the conversation ID, optional node label and registration timestamp. Neither table stores endpoint handles or readiness state. Sending resolves the
+conversation directly without taking an update lock on the registration row.
+SQL Server still takes internal conversation locks during a send, holding them
+until the transaction ends. Publishers sending to the same listener can therefore
+wait for each other inside application transactions. Keep these transactions short.
 
 These relationships support three delivery choices:
 
@@ -371,16 +373,24 @@ and verifies receipt before calling the service's connected callback. This check
 the database communication path. Publishers can already send as soon as registration
 commits; they do not wait for the self-check or query readiness state.
 
-While listening, the backend sends another self-check after a period without
-incoming messages. By default that interval is 30 seconds, and the check must
-arrive within 2 seconds. It tracks the outstanding check and its deadline in memory.
-These messages are handled by the broker and do not become application tasks.
+After a period without incoming messages (30 seconds by default), the listener
+runs a small SQL request that echoes a random token on its dedicated connection.
+This periodic check verifies connectivity; it does not send or receive a queued
+message, read the registry, or acquire conversation locks. It can therefore succeed
+while a publisher holds an uncommitted message. Only the initial check exercises
+queue delivery. Neither check becomes an application task.
+
+The periodic response must arrive within 2 seconds by default. Its token and
+deadline live in memory. A late response triggers recovery when the SQL call
+returns; the deadline cannot interrupt a blocking ODBC call. The configured
+query timeout bounds that call separately.
 
 A missed or late check, or a database connection error, fails the listening loop.
 dispatcherd's existing producer recovery machinery then closes owned resources and
 starts the listener again with fresh connections, a new conversation ID and the
 same channel subscriptions. Cleanup attempts to retire the old registration; if
-the database is unreachable, explicit cleanup may still be needed later.
+the database is unreachable, explicit cleanup may still be needed later. Retirement
+failures log the conversation ID and preserve the original listening error.
 
 Self-checks are reactive recovery for the local listener. They do not maintain a
 shared worker-health record, renew a registration lease or remove other instances.
@@ -441,8 +451,8 @@ These options belong under `brokers.sqlserver` in the dispatcherd configuration:
 | `node_id` | Optional label stored with the broker's registration. This is separate from the service `node_id` in Control replies and from the conversation ID used for targeted sends. |
 | `wait_timeout_ms` | How long one database receive call waits for a message: 1–30000 milliseconds, default 1000. This is not the overall Control timeout. |
 | `registration_timeout` | Deadline for receiving the initial self-check, or preparing a temporary reply conversation, in seconds; default 10. Individual connection and query timeouts also apply. |
-| `max_connection_idle_seconds` | Idle interval before sending a self-check, in seconds; default 30. Set to `None` in Python or `null` in YAML to disable periodic checks. |
-| `max_self_check_message_age_seconds` | Deadline for receiving a periodic self-check, in seconds; default 2. A missed or late check triggers listener recovery. |
+| `max_connection_idle_seconds` | Idle interval before a connectivity request, in seconds; default 30. Set to `None` in Python or `null` in YAML to disable periodic checks. |
+| `max_self_check_message_age_seconds` | Deadline for a periodic connectivity response, in seconds; default 2. A missed or late check triggers listener recovery. |
 | `max_message_bytes` | Size of dispatcherd message chunks, default 65536 bytes. Set to `None` in Python or `null` in YAML to disable chunking. |
 
 ### Async operation and shutdown
@@ -450,6 +460,20 @@ These options belong under `brokers.sqlserver` in the dispatcherd configuration:
 The service uses aioodbc with a dedicated receiving connection and a separate
 connection for outgoing messages, including Control replies. Synchronous callers
 use pyodbc. The two paths do not share connections.
+
+The receiving connection belongs exclusively to the listener for its entire
+lifetime. Do not borrow a Django connection, share it with application queries,
+or return it to an application pool between receives. The publishing connection
+factory described below applies only to publishers. Deriving a dedicated listener
+connection string from Django settings belongs in the integrating application
+(for example, django-ansible-base).
+
+ODBC driver-manager pooling is a separate layer: it may reuse a physical session
+after a connection is closed. Exclusive ownership of an open listener does not
+disable that reuse. dispatcherd does not change the process-wide `pyodbc.pooling`
+setting or take ownership of Django transactions. A reported stall involving
+pooled sessions and open transactions is still under investigation; dedicated
+ownership alone should not be taken as proof that pooled session state is safe.
 
 ODBC itself is blocking: aioodbc runs its calls in threads. Connections created by
 the async broker use a private two-thread executor so waiting for a message does
@@ -635,6 +659,12 @@ run `Broker.setup_database()` and restart services and publishers. Existing
 registrations and queued messages are discarded. Reset the development database's
 Docker volume when testing a changed schema.
 
+Publications with no recipients produce a warning. If a destination disappears
+partway through a chunked message, the warning identifies the destination and
+chunk number, without logging message contents. This does not retry the message
+or turn publishing into a delivery acknowledgment. Late replies to an expired
+Control address are expected and logged only at debug level.
+
 ## Run the integration tests
 
 This checkout includes a database container and tests for the SQL Server backend.
@@ -708,3 +738,8 @@ volume's SA password; keep using the password with which that database was creat
 To deliberately reset this test database, remove the SQL Server container and its
 named volume, then start it again. Avoid `docker compose down` when you want to
 leave this project's other services running.
+
+The Docker runner also executes the shared broker contract tests against SQL
+Server, and the SQL Server CI job runs this runner. Set
+`SQLSERVER_TEST_PYTHON=3.14` to build its virtual environment with Python 3.14
+(the local default is 3.12). These runs leave ODBC pooling at its default setting.

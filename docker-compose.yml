@@ -38,6 +38,8 @@ services:
     build:
       context: .
       dockerfile: tools/sqlserver/Dockerfile
+      args:
+        PYTHON_VERSION: ${SQLSERVER_TEST_PYTHON:-3.12}
     environment:
       MSSQL_HOST: sqlserver
       MSSQL_PORT: "1433"

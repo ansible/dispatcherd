@@ -181,6 +181,9 @@ class Control:
                 round_trip_text,
             )
             return replies
+        except TimeoutError:
+            logger.warning('Did not receive %s replies in %s seconds, only %s', expected_replies, timeout, len(replies))
+            return replies
         finally:
             broker.close()
 

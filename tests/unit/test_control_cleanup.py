@@ -186,3 +186,28 @@ async def test_async_reply_cleanup_on_interrupted_operation(monkeypatch, stage, 
         assert await task == ([] if stage == 'prepare' else [{'result': 'first'}])
     assert broker.close_called
     assert (broker.sent_message is None) == (stage == 'prepare')
+
+
+@pytest.mark.parametrize('stage', ['prepare', 'receive'])
+@pytest.mark.parametrize('exception', [TimeoutError, ConnectionError])
+def test_sync_reply_timeout_and_cleanup(monkeypatch, stage, exception):
+    class FailingBroker(DummyBroker):
+        def open_reply_endpoint(self, timeout):
+            if stage == 'prepare':
+                raise exception('prepare failed')
+            return self.channel
+
+        def process_notify(self, connected_callback=None, **kwargs):
+            connected_callback()
+            yield self.channel, json.dumps({'result': 'first'})
+            raise exception('receive failed')
+
+    broker = FailingBroker()
+    monkeypatch.setattr('dispatcherd.control.get_broker', lambda *args, **kwargs: broker)
+    control = Control('dummy', {}, queue='requests')
+    if exception is TimeoutError:
+        assert control.control_with_reply('alive', expected_replies=2) == ([] if stage == 'prepare' else [{'result': 'first'}])
+    else:
+        with pytest.raises(ConnectionError):
+            control.control_with_reply('alive', expected_replies=2)
+    assert broker.close_called
