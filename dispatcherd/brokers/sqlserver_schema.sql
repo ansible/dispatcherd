@@ -218,7 +218,8 @@ BEGIN
         JOIN sys.conversation_endpoints t ON t.conversation_id=p.conversation_id AND t.is_initiator=0
         WHERE p.conversation_handle=@publisher AND p.is_initiator=1
         AND p.service_contract_id=(SELECT service_contract_id FROM sys.service_contracts WHERE name='DispatcherdReplyContract');
-    -- Caller invokes once per handshake; the hello is consumed before publishing the address.
+    -- Caller polls this until it returns a row; the row appears once, after the
+    -- receiver endpoint exists and the single hello has been consumed.
     IF @receiver IS NOT NULL
     BEGIN
         DECLARE @hello varbinary(max);

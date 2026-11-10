@@ -90,8 +90,10 @@ A service's subprocess pool shares the messages received by its main process.
 The backend does not register each subprocess separately. Channel names are
 subscription data in the tables; adding a channel does not create another SQL queue.
 
-Start listeners before publishing. Although SQL Server stores queued messages,
-this backend provides best-effort notifications: a successful send does not prove
+Start listeners before publishing. SQL Server queues messages only on the
+conversations of registered instances, so a publish with no matching subscribers
+delivers nothing and retains no copy for listeners that start later. This backend
+provides best-effort notifications: a successful send does not prove
 that a task ran, and dispatcherd does not reassign messages from a crashed service.
 Removing a registration discards its pending messages. Restarting or recycling
 a listener creates a new conversation ID, without replaying the old instance's
