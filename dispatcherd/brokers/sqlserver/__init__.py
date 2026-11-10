@@ -17,8 +17,8 @@ from typing import Any, TypeVar
 import aioodbc  # type: ignore[import-not-found,import-untyped]
 import pyodbc  # type: ignore[import-not-found]
 
-from ..chunking import split_message
-from ..protocols import Broker as BrokerProtocol
+from ...chunking import split_message
+from ...protocols import Broker as BrokerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +227,7 @@ class Broker(BrokerProtocol):
             )[0]
             if lock["result"] < 0:
                 raise RuntimeError("Could not acquire provisioning lock")
-            for batch in files("dispatcherd.brokers").joinpath("sqlserver_schema.sql").read_text().split("\nGO\n"):
+            for batch in files("dispatcherd.brokers.sqlserver").joinpath("schema.sql").read_text().split("\nGO\n"):
                 if batch.strip():
                     _rows(connection, batch)
             queues = _rows(

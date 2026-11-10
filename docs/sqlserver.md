@@ -645,8 +645,8 @@ they are never passed to dispatcherd as task payloads.
 The reply procedures are `DispatcherdOpenReply`, `DispatcherdReplyReady`,
 `DispatcherdSendReply`, `DispatcherdReceiveReply`, `DispatcherdCloseReply` and
 `DispatcherdExpiredReplies`. Cleanup uses normal `END CONVERSATION` on both sides.
-The [provisioning SQL](../dispatcherd/brokers/sqlserver_schema.sql) defines these
-objects; the [Python implementation](../dispatcherd/brokers/sqlserver.py) calls them.
+The [provisioning SQL](../dispatcherd/brokers/sqlserver/schema.sql) defines these
+objects; the [Python implementation](../dispatcherd/brokers/sqlserver/__init__.py) calls them.
 
 Control uses the optional broker methods `open_reply_endpoint(timeout)` and
 `aopen_reply_endpoint(timeout)` to prepare the return address before sending.

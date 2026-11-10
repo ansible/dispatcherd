@@ -43,7 +43,7 @@ include-package-data = true # Ensures package data is included
 
 [tool.setuptools.package-data]
 "dispatcherd" = ["LICENSE", "README.md"]
-"dispatcherd.brokers" = ["*.sql"]
+"dispatcherd.brokers.sqlserver" = ["*.sql"]
 
 # You need psycopg, but this will not help you to install it
 

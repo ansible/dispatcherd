@@ -57,6 +57,6 @@ def test_configuration_schema_annotations():
 
 
 def test_provisioning_resource_in_package():
-    sql = files('dispatcherd.brokers').joinpath('sqlserver_schema.sql').read_text()
+    sql = files('dispatcherd.brokers.sqlserver').joinpath('schema.sql').read_text()
     assert 'CREATE OR ALTER PROCEDURE dbo.DispatcherdRegister' in sql
     assert 'CREATE QUEUE dbo.DispatcherdInbox' in sql
