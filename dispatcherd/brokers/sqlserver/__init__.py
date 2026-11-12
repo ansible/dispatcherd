@@ -32,9 +32,21 @@ def connect(config: dict) -> pyodbc.Connection:
     connection_string = options.pop("connection_string")
     options.setdefault("autocommit", True)
     options.setdefault("timeout", 10)
-    connection = pyodbc.connect(connection_string, **options)
+    connection = pyodbc.connect(_without_resiliency(connection_string), **options)
     connection.timeout = 35
     return connection
+
+
+def _without_resiliency(connection_string: str) -> str:
+    """Disable ODBC connection resiliency unless the caller set it explicitly.
+
+    Driver 18 silently re-establishes killed idle sessions, hiding exactly the
+    outages the broker must report through its own self-check and recycle
+    machinery (and through errors like a severed listener connection).
+    """
+    if "connectretrycount" in connection_string.lower():
+        return connection_string
+    return connection_string + ";ConnectRetryCount=0"
 
 
 def _rows(connection: pyodbc.Connection, sql: str, *params: Any) -> list[dict[str, Any]]:
@@ -60,7 +72,7 @@ async def _complete_io(operation: Coroutine[Any, Any, T]) -> T:
     this boundary joins cursor/connection work before releasing its asyncio lock.
     No synchronous broker methods are run in an executor here.
     """
-    task = asyncio.create_task(operation)
+    task = asyncio.create_task(operation, name='sqlserver-broker-io')
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
@@ -251,6 +263,32 @@ class Broker(BrokerProtocol):
         if self._publisher is None:
             self._publisher = _factory(self._factory)(**self.config) if self._factory else connect(self.config)
         return self._publisher
+
+    def _drop_publisher(self) -> None:
+        with self._publish_lock:
+            if self._publisher is not None and self._owns_publisher:
+                try:
+                    self._publisher.close()
+                except pyodbc.Error:
+                    pass
+                self._publisher = None
+
+    def get_connection(self) -> pyodbc.Connection:
+        """Shared synchronous publisher connection for application tasks.
+
+        Mirrors the pg_notify broker's get_connection: a session killed
+        server-side is re-established here, so tasks sharing this connection
+        survive connection loss. pyodbc exposes no closed flag, so liveness of
+        an owned connection is verified with a probe query.
+        """
+        connection = self._get_publisher()
+        if self._owns_publisher:
+            try:
+                connection.execute("SELECT 1").fetchone()
+            except pyodbc.Error:
+                self._drop_publisher()
+                connection = self._get_publisher()
+        return connection
 
     def _claim_listener(self, mode: str) -> None:
         if self._listener_mode not in (None, mode):
@@ -509,10 +547,7 @@ class Broker(BrokerProtocol):
         try:
             self._close_listener(suppress_errors=sys.exc_info()[0] is not None)
         finally:
-            with self._publish_lock:
-                if self._publisher is not None and self._owns_publisher:
-                    self._publisher.close()
-                    self._publisher = None
+            self._drop_publisher()
 
     def verify_self_check(self, message: dict[str, Any]) -> None:
         """Reactive connection health, held only in memory."""
@@ -557,7 +592,7 @@ class Broker(BrokerProtocol):
             # Two workers let outbound work proceed while one receive is blocked.
             self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='dispatcherd-sqlserver')
         options = dict(self.config)
-        dsn = options.pop('connection_string')
+        dsn = _without_resiliency(options.pop('connection_string'))
         options['autocommit'] = True
         options.setdefault('timeout', 10)
 

@@ -15,9 +15,9 @@ COPY dispatcherd ./dispatcherd
 RUN pip install --no-cache-dir '.[sqlserver]' pytest pytest-asyncio 'psycopg[binary]' 'Django>=5.2,<5.3' 'mssql-django>=1.6,<3'
 # Run against the installed package, with no source package in the working directory.
 WORKDIR /tests
-COPY tests/sqlserver ./sqlserver
-COPY tools/sqlserver/django_publish.py ./sqlserver/django_publish.py
+COPY tests ./tests
+COPY tools/sqlserver/django_publish.py ./tests/sqlserver/django_publish.py
+COPY asyncio_tests ./asyncio_tests
 COPY conftest.py ./conftest.py
-COPY asyncio_tests/integration/brokers/test_broker_contract.py ./asyncio_tests/integration/brokers/test_broker_contract.py
 COPY tools/sqlserver/run_tests.py ./run_tests.py
 CMD ["python", "/tests/run_tests.py"]

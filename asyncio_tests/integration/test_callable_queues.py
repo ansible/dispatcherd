@@ -17,14 +17,14 @@ def get_alternating_queue():
 
 
 @pytest.mark.asyncio
-async def test_apply_async_with_callable_queue(apg_dispatcher, test_settings):
+async def test_apply_async_with_callable_queue(db_dispatcher, test_settings):
     """Test that apply_async works with callable queues"""
     # Reset state for test
-    apg_dispatcher.pool.events.work_cleared.clear()
-    initial_count = apg_dispatcher.pool.finished_count
+    db_dispatcher.pool.events.work_cleared.clear()
+    initial_count = db_dispatcher.pool.finished_count
 
     # Create a task to wait for completion
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    clearing_task = asyncio.create_task(db_dispatcher.pool.events.work_cleared.wait())
 
     # Using apply_async instead of delay with a callable that returns a valid queue
     with temporary_settings(test_settings.serialize()):
@@ -34,18 +34,18 @@ async def test_apply_async_with_callable_queue(apg_dispatcher, test_settings):
     await asyncio.wait_for(clearing_task, timeout=3)
 
     # Verify task completed
-    assert apg_dispatcher.pool.finished_count == initial_count + 1
+    assert db_dispatcher.pool.finished_count == initial_count + 1
 
 
 @pytest.mark.asyncio
-async def test_callable_queue_at_submission_time(apg_dispatcher, test_settings):
+async def test_callable_queue_at_submission_time(db_dispatcher, test_settings):
     """Test that a callable queue works when provided at submission time"""
     # Reset state for test
-    apg_dispatcher.pool.events.work_cleared.clear()
-    initial_count = apg_dispatcher.pool.finished_count
+    db_dispatcher.pool.events.work_cleared.clear()
+    initial_count = db_dispatcher.pool.finished_count
 
     # Create a task to wait for completion
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    clearing_task = asyncio.create_task(db_dispatcher.pool.events.work_cleared.wait())
 
     # Using a callable queue at submission time, not at decoration time
     with temporary_settings(test_settings.serialize()):
@@ -55,18 +55,18 @@ async def test_callable_queue_at_submission_time(apg_dispatcher, test_settings):
     await asyncio.wait_for(clearing_task, timeout=3)
 
     # Verify task completed
-    assert apg_dispatcher.pool.finished_count == initial_count + 1
+    assert db_dispatcher.pool.finished_count == initial_count + 1
 
 
 @pytest.mark.asyncio
-async def test_alternating_queue_names(apg_dispatcher, test_settings):
+async def test_alternating_queue_names(db_dispatcher, test_settings):
     """Test that a callable returning different queue names works correctly"""
     # Reset for first task
-    apg_dispatcher.pool.events.work_cleared.clear()
-    initial_count = apg_dispatcher.pool.finished_count
+    db_dispatcher.pool.events.work_cleared.clear()
+    initial_count = db_dispatcher.pool.finished_count
 
     # Set up first task
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    clearing_task = asyncio.create_task(db_dispatcher.pool.events.work_cleared.wait())
 
     # Use a static queue to make sure the test is well-controlled
     with temporary_settings(test_settings.serialize()):
@@ -74,18 +74,18 @@ async def test_alternating_queue_names(apg_dispatcher, test_settings):
 
     # Wait for first task to complete
     await asyncio.wait_for(clearing_task, timeout=3)
-    assert apg_dispatcher.pool.finished_count == initial_count + 1
+    assert db_dispatcher.pool.finished_count == initial_count + 1
 
     # Set up second task with a different queue
-    apg_dispatcher.pool.events.work_cleared.clear()
-    second_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
+    db_dispatcher.pool.events.work_cleared.clear()
+    second_task = asyncio.create_task(db_dispatcher.pool.events.work_cleared.wait())
 
     with temporary_settings(test_settings.serialize()):
         test_methods.print_hello.apply_async(queue="test_channel2")
 
     # Wait for second task to complete
     await asyncio.wait_for(second_task, timeout=3)
-    assert apg_dispatcher.pool.finished_count == initial_count + 2
+    assert db_dispatcher.pool.finished_count == initial_count + 2
 
 
 def test_callable_queue_json_serializable():

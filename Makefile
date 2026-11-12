@@ -51,7 +51,14 @@ stop-sqlserver:
 test-sqlserver:
 	@test -n "$$MSSQL_SA_PASSWORD" || (echo "Export MSSQL_SA_PASSWORD so integration tests do not skip"; exit 1)
 	.venv/bin/python -c 'import django, mssql, pyodbc; assert "ODBC Driver 18 for SQL Server" in pyodbc.drivers(), "Install Microsoft ODBC Driver 18 or use make test-sqlserver-docker"'
-	.venv/bin/pytest -q --confcutdir=tests/sqlserver tests/sqlserver
+	DISPATCHERD_TEST_BACKEND=sqlserver .venv/bin/pytest -q --confcutdir=tests/sqlserver tests/sqlserver
+	DISPATCHERD_TEST_BACKEND=sqlserver .venv/bin/pytest -q -o asyncio_default_fixture_loop_scope=function tests/integration \
+		asyncio_tests/integration/test_bind.py \
+		asyncio_tests/integration/test_callable_queues.py \
+		asyncio_tests/integration/test_main.py \
+		asyncio_tests/integration/test_pool.py \
+		asyncio_tests/integration/test_signal_handling.py \
+		asyncio_tests/integration/test_disruptions.py
 
 ## Alternative: driver and Python virtual environment are provided in the image.
 test-sqlserver-docker:

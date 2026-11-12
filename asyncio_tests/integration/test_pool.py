@@ -4,7 +4,7 @@ import time
 from copy import deepcopy
 
 import pytest
-from conftest import BASIC_CONFIG
+from conftest import wait_for_processed
 
 from dispatcherd.testing.asyncio import adispatcher_service
 
@@ -13,63 +13,61 @@ LIGHT_SLEEP_METHOD = 'lambda: __import__("time").sleep(0.03)'
 
 
 @pytest.mark.asyncio
-async def test_task_timeout(apg_dispatcher, pg_message):
-    assert apg_dispatcher.pool.finished_count == 0
+async def test_task_timeout(db_dispatcher, db_message):
+    assert db_dispatcher.pool.finished_count == 0
 
     start_time = time.monotonic()
 
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
-    await pg_message(json.dumps({'task': SLEEP_METHOD, 'timeout': 0.1}))
+    clearing_task = asyncio.create_task(db_dispatcher.pool.events.work_cleared.wait())
+    await db_message(json.dumps({'task': SLEEP_METHOD, 'timeout': 0.1}))
     await asyncio.wait_for(clearing_task, timeout=3)
 
     delta = time.monotonic() - start_time
 
     assert delta < 1.0  # proves task did not run to completion
-    assert apg_dispatcher.pool.canceled_count == 1
+    assert db_dispatcher.pool.canceled_count == 1
 
 
 @pytest.mark.asyncio
-async def test_multiple_task_timeouts(apg_dispatcher, pg_message):
-    assert apg_dispatcher.pool.finished_count == 0
+async def test_multiple_task_timeouts(db_dispatcher, db_message):
+    assert db_dispatcher.pool.finished_count == 0
 
     start_time = time.monotonic()
 
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     for i in range(5):
-        await pg_message(json.dumps({'task': SLEEP_METHOD, 'timeout': 0.01 * i + 0.01, 'uuid': f'test_multiple_task_timeouts_{i}'}))
-    await asyncio.wait_for(clearing_task, timeout=3)
+        await db_message(json.dumps({'task': SLEEP_METHOD, 'timeout': 0.01 * i + 0.01, 'uuid': f'test_multiple_task_timeouts_{i}'}))
+    await wait_for_processed(db_dispatcher.pool, 5)
 
     delta = time.monotonic() - start_time
 
     assert delta < 1.0  # proves task did not run to completion
-    assert apg_dispatcher.pool.canceled_count == 5
+    assert db_dispatcher.pool.canceled_count == 5
 
 
 @pytest.mark.asyncio
-async def test_mixed_timeouts_non_timeouts(apg_dispatcher, pg_message):
-    assert apg_dispatcher.pool.finished_count == 0
+async def test_mixed_timeouts_non_timeouts(db_dispatcher, db_message):
+    assert db_dispatcher.pool.finished_count == 0
 
     start_time = time.monotonic()
 
-    clearing_task = asyncio.create_task(apg_dispatcher.pool.events.work_cleared.wait())
     for i in range(6):
-        await pg_message(
+        await db_message(
             json.dumps({'task': SLEEP_METHOD if (i % 2) else LIGHT_SLEEP_METHOD, 'timeout': 0.01 * (i % 2), 'uuid': f'test_multiple_task_timeouts_{i}'})
         )
-    await asyncio.wait_for(clearing_task, timeout=3)
+    await wait_for_processed(db_dispatcher.pool, 6)
 
     delta = time.monotonic() - start_time
 
     assert delta < 1.0
     # half of the tasks should be finished, half should have been canceled
-    assert apg_dispatcher.pool.canceled_count == 3
+    assert db_dispatcher.pool.canceled_count == 3
 
 
 @pytest.mark.asyncio
-async def test_workers_retire_when_exceeding_max_lifetime(pg_message):
+async def test_workers_retire_when_exceeding_max_lifetime(db_message, basic_config):
     worker_lifetime = 1.0
     first_task_seconds = 2.0
-    short_lived_config = deepcopy(BASIC_CONFIG)
+    short_lived_config = deepcopy(basic_config)
     short_lived_config.setdefault('service', {})
     short_lived_config['service']['process_manager_cls'] = 'ProcessManager'
     short_lived_config['service'].setdefault('pool_kwargs', {})
@@ -89,7 +87,7 @@ async def test_workers_retire_when_exceeding_max_lifetime(pg_message):
         if time.monotonic() - worker0.created_at >= worker_lifetime:
             pytest.skip('Worker lifetime expired before long-running task could be scheduled')
 
-        await pg_message(json.dumps({'task': 'tests.data.methods.sleep_function', 'kwargs': {'seconds': first_task_seconds}, 'uuid': 'retirement-task-long'}))
+        await db_message(json.dumps({'task': 'tests.data.methods.sleep_function', 'kwargs': {'seconds': first_task_seconds}, 'uuid': 'retirement-task-long'}))
 
         async def _wait_until_worker_age(min_age: float) -> None:
             while time.monotonic() - worker0.created_at < min_age:
@@ -97,7 +95,7 @@ async def test_workers_retire_when_exceeding_max_lifetime(pg_message):
 
         await asyncio.wait_for(_wait_until_worker_age(worker_lifetime), timeout=5)
 
-        await pg_message(json.dumps({'task': 'tests.data.methods.sleep_function', 'kwargs': {'seconds': 0.05}, 'uuid': 'retirement-task-short'}))
+        await db_message(json.dumps({'task': 'tests.data.methods.sleep_function', 'kwargs': {'seconds': 0.05}, 'uuid': 'retirement-task-short'}))
 
         await asyncio.wait_for(pool.events.work_cleared.wait(), timeout=5)
 
