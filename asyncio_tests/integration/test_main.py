@@ -90,7 +90,6 @@ async def test_submit_with_global_settings(db_dispatcher, test_settings):
 
 @pytest.mark.asyncio
 async def test_multiple_channels(db_dispatcher, db_message):
-    clearing_task = asyncio.create_task(db_dispatcher.pool.events.work_cleared.wait())
     await asyncio.wait_for(
         asyncio.gather(
             db_message(SLEEP_METHOD, channel='test_channel'),
@@ -100,7 +99,7 @@ async def test_multiple_channels(db_dispatcher, db_message):
         ),
         timeout=5,
     )
-    await asyncio.wait_for(clearing_task, timeout=3)
+    await wait_for_processed(db_dispatcher.pool, 3)
 
     assert db_dispatcher.pool.finished_count == 3
 
