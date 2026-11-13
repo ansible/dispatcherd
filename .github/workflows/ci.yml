@@ -102,3 +102,25 @@ jobs:
 
       - run: pip install flake8
       - run: flake8 .
+
+  sqlserver:
+    name: SQL Server integration and broker contracts
+    env:
+      SQLSERVER_TEST_PYTHON: "3.14"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate disposable database credentials
+        run: |
+          password="Sql1!$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          echo "MSSQL_SA_PASSWORD=$password" >> "$GITHUB_ENV"
+      - name: Run SQL Server tests
+        run: make test-sqlserver-docker
+      - name: Show database logs on failure
+        if: failure()
+        run: docker compose logs sqlserver
+      - name: Remove disposable database
+        if: always()
+        run: docker compose --profile sqlserver --profile sqlserver-tests down --volumes

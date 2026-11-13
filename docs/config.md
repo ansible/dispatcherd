@@ -95,15 +95,19 @@ python tools/gen_schema.py > schema.json
 
 #### Brokers
 
-Brokers relay messages which give instructions about code to run.
-Right now the only broker available is pg_notify.
+A dispatcherd broker is the Python adapter that sends and receives messages
+through a messaging system. Publishers use it to submit tasks or control requests;
+the dispatcherd service uses it to listen for those messages. Configure both sides
+to use the same messaging system and channels.
 
-The sub-options become python `kwargs` passed to the broker class `Broker`.
-For now, you will just have to read the code to see what those options are
-at [dispatcherd.brokers.pg_notify](dispatcherd/brokers/pg_notify.py).
+Built-in adapters include `pg_notify` for PostgreSQL notifications, `sqlserver`
+for SQL Server messaging, and `socket` for socket communication. A dotted module
+path can select a separately installed broker. Each entry under `brokers` selects
+an adapter; its options become keyword arguments to that module's `Broker` class.
 
-The broker classes have methods that allow for submitting messages
-and reading messages.
+For SQL Server database setup, delivery behavior and application configuration,
+see [Using SQL Server with dispatcherd](sqlserver.md). For PostgreSQL options, see
+[the pg_notify implementation](../dispatcherd/brokers/pg_notify.py).
 
 #### Service
 
