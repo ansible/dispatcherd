@@ -51,6 +51,15 @@ def _resolve_test_backend() -> str:
 
 BACKEND = _resolve_test_backend()
 
+# ProcessManager (fork) is rejected at startup with the sqlserver broker, see
+# process_manager_from_settings, so the shared suites do not parametrize it in.
+if BACKEND == 'sqlserver':
+    PROCESS_MANAGER_PARAMS = ['ForkServerManager', 'SpawnServerManager']
+    PROCESS_MANAGER_IDS = ['forkserver', 'spawn']
+else:
+    PROCESS_MANAGER_PARAMS = ['ProcessManager', 'ForkServerManager', 'SpawnServerManager']
+    PROCESS_MANAGER_IDS = ['fork', 'forkserver', 'spawn']
+
 
 async def wait_for_processed(pool, expected: int, timeout: float = 3.0) -> None:
     """Wait until the pool has fully processed the expected number of tasks.
@@ -116,8 +125,8 @@ def test_settings(basic_config):
 @pytest_asyncio.fixture(
     loop_scope="function",
     scope="function",
-    params=['ProcessManager', 'ForkServerManager', 'SpawnServerManager'],
-    ids=["fork", "forkserver", "spawn"],
+    params=PROCESS_MANAGER_PARAMS,
+    ids=PROCESS_MANAGER_IDS,
 )
 async def db_dispatcher(request, basic_config) -> AsyncIterator[DispatcherMain]:
     this_test_config = basic_config.copy()

@@ -477,6 +477,16 @@ setting or take ownership of Django transactions. A reported stall involving
 pooled sessions and open transactions is still under investigation; dedicated
 ownership alone should not be taken as proof that pooled session state is safe.
 
+The service's process manager must not use the fork-based `ProcessManager`
+(`service.process_manager_cls`) with this broker; dispatcherd rejects that
+combination at startup. The driver-manager pool lives in process memory, and
+`fork()` copies it, so a forked worker can be handed a pooled session that the
+parent process still owns. The two processes then share one TDS connection until
+the server kills it, which surfaces as intermittent connection failures and lost
+notifications. `ForkServerManager` (the default) and `SpawnServerManager` start
+workers with fresh process state and are unaffected. The `pg_notify` broker is
+also unaffected; it has explicit handling for forked processes.
+
 ODBC itself is blocking: aioodbc runs its calls in threads. Connections created by
 the async broker use a private two-thread executor so waiting for a message does
 not occupy asyncio's shared default executor. Cancelling an async call cannot

@@ -4,7 +4,7 @@ import time
 from copy import deepcopy
 
 import pytest
-from conftest import wait_for_processed
+from conftest import BACKEND, wait_for_processed
 
 from dispatcherd.testing.asyncio import adispatcher_service
 
@@ -69,7 +69,8 @@ async def test_workers_retire_when_exceeding_max_lifetime(db_message, basic_conf
     first_task_seconds = 2.0
     short_lived_config = deepcopy(basic_config)
     short_lived_config.setdefault('service', {})
-    short_lived_config['service']['process_manager_cls'] = 'ProcessManager'
+    # ProcessManager (fork) is rejected with the sqlserver broker
+    short_lived_config['service']['process_manager_cls'] = 'ProcessManager' if BACKEND == 'pg_notify' else 'ForkServerManager'
     short_lived_config['service'].setdefault('pool_kwargs', {})
     short_lived_config['service']['pool_kwargs'].update(
         {

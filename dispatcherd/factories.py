@@ -3,7 +3,7 @@ from copy import deepcopy
 from typing import Any, Iterable, Literal, Optional, Type, get_args, get_origin
 
 from . import producers
-from .brokers import get_broker
+from .brokers import _resolve_module_name, get_broker
 from .config import LazySettings
 from .config import settings as global_settings
 from .control import Control
@@ -26,6 +26,17 @@ which is to avoid import dependencies.
 def process_manager_from_settings(settings: LazySettings = global_settings) -> process.ProcessManager:
     cls_name = settings.service.get('process_manager_cls', 'ForkServerManager')
     process_manager_cls = getattr(process, cls_name)
+    if process_manager_cls is process.ProcessManager and any(
+        _resolve_module_name(broker_name) == 'dispatcherd.brokers.sqlserver' for broker_name in settings.brokers
+    ):
+        # fork copies the unixODBC driver-manager pool, so a forked worker can be
+        # handed a pooled session that the parent process still owns; the two
+        # processes then share one TDS connection until the server kills it
+        raise RuntimeError(
+            'The sqlserver broker can not be combined with the fork-based ProcessManager, '
+            'because forked workers can share pooled ODBC sessions with the parent process. '
+            'Use ForkServerManager (the default) or SpawnServerManager with this broker.'
+        )
     kwargs = settings.service.get('process_manager_kwargs', {}).copy()
     kwargs['settings'] = settings
     return process_manager_cls(**kwargs)
