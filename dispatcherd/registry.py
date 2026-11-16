@@ -3,13 +3,13 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Iterable, Optional, Set, Tuple
+from typing import Callable, Iterable, Optional, Set, Tuple, cast
 from uuid import uuid4
 
 from .config import LazySettings
 from .config import settings as global_settings
 from .protocols import ProcessorParams
-from .utils import MODULE_METHOD_DELIMITER, DispatcherCallable, resolve_callable
+from .utils import MODULE_METHOD_DELIMITER, DispatcherCallable, RunnableClass, resolve_callable
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class DispatcherMethod:
         if inspect.isclass(self.fn):
             # the callable is a class, e.g., RunJob; instantiate and
             # return its `run()` method
-            return self.fn().run
+            return cast(type[RunnableClass], self.fn)().run
 
         return self.fn
 
