@@ -8,7 +8,7 @@ service:
     scaledown_wait: 15  # seconds
     results_read_timeout: null  # seconds to wait on finished queue, null waits indefinitely
   main_kwargs:
-    node_id: demo-server-a
+    node_id: demo-server-1
     chunk_message_timeout_seconds: 5
   metrics_kwargs: {}
 worker:
@@ -17,7 +17,7 @@ worker:
 brokers:
   pg_notify:
     config:
-      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777 application_name=dispatcher_demo_run
+      conninfo: dbname=dispatch_db user=dispatch password=dispatching host=msg_postgres port=5432 application_name=dispatcher_demo_run
     sync_connection_factory: dispatcherd.brokers.pg_notify.connection_saver
     # List of channels to listen on
     channels:

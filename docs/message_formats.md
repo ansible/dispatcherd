@@ -6,7 +6,7 @@ See the main design diagram for reference.
 
 ### Broker Message Format
 
-This is the format when a client submits a task to be ran, for example, to pg_notify.
+This is the format when a client submits a task to be ran through a configured broker.
 This contains JSON-serialized data.
 
 Example:
@@ -32,9 +32,9 @@ like debug information.
 
 #### Chunked Messages
 
-Large submissions may exceed a broker's payload limit (pg_notify limits payloads to roughly 8KB).
-Before a message is published, dispatcherd brokers call
-`dispatcherd.chunking.split_message`, which produces one or more JSON envelopes.
+Large submissions may exceed a broker's payload limit. The `pg_notify` broker
+limits payloads to roughly 8 KB and calls `dispatcherd.chunking.split_message`
+to produce one or more JSON envelopes.
 Each chunk wraps a slice of the original JSON payload so that it can be reassembled on the other end.
 
 Below is a complete set of chunks for a single payload that had to be split into two pieces.
@@ -58,7 +58,7 @@ and `total` is `2` on each chunk so consumers know when reassembly is finished.
 }
 ```
 
-If a message is not over the limit, it is sent as-is without the chunk wrapper.
+If a `pg_notify` message is not over the limit, it is sent as-is without the chunk wrapper.
 
 The chunk envelope establishes the contract for multipart messages:
 
@@ -86,8 +86,12 @@ if is_chunk and completed_payload:
 `ChunkAccumulator` tracks in-flight `message_id`s, waits until every index from ``0`` through
 ``total - 1`` has arrived, and discards stale fragments after
 `message_timeout_seconds` (configured via `chunk_message_timeout_seconds` on the service).
-Control replies use the same chunk envelope when they are large, so all inbound broker
-traffic can be fed through a single accumulator.
+The `pg_notify` broker uses the same chunk envelope for large control replies.
+
+The SQL Server table broker stores the complete JSON payload in the
+`NVARCHAR(MAX)` `payload` column of `dbo.dispatcherd_messages`. It does not
+apply the `pg_notify` 8 KB limit or wrap large payloads in chunk envelopes.
+The task message format remains the same for both brokers.
 
 ### Internal Worker Pool Format
 

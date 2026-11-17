@@ -11,8 +11,8 @@ This will result in an error:
 > Dispatcherd not configured, set DISPATCHERD_CONFIG_FILE or call dispatcherd.config.setup
 
 This errors because dispatcherd does not know how to connect to a message broker.
-For the demo, that would be the postgres host, user, password, etc.,
-as well as the pg_notify channel to send the message to.
+For the PostgreSQL broker, that is the postgres host, user, password, and notification channel.
+For the SQL Server broker, it is the server, database, credentials, and subscribed channels.
 
 ### Ways to configure
 
@@ -69,6 +69,8 @@ service:
 brokers:
   pg_notify:
     # options
+  sql_server:
+    # options
 producers:
   ProducerClass:
     # options
@@ -96,14 +98,58 @@ python tools/gen_schema.py > schema.json
 #### Brokers
 
 Brokers relay messages which give instructions about code to run.
-Right now the only broker available is pg_notify.
+Dispatcherd includes PostgreSQL `pg_notify` and SQL Server table brokers.
+Both are selected by their key under `brokers`.
 
 The sub-options become python `kwargs` passed to the broker class `Broker`.
-For now, you will just have to read the code to see what those options are
-at [dispatcherd.brokers.pg_notify](dispatcherd/brokers/pg_notify.py).
+The PostgreSQL options are documented in
+[dispatcherd.brokers.pg_notify](dispatcherd/brokers/pg_notify.py).
+The SQL Server options are documented in
+[dispatcherd.brokers.sql_server](dispatcherd/brokers/sql_server.py).
 
 The broker classes have methods that allow for submitting messages
 and reading messages.
+
+##### SQL Server table broker
+
+Install the Python extra and Microsoft ODBC Driver 18 for SQL Server:
+
+```bash
+pip install 'dispatcherd[sql_server]'
+```
+
+Create the `dispatcherd` database and message table with
+[`tools/sql_server/setup.sql`](../tools/sql_server/setup.sql), then configure the
+broker. Supply credentials through your deployment's secret management system.
+
+```yaml
+brokers:
+  sql_server:
+    config:
+      server: sqlserver.example.com
+      port: 1433
+      database: dispatcherd
+      user: dispatcherd_app
+      password: <secret>
+      driver: ODBC Driver 18 for SQL Server
+      trust_server_certificate: "no"
+      connect_timeout_seconds: 15
+      query_timeout_seconds: 30
+    channels:
+      - metrics
+      - dashboard
+      - maintenance
+    poll_interval_seconds: 0.25
+```
+
+Publishers and dispatcherd services must use the same database, broker key,
+and channel names. The broker stores the unchanged JSON payload in
+`dbo.dispatcherd_messages` and atomically removes rows when a consumer claims
+them. Messages are delivered at most once after a claim; applications that
+need recovery should keep task state in their own database and reconcile
+pending work. Connection attempts default to a 15 second timeout, and SQL
+statements default to a 30 second timeout; both values must be positive and can
+be tuned in the broker `config`.
 
 #### Service
 

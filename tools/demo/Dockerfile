@@ -2,7 +2,7 @@ FROM ghcr.io/linuxcontainers/alpine:latest
 
 WORKDIR /dispatcherd
 
-RUN apk add --no-cache python3 py3-pip && ln -sf python3 /usr/bin/python
+RUN apk add --no-cache python3 py3-pip libpq && ln -sf python3 /usr/bin/python
 
 RUN python3 -m venv /dispatcherd/venv
 
@@ -13,7 +13,7 @@ RUN apk add --no-cache git
 
 COPY . ./src
 
-RUN /dispatcherd/venv/bin/pip3 install -e ./src[pg_notify] --verbose
+RUN /dispatcherd/venv/bin/pip3 install -e "./src[pg_notify,metrics]" --verbose
 
 COPY dispatcher.yml /dispatcherd/dispatcher1.yml
 COPY dispatcher.yml /dispatcherd/dispatcher2.yml

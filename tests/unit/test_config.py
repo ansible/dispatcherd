@@ -44,6 +44,8 @@ def test_schema_is_current():
     demo_data = yaml.safe_load(file_contents)
     with temporary_settings(demo_data):
         expect_schema = generate_settings_schema()
+    assert {"pg_notify", "socket", "sql_server"} <= set(expect_schema["brokers"])
+    assert "poll_interval_seconds" in expect_schema["brokers"]["sql_server"]
     with open('schema.json', 'r') as sch_f:
         schema_contents = sch_f.read()
     schema_data = json.loads(schema_contents)
