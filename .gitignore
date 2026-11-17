@@ -48,3 +48,6 @@ tools/generated/*
 
 # Gets created when testing sonar-scanner locally
 .scannerwork
+
+# Local SQL Server development credentials
+.env.sqlserver

@@ -75,6 +75,23 @@ def schedules_another_task(binder):
     print(f'Scheduled another task, result: {r}')
 
 
+_shared_task_broker = None
+
+
+def _task_broker():
+    """The configured broker, cached so tasks in one worker process share its connections.
+
+    On pg_notify sharing comes from the connection_saver factory, but the
+    sqlserver broker owns its connections per instance, so the instance
+    itself has to live across tasks for the disruption tests to be meaningful.
+    """
+    global _shared_task_broker
+    if _shared_task_broker is None:
+        name, config = next(iter(settings.brokers.items()))
+        _shared_task_broker = get_broker(name, config)
+    return _shared_task_broker
+
+
 @task()
 def break_connection():
     """
@@ -86,27 +103,39 @@ def break_connection():
     This is obviously a problem for any task that comes afterwards.
     So this is used to break things so that the fixes may be demonstrated.
     """
-    # Assumes dispatcherd is configured, get the psycopg synchronous connection
-    broker = get_broker('pg_notify', settings.brokers['pg_notify'])
+    broker = _task_broker()
     conn = broker.get_connection()
 
-    with conn.cursor() as cursor:
-        cursor.execute("SET idle_session_timeout = '0.1s';")
+    if broker.__module__ == 'dispatcherd.brokers.sqlserver':
+        # No idle session timeout exists on SQL Server, kill the session from the outside instead
+        from dispatcherd.brokers.sqlserver import connect as connect_sqlserver
 
-    print('sleeping for 0.2s > 0.1s session timeout')
-    time.sleep(0.2)
+        spid = conn.cursor().execute('SELECT @@SPID').fetchone()[0]
+        admin = connect_sqlserver(dict(broker.config))
+        try:
+            admin.cursor().execute(f'KILL {int(spid)}')
+        finally:
+            admin.close()
+        print(f'sleeping after killing own session, spid={spid}')
+        time.sleep(0.2)
+    else:
+        with conn.cursor() as cursor:
+            cursor.execute("SET idle_session_timeout = '0.1s';")
 
-    broker = get_broker('pg_notify', settings.brokers['pg_notify'])
-    conn = broker.get_connection()
+        print('sleeping for 0.2s > 0.1s session timeout')
+        time.sleep(0.2)
 
     print(f'Connection reports closed {getattr(conn, "closed", "not_found")}')
 
     for i in range(1, 3):
         print(f'\nRunning query number {i}')
         try:
-            with conn.cursor() as cursor:
+            cursor = conn.cursor()
+            try:
                 cursor.execute("SELECT 1;")
                 print('  query worked, not expected')
+            finally:
+                cursor.close()
         except Exception as exc:
             print(f'  query errored as expected\ntype: {type(exc)}\nstr: {str(exc)}')
 
@@ -124,7 +153,7 @@ def test_break_connection():
 def do_database_query():
     "Just a normal method interacting with the database"
     print('Trying to execute and print result of normal query')
-    broker = get_broker('pg_notify', settings.brokers['pg_notify'])
+    broker = _task_broker()
     conn = broker.get_connection()
     with conn.cursor() as cursor:
         cursor.execute("SELECT 1;")

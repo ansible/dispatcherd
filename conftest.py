@@ -1,13 +1,15 @@
-import contextlib
+import asyncio
 import logging
 import multiprocessing
 import os
-from typing import AsyncIterator, Callable
+import sys
+from pathlib import Path
+from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
 
-from dispatcherd.brokers.pg_notify import Broker, acreate_connection
+from dispatcherd.brokers import get_broker
 from dispatcherd.config import DispatcherSettings
 from dispatcherd.control import Control
 from dispatcherd.factories import get_control_from_settings
@@ -27,60 +29,107 @@ os.environ.setdefault('DISPATCHERD_SUBPROCESS_COVERAGE_FILE', '.coverage_subproc
 CHANNELS = ['test_channel', 'test_channel2', 'test_channel3']
 
 # Database connection details
-CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777 application_name=apg_test_server"
+PG_CONNECTION_STRING = "dbname=dispatch_db user=dispatch password=dispatching host=localhost port=55777 application_name=apg_test_server"
 
-BASIC_CONFIG = {
-    "version": 2,
-    "brokers": {
-        "pg_notify": {
-            "channels": CHANNELS,
-            "config": {'conninfo': CONNECTION_STRING},
-            "sync_connection_factory": "dispatcherd.brokers.pg_notify.connection_saver",
-            # "async_connection_factory": "dispatcherd.brokers.pg_notify.async_connection_saver",
-            "default_publish_channel": "test_channel",
-        }
-    },
-    "producers": {"ControlProducer": {}},
-}
+# Application tag placed on SQL Server connections created by the dispatcher
+# service under test, so disruption tests can find (and kill) its sessions.
+SQLSERVER_SERVER_APP = 'dispatcherd_test_server'
+SQLSERVER_CLIENT_APP = 'dispatcherd_test_client'
 
 
-@contextlib.asynccontextmanager
-async def aconnection_for_test():
-    conn = None
-    try:
-        conn_str = CONNECTION_STRING.replace('application_name=apg_test_server', 'application_name=apg_client')
-        conn = await acreate_connection(conninfo=conn_str, autocommit=True)
+def _resolve_test_backend() -> str:
+    """Integration tests default to pg_notify and follow tests/sqlserver's
+    MSSQL_SA_PASSWORD convention to pick the sqlserver broker. Set
+    DISPATCHERD_TEST_BACKEND to force either backend."""
+    forced = os.environ.get('DISPATCHERD_TEST_BACKEND')
+    if forced:
+        if forced not in ('pg_notify', 'sqlserver'):
+            raise RuntimeError(f'Unknown DISPATCHERD_TEST_BACKEND: {forced}')
+        return forced
+    return 'sqlserver' if os.environ.get('MSSQL_SA_PASSWORD') else 'pg_notify'
 
-        # Make sure database is running to avoid deadlocks which can come
-        # from using the loop provided by pytest asyncio
-        async with conn.cursor() as cursor:
-            await cursor.execute('SELECT 1')
-            await cursor.fetchall()
 
-        yield conn
-    finally:
-        if conn:
-            await conn.close()
+BACKEND = _resolve_test_backend()
+
+# ProcessManager (fork) is rejected at startup with the sqlserver broker, see
+# process_manager_from_settings, so the shared suites do not parametrize it in.
+if BACKEND == 'sqlserver':
+    PROCESS_MANAGER_PARAMS = ['ForkServerManager', 'SpawnServerManager']
+    PROCESS_MANAGER_IDS = ['forkserver', 'spawn']
+else:
+    PROCESS_MANAGER_PARAMS = ['ProcessManager', 'ForkServerManager', 'SpawnServerManager']
+    PROCESS_MANAGER_IDS = ['fork', 'forkserver', 'spawn']
+
+
+async def wait_for_processed(pool, expected: int, timeout: float = 3.0) -> None:
+    """Wait until the pool has fully processed the expected number of tasks.
+
+    work_cleared alone is not sufficient for slower publish backends, where
+    the pool can drain completely between individual publishes.
+    """
+
+    async def wait_for_count() -> None:
+        while pool.processed_count < expected:
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(wait_for_count(), timeout=timeout)
+
+
+if BACKEND == 'sqlserver':
+    # tests/sqlserver is not a package; its helpers are imported the same way
+    # its own conftest imports them. In the docker test image the layout is
+    # /tests/sqlserver instead of <repo>/tests/sqlserver.
+    _sqlserver_dir = Path(__file__).parent / 'tests' / 'sqlserver'
+    if not _sqlserver_dir.exists():
+        _sqlserver_dir = Path(__file__).parent / 'sqlserver'
+    sys.path.insert(0, str(_sqlserver_dir))
+    from database import database_config, provision  # type: ignore[import-not-found]
+
+
+@pytest.fixture(scope='session')
+def test_backend():
+    """The database backend under test: (broker name, broker kwargs)."""
+    if BACKEND == 'pg_notify':
+        return 'pg_notify', {'config': {'conninfo': PG_CONNECTION_STRING}}
+    provision()
+    connection_string = database_config()['connection_string'] + f';APP={SQLSERVER_SERVER_APP}'
+    return 'sqlserver', {'config': {'connection_string': connection_string}, 'wait_timeout_ms': 100}
+
+
+@pytest.fixture(scope='session')
+def basic_config(test_backend):
+    name, backend_config = test_backend
+    entry = {
+        'channels': CHANNELS,
+        'config': backend_config['config'],
+        'default_publish_channel': 'test_channel',
+    }
+    if name == 'pg_notify':
+        entry['sync_connection_factory'] = 'dispatcherd.brokers.pg_notify.connection_saver'
+    else:
+        entry['wait_timeout_ms'] = backend_config['wait_timeout_ms']
+    return {'version': 2, 'brokers': {name: entry}, 'producers': {'ControlProducer': {}}}
 
 
 @pytest.fixture
 def conn_config():
-    return {'conninfo': CONNECTION_STRING}
+    "PostgreSQL connection info; used by the shared broker contract tests"
+    return {'conninfo': PG_CONNECTION_STRING}
 
 
 @pytest.fixture
-def test_settings():
-    return DispatcherSettings(BASIC_CONFIG)
+def test_settings(basic_config):
+    return DispatcherSettings(basic_config)
 
 
 @pytest_asyncio.fixture(
     loop_scope="function",
     scope="function",
-    params=['ProcessManager', 'ForkServerManager', 'SpawnServerManager'],
-    ids=["fork", "forkserver", "spawn"],
+    params=PROCESS_MANAGER_PARAMS,
+    ids=PROCESS_MANAGER_IDS,
 )
-async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
-    this_test_config = BASIC_CONFIG.copy()
+async def db_dispatcher(request, basic_config) -> AsyncIterator[DispatcherMain]:
+    this_test_config = basic_config.copy()
     this_test_config.setdefault('service', {})
     this_test_config['service']['process_manager_cls'] = request.param
     ctx = multiprocessing.get_context()
@@ -92,24 +141,32 @@ async def apg_dispatcher(request) -> AsyncIterator[DispatcherMain]:
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def pg_control(test_settings) -> AsyncIterator[Control]:
+async def db_control(test_settings) -> AsyncIterator[Control]:
     return get_control_from_settings(settings=test_settings)
 
 
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def psycopg_conn():
-    async with aconnection_for_test() as conn:
-        yield conn
+async def db_message(test_backend):
+    "Publish messages through a backend-owned publisher connection"
+    name, backend_config = test_backend
+    if name == 'sqlserver':
+        config = {
+            'config': {
+                'connection_string': backend_config['config']['connection_string'].replace(f'APP={SQLSERVER_SERVER_APP}', f'APP={SQLSERVER_CLIENT_APP}')
+            },
+            'wait_timeout_ms': backend_config['wait_timeout_ms'],
+        }
+    else:
+        conninfo = backend_config['config']['conninfo'].replace('application_name=apg_test_server', 'application_name=apg_client')
+        config = {'config': {'conninfo': conninfo}}
+    publisher = get_broker(name, config, default_publish_channel='test_channel')
 
-
-@pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def pg_message(psycopg_conn) -> Callable:
     async def _rf(message, channel=None):
-        # Note on weirdness here, this broker will only be used for async publishing, so we give junk for synchronous connection
-        broker = Broker(async_connection=psycopg_conn, default_publish_channel='test_channel', sync_connection_factory='tests.data.methods.something')
-        await broker.apublish_message(channel=channel, message=message)
+        await publisher.apublish_message(channel=channel, message=message)
 
-    return _rf
+    yield _rf
+    await publisher.aclose()
+    publisher.close()
 
 
 @pytest.fixture

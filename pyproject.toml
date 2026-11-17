@@ -43,6 +43,7 @@ include-package-data = true # Ensures package data is included
 
 [tool.setuptools.package-data]
 "dispatcherd" = ["LICENSE", "README.md"]
+"dispatcherd.brokers.sqlserver" = ["*.sql"]
 
 # You need psycopg, but this will not help you to install it
 
@@ -140,6 +141,7 @@ module = ["conftest"]
 ignore_errors = true
 
 [project.optional-dependencies]
+sqlserver = ["pyodbc>=5.2,<6", "aioodbc>=0.5,<0.6"]
 pg_notify = ["psycopg>=3.2.4"]
 pg_notify_dev = ["psycopg[binary]>=3.2.4"]
 pg_notify_prod = ["psycopg[c]>=3.2.4"]
